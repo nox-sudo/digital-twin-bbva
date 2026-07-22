@@ -1,0 +1,60 @@
+---
+description: Contexto general — Financial Digital Twin (BBVA)
+alwaysApply: true
+---
+
+# Financial Digital Twin — BBVA Semestre Empresarial
+
+Digital Twin financiero personal sobre arquitectura Medallion (Bronze → Silver → Gold → IA).
+Fuente: datos sintéticos generados por nosotros (`generate_synthetic_sources.py`), diseñados
+para simular un banco/fintech moderno (no un dataset de tutorial genérico).
+
+## Entidades del dominio
+
+- `clientes` — perfil demográfico (edad, ocupación, ingreso declarado, ciudad)
+- `cuentas` — una o más cuentas por cliente: `cuenta_digital`, `tarjeta_credito`,
+  `prestamo_personal`, `cetes`
+- `catalogo_productos` — datos maestros de cada producto (tasas, límites, plazos)
+- `transacciones` — compras por categoría, P2P, nómina, retiros (particionadas por `anio_mes`)
+- `cetes_inversiones` — detalle de inversiones a plazo (monto, tasa, vencimiento)
+
+## Stack (no inventes alternativas)
+
+- Python 3.11 + `uv` (gestión de deps/entorno)
+- PySpark para ingesta Bronze y transformaciones a escala
+- DuckDB para prototipado y capa Gold (diseño migrable a PostgreSQL)
+- Ollama + Llama 3 + LangChain para RAG / NL-to-SQL (capa IA)
+
+## Medallion — reglas duras
+
+| Capa   | Path           | Qué se permite                          | Qué NO |
+|--------|----------------|------------------------------------------|--------|
+| Bronze | `data/bronze/` | Crudo, sin transformar, con metadata de ingesta (`_ingestion_timestamp`, `_source_file`) | Tipado de negocio, limpieza, joins |
+| Silver | `data/silver/` | Tipado, limpieza, dedup, validaciones (Great Expectations) | Agregaciones de negocio / KPIs finales |
+| Gold   | `data/gold/`   | Tablas agregadas/modeladas para consumo (KPIs, features para ML) | Lógica de limpieza o tipado "de nuevo" |
+
+- Nunca saltes capas (Bronze → Gold directo = incorrecto).
+- Nunca escribas limpieza en Gold. Nunca tipes en Bronze.
+- Nombres de carpeta/tabla limpios, sin prefijo de capa (`clientes`, no `bronze_clientes`) —
+  la carpeta contenedora (`data/bronze/`, `data/silver/`, `data/gold/`) ya indica la capa.
+
+## Naming y layout
+
+- Pipelines / código reutilizable → `src/`
+- Scripts ejecutables (ingesta, generación de datos) → raíz o `scripts/`
+- Exploración → `notebooks/` (no uses notebooks como "fuente de verdad" del pipeline)
+
+## Estilo de código (aprendizaje)
+
+- Prefiere código **explícito y comentado** sobre "clever".
+- Explica *por qué* en comentarios cortos cuando la decisión no sea obvia (reglas de
+  generación de datos sintéticos, reglas de calidad, etc.).
+- Funciones pequeñas, nombres claros, tipado Python cuando ayude.
+- No agregues dependencias nuevas sin justificarlas frente a DuckDB / PySpark / uv.
+
+## Al implementar
+
+1. Di en qué capa estás trabajando.
+2. Si tocas datos, indica path + nombre de la entidad (ej. `data/bronze/transacciones`).
+3. Recuerda que las transacciones están particionadas por `anio_mes` — cualquier
+   transformación en Silver debe preservar o mejorar esa partición, no perderla.

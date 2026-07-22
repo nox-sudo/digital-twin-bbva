@@ -1,0 +1,45 @@
+---
+description: Convenciones SQL/DuckDB — adjuntar en .sql y al escribir queries embebidas (duckdb.sql / spark.sql) en Python
+globs: "**/*.sql"
+alwaysApply: false
+---
+
+# SQL / DuckDB
+
+Auto-attach en `.sql`. Si escribes SQL embebido en Python (`duckdb.execute`, `.sql()`, Spark SQL),
+sigue estas mismas reglas.
+
+## Estilo
+
+- Keywords en MAYÚSCULAS: `SELECT`, `FROM`, `WHERE`, `JOIN`, `GROUP BY`.
+- Prefiere **CTEs** (`WITH ...`) a subqueries anidadas.
+- Una idea por CTE; nombres claros (`clean_transacciones`, `cuentas_activas`).
+- Indentación legible; una columna / condición por línea cuando la query crece.
+
+## Reproducibilidad (Silver / Gold)
+
+- Transformaciones con `CREATE OR REPLACE TABLE` / `CREATE OR REPLACE VIEW`.
+- **No** `INSERT` acumulativo ni depender del estado previo de la tabla.
+- La query debe poder re-ejecutarse y dar el mismo resultado.
+
+## Comentarios (aprendizaje)
+
+- Comenta el **por qué** de cada regla de limpieza, no solo el qué.
+
+```sql
+-- Transacciones con monto en 0 son ruido de generación, no representan
+-- movimientos reales del cliente: se descartan antes de tipar montos.
+WHERE monto != 0
+```
+
+## Naming
+
+- Tablas con nombre limpio, sin prefijo de capa (`transacciones`, no `bronze_transacciones`) —
+  la carpeta/schema contenedor ya indica la capa (`data/bronze/`, `data/silver/`, `data/gold/`).
+- No saltes capas dentro de una sola query (Bronze→Gold directo = incorrecto).
+
+## Evitar
+
+- `SELECT *` en transforms finales (lista columnas explícitas).
+- Tipar/limpiar en Gold; eso pertenece a Silver.
+- Lógica de negocio compleja escondida en subqueries profundas — extráela a CTEs.
