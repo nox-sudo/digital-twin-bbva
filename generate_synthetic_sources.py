@@ -8,7 +8,7 @@ Filosofía: estos datos representan lo que en un banco real vendría
 de un core bancario, un procesador de pagos, o APIs de terceros.
 Por eso se guardan en formatos mixtos (CSV, JSON) en /data/raw_sources/
 y NO dentro de tu estructura bronze/silver/gold — esa carpeta es
-exclusiva de tu pipeline de ingesta.
+exclusiva del pipeline de ingesta.
 
 Uso:
     python generate_synthetic_sources.py --clientes 500 --meses 12
