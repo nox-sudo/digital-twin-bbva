@@ -1,0 +1,13 @@
+.venv
+__pycache__
+*.pyc
+.git
+.cursor
+data/bronze
+data/silver
+data/raw_sources
+data/logs
+*.log
+.env
+credentials.json
+token.json

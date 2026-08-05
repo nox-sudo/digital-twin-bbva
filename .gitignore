@@ -26,3 +26,6 @@ token.json
 
 # Zip temporal de descarga
 gfd:silver.zip
+
+# Config local de Docker (UID y ruta absoluta, especifico por maquina)
+.env
