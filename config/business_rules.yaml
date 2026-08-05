@@ -1,0 +1,98 @@
+# config/business_rules.yaml
+#
+# Reglas de negocio de la capa Silver, declaradas como datos.
+# Agregar una regla nueva NO requiere tocar codigo Python: se declara aqui
+# y el motor generico en src/silver/validation.py la aplica automaticamente.
+#
+# Orden de procesamiento: respeta las dependencias de foreign_keys.
+# clientes -> cuentas -> cetes_inversiones, transacciones
+
+clientes:
+  primary_key: cliente_id
+  not_null:
+    - cliente_id
+    - fecha_nacimiento
+    - ingreso_mensual_declarado
+    - ciudad
+    - fecha_alta
+  unique:
+    - cliente_id
+  numeric_ranges:
+    ingreso_mensual_declarado:
+      min: 0.01
+  date_not_future:
+    - fecha_alta
+
+cuentas:
+  primary_key: cuenta_id
+  not_null:
+    - cuenta_id
+    - cliente_id
+    - tipo_cuenta
+    - saldo_actual
+    - fecha_apertura
+  unique:
+    - cuenta_id
+  allowed_values:
+    tipo_cuenta:
+      - cuenta_digital
+      - tarjeta_credito
+      - prestamo_personal
+      - cetes
+  foreign_keys:
+    cliente_id:
+      references_entity: clientes
+      references_column: cliente_id
+  conditional_not_null:
+    - column: limite_credito
+      when_column: tipo_cuenta
+      when_equals: tarjeta_credito
+    - column: monto_original
+      when_column: tipo_cuenta
+      when_equals: prestamo_personal
+
+cetes_inversiones:
+  not_null:
+    - cuenta_id
+    - monto_invertido
+    - plazo_dias
+    - fecha_inicio
+    - fecha_vencimiento
+  numeric_ranges:
+    monto_invertido:
+      min: 0.01
+  allowed_values:
+    plazo_dias:
+      - 28
+      - 91
+      - 182
+      - 364
+  foreign_keys:
+    cuenta_id:
+      references_entity: cuentas
+      references_column: cuenta_id
+
+transacciones:
+  primary_key: transaccion_id
+  not_null:
+    - transaccion_id
+    - cuenta_id
+    - fecha
+    - tipo_transaccion
+    - monto
+  unique:
+    - transaccion_id
+  allowed_values:
+    tipo_transaccion:
+      - compra
+      - p2p_enviado
+      - p2p_recibido
+      - pago_recurrente
+      - nomina
+      - retiro
+  numeric_not_zero:
+    - monto
+  foreign_keys:
+    cuenta_id:
+      references_entity: cuentas
+      references_column: cuenta_id
