@@ -426,6 +426,7 @@ dependencies = [
     { name = "pandas" },
     { name = "psycopg2-binary" },
     { name = "pyspark" },
+    { name = "pyyaml" },
     { name = "sqlalchemy" },
 ]
 
@@ -439,6 +440,7 @@ requires-dist = [
     { name = "pandas", specifier = ">=3.0.3" },
     { name = "psycopg2-binary", specifier = ">=2.9.12" },
     { name = "pyspark", specifier = "==4.1.1" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "sqlalchemy", specifier = ">=2.0.51" },
 ]
 
