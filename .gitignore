@@ -17,3 +17,10 @@ data/
 
 # Logs de corridas locales
 logs/
+
+# Credenciales locales (nunca deben ir a git)
+credentials.json
+token.json
+
+# Zip temporal de descarga
+gfd:silver.zip
