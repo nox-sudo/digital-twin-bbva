@@ -224,6 +224,11 @@ def generar_transacciones_mes(cuentas: list[dict], anio: int, mes: int) -> pd.Da
     tx_id = 1
     cuentas_digitales = [c for c in cuentas if c["tipo_cuenta"] == "cuenta_digital"]
 
+    deudas_por_cliente: dict[str, list[dict]] = {}
+    for c in cuentas:
+        if c["tipo_cuenta"] in ("tarjeta_credito", "prestamo_personal"):
+            deudas_por_cliente.setdefault(c["cliente_id"], []).append(c)
+
     for cuenta in cuentas_digitales:
         cliente_id = cuenta["cliente_id"]
         cuenta_id = cuenta["cuenta_id"]
@@ -289,6 +294,46 @@ def generar_transacciones_mes(cuentas: list[dict], anio: int, mes: int) -> pd.Da
                 "categoria": "transferencia_personal",
                 "monto": -monto_p2p if enviado else monto_p2p,
                 "contraparte": fake.name(),
+            })
+            tx_id += 1
+
+        # Pago recurrente: pago automático mensual hacia deudas propias del cliente
+        for deuda in deudas_por_cliente.get(cliente_id, []):
+            if random.random() < 0.85:
+                dia = random.choice([5, 10, 20])
+                fecha = date(anio, mes, dia)
+                if deuda["tipo_cuenta"] == "tarjeta_credito":
+                    monto_pago = round(float(np.random.uniform(300, deuda["limite_credito"] * 0.15)), 2)
+                    contraparte = "Pago Tarjeta de Crédito"
+                else:  # prestamo_personal
+                    monto_pago = round(float(np.random.uniform(500, 4000)), 2)
+                    contraparte = "Pago Préstamo Personal"
+                registros.append({
+                    "transaccion_id": f"TX-{anio}{mes:02d}-{tx_id:07d}",
+                    "cuenta_id": cuenta_id,
+                    "cliente_id": cliente_id,
+                    "fecha": fecha.isoformat(),
+                    "tipo_transaccion": "pago_recurrente",
+                    "categoria": "pago_deuda",
+                    "monto": -monto_pago,
+                    "contraparte": contraparte,
+                })
+                tx_id += 1
+
+        # Retiro de efectivo ocasional
+        if random.random() < 0.2:
+            dia = random.randint(1, 28)
+            fecha = date(anio, mes, dia)
+            monto_retiro = round(float(np.random.uniform(200, 3000)), 2)
+            registros.append({
+                "transaccion_id": f"TX-{anio}{mes:02d}-{tx_id:07d}",
+                "cuenta_id": cuenta_id,
+                "cliente_id": cliente_id,
+                "fecha": fecha.isoformat(),
+                "tipo_transaccion": "retiro",
+                "categoria": "efectivo",
+                "monto": -monto_retiro,
+                "contraparte": "Retiro Cajero",
             })
             tx_id += 1
 

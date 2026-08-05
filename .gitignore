@@ -17,3 +17,12 @@ data/
 
 # Logs de corridas locales
 logs/
+
+# Herramienta personal de automatizacion de documentos (no es parte del repo)
+docs_editor.py
+cleanup_preguntas.py
+credentials.json
+token.json
+
+# Zip temporal de descarga
+gfd:silver.zip
