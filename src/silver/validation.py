@@ -21,6 +21,76 @@ from dataclasses import dataclass, field
 from pyspark.sql import DataFrame, functions as F
 
 
+class SchemaValidationError(Exception):
+    """
+    Se lanza cuando una entidad no tiene las columnas que sus reglas de
+    negocio esperan. Esto ocurre ANTES de aplicar cualquier regla, para
+    fallar con un mensaje claro y accionable en vez de que Spark lance
+    un AnalysisException critico durante la construccion del plan de
+    ejecucion cuando finalmente intenta resolver una columna inexistente.
+
+    Se distingue deliberadamente de una violacion de regla de negocio
+    (datos invalidos, que van a cuarentena): una columna faltante es un
+    problema estructural, no un problema de calidad de un valor
+    individual, y no se puede evaluar fila por fila.
+    """
+
+    def __init__(
+        self,
+        entidad: str,
+        columnas_faltantes: list[str],
+        columnas_disponibles: list[str],
+    ):
+        self.entidad = entidad
+        self.columnas_faltantes = columnas_faltantes
+        self.columnas_disponibles = columnas_disponibles
+        mensaje = (
+            f"[{entidad}] La fuente no tiene las columnas que las reglas de negocio "
+            f"esperan: {columnas_faltantes}. "
+            f"Columnas disponibles en la fuente: {columnas_disponibles}. "
+            f"Revisa config/business_rules.yaml contra el esquema real de la entidad "
+            f"antes de reintentar — este no es un problema de calidad de datos, "
+            f"es un problema de esquema."
+        )
+        super().__init__(mensaje)
+
+
+def _required_columns_from_rules(rules: dict) -> set[str]:
+    """Recolecta todas las columnas que las reglas declaradas esperan
+    encontrar en el DataFrame, sin importar el tipo de regla."""
+    columnas: set[str] = set()
+
+    columnas.update(rules.get("not_null", []))
+    columnas.update(rules.get("unique", []))
+    columnas.update(rules.get("allowed_values", {}).keys())
+    columnas.update(rules.get("numeric_ranges", {}).keys())
+    columnas.update(rules.get("numeric_not_zero", []))
+    columnas.update(rules.get("date_not_future", []))
+    columnas.update(rules.get("foreign_keys", {}).keys())
+
+    for regla in rules.get("conditional_not_null", []):
+        columnas.add(regla["column"])
+        columnas.add(regla["when_column"])
+
+    return columnas
+
+
+def _validar_esquema(df: DataFrame, entity_name: str, rules: dict) -> None:
+    """Verifica que todas las columnas que las reglas esperan existan
+    en el DataFrame. Lanza SchemaValidationError si falta alguna,
+    ANTES de intentar aplicar ninguna regla."""
+    esperadas = _required_columns_from_rules(rules)
+    disponibles = set(df.columns)
+    faltantes = sorted(esperadas - disponibles)
+
+    if faltantes:
+        raise SchemaValidationError(
+            entidad=entity_name,
+            columnas_faltantes=faltantes,
+            columnas_disponibles=sorted(disponibles),
+        )
+
+
 @dataclass
 class ValidationReport:
     """Resultado de validar una entidad: conteos por regla violada."""
@@ -121,7 +191,13 @@ def validate_entity(
     Retorna (df_valido, df_cuarentena, reporte). Las columnas de trabajo
     (prefijo _viol_) no aparecen en ninguno de los dos DataFrames de
     salida, solo se usan internamente.
+
+    Lanza SchemaValidationError si a la entidad le falta alguna columna
+    que las reglas esperan — se verifica antes de tocar cualquier dato,
+    para fallar rapido y con un mensaje claro.
     """
+    _validar_esquema(df, entity_name, rules)
+
     silver_context = silver_context or {}
     filas_entrada = df.count()
     df = df.withColumn("_row_id_tmp", F.monotonically_increasing_id())

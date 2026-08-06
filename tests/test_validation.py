@@ -2,8 +2,9 @@
 tests/test_validation.py
 
 Pruebas automatizadas del motor generico de validacion. Formaliza los
-4 escenarios que se probaron manualmente durante el desarrollo de
-Silver: not_null, numeric_ranges, unique, y foreign_keys.
+escenarios que se probaron manualmente durante el desarrollo de
+Silver: not_null, numeric_ranges, unique, foreign_keys, y esquema
+incompleto.
 
 Cada test inyecta datos corruptos deliberadamente y confirma que el
 motor los aisla en cuarentena con el motivo correcto, sin afectar las
@@ -13,9 +14,11 @@ filas validas.
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.silver.validation import validate_entity  # noqa: E402
+from src.silver.validation import validate_entity, SchemaValidationError  # noqa: E402
 
 CLIENTES_RULES = {
     "primary_key": "cliente_id",
@@ -109,3 +112,21 @@ def test_foreign_key_aisla_referencia_inexistente(spark):
     assert reporte.filas_validas == 1
     assert reporte.filas_cuarentena == 1
     assert "fk_cliente_id" in reporte.violaciones_por_regla
+
+
+def test_columna_faltante_lanza_schema_validation_error(spark):
+    """
+    Si a la fuente le falta una columna que las reglas esperan (no un
+    valor faltante en una fila, sino la columna completa), el motor
+    debe fallar con un error claro y accionable, no con un
+    AnalysisException critico de Spark durante la ejecucion.
+    """
+    df = spark.createDataFrame(
+        [("CLI-000001",)], ["cliente_id"]
+    )  # falta ingreso_mensual_declarado por completo
+
+    with pytest.raises(SchemaValidationError) as exc_info:
+        validate_entity(df, "clientes", CLIENTES_RULES)
+
+    assert "ingreso_mensual_declarado" in exc_info.value.columnas_faltantes
+    assert "clientes" in str(exc_info.value)
