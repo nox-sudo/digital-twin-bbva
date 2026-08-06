@@ -77,7 +77,20 @@ def process_entity(
 ) -> DataFrame:
     logger.start_entity(entity_name)
 
-    df = spark.read.format("delta").load(f"{bronze_path}/{entity_name}")
+    try:
+        df = spark.read.format("delta").load(f"{bronze_path}/{entity_name}")
+    except Exception as e:
+        # Se envuelve el error con el nombre de la entidad de forma
+        # explicita, y se registra en el log ANTES de relanzar - sin
+        # esto, el log final no deja rastro de que esta entidad
+        # especifica fue la que hizo fallar la corrida.
+        logger.end_entity(entity_name, estatus="FAILED", error=str(e))
+        raise RuntimeError(
+            f"[{entity_name}] No se pudo leer desde Bronze en "
+            f"'{bronze_path}/{entity_name}'. Verifica que la ingesta "
+            f"Bronze para esta entidad se haya completado antes de "
+            f"correr Silver. Error original: {e}"
+        ) from e
 
     typing_fn = TYPING_REGISTRY.get(entity_name)
     if typing_fn:
