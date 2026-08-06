@@ -130,3 +130,33 @@ def test_columna_faltante_lanza_schema_validation_error(spark):
 
     assert "ingreso_mensual_declarado" in exc_info.value.columnas_faltantes
     assert "clientes" in str(exc_info.value)
+
+
+def test_unique_con_nulos_duplicados_no_desaparece(spark):
+    """
+    Regresion para el bug latente de la version anterior de
+    _check_unique: contaba ocurrencias con groupBy().join(), y un join
+    de igualdad nunca empareja NULL == NULL, asi que las filas con la
+    columna unique en NULL quedaban con _viol_unique = NULL en vez de
+    False. Como filter() descarta tanto False como NULL, esas filas
+    desaparecian silenciosamente — ni en Silver ni en cuarentena.
+
+    Esta regla usa "unique" SIN "not_null" sobre la misma columna
+    (a diferencia de business_rules.yaml, donde siempre van juntas),
+    justo para aislar el comportamiento de _check_unique por si solo.
+    """
+    rules = {
+        "primary_key": "cliente_id",
+        "unique": ["codigo_promocion"],
+    }
+    df = spark.createDataFrame(
+        [("CLI-000001", None), ("CLI-000002", None), ("CLI-000003", "PROMO10")],
+        ["cliente_id", "codigo_promocion"],
+    )
+
+    valido, cuarentena, reporte = validate_entity(df, "clientes", rules)
+
+    assert reporte.filas_entrada == 3
+    assert reporte.filas_validas == 3
+    assert reporte.filas_cuarentena == 0
+    assert valido.count() == 3

@@ -18,7 +18,7 @@ flujo principal).
 
 from dataclasses import dataclass, field
 
-from pyspark.sql import DataFrame, functions as F
+from pyspark.sql import DataFrame, Window, functions as F
 
 
 class SchemaValidationError(Exception):
@@ -109,11 +109,29 @@ def _check_not_null(df: DataFrame, columns: list[str]) -> DataFrame:
 
 
 def _check_unique(df: DataFrame, columns: list[str]) -> DataFrame:
+    """
+    Cuenta ocurrencias por valor usando una funcion de ventana en vez
+    de groupBy().join(). La version anterior hacia una agregacion
+    (shuffle) y despues un join (otro shuffle) para volver a pegar el
+    conteo a cada fila. La funcion de ventana logra el mismo resultado
+    en un solo shuffle, lo cual importa a partir de un volumen alto de
+    filas.
+
+    Efecto secundario intencional en NULLs duplicados: la version
+    anterior dejaba _cnt_{col} en NULL para filas con col nulo (un
+    join de igualdad nunca empareja NULL == NULL), lo que propagaba
+    _viol_unique_{col} = NULL y, mas adelante, hacia que esas filas
+    desaparecieran silenciosamente de valido y de cuarentena (filter()
+    descarta tanto False como NULL). La funcion de ventana particiona
+    los nulos en un solo grupo igual que groupBy, pero F.count(col)
+    cuenta valores no nulos dentro de esa particion, dando 0 en vez de
+    NULL — así una columna unique-pero-no-not_null con nulos
+    duplicados ahora se clasifica correctamente como valida en vez de
+    perderse. Ver test_unique_con_nulos_duplicados_no_desaparece.
+    """
     for col in columns:
-        window_counts = (
-            df.groupBy(col).count().withColumnRenamed("count", f"_cnt_{col}")
-        )
-        df = df.join(window_counts, on=col, how="left")
+        window = Window.partitionBy(col)
+        df = df.withColumn(f"_cnt_{col}", F.count(col).over(window))
         df = df.withColumn(f"_viol_unique_{col}", F.col(f"_cnt_{col}") > 1)
         df = df.drop(f"_cnt_{col}")
     return df
@@ -164,6 +182,17 @@ def _check_conditional_not_null(df: DataFrame, rules: list[dict]) -> DataFrame:
 
 
 def _check_foreign_keys(df: DataFrame, rules: dict, silver_context: dict) -> DataFrame:
+    """
+    Valida llaves foraneas contra otra entidad ya procesada. Se
+    fuerza un broadcast join: las tablas de referencia (ej. clientes,
+    cuentas) son tipicamente mucho mas pequeñas que la tabla que se
+    valida (ej. transacciones), asi que enviar la copia pequeña a
+    todos los executors evita un shuffle costoso en el lado grande.
+    Sin este hint, Spark puede decidir un shuffle join en ambos lados
+    si no detecta automaticamente cual tabla es la pequeña. Es
+    puramente un hint de ejecucion: mismo join, mismas filas
+    resultantes, no cambia el comportamiento.
+    """
     for col, fk in rules.items():
         ref_entity = fk["references_entity"]
         ref_col = fk["references_column"]
@@ -174,7 +203,7 @@ def _check_foreign_keys(df: DataFrame, rules: dict, silver_context: dict) -> Dat
             )
         ref_ids = silver_context[ref_entity].select(ref_col).distinct()
         ref_ids = ref_ids.withColumnRenamed(ref_col, f"_ref_{col}")
-        df = df.join(ref_ids, df[col] == F.col(f"_ref_{col}"), how="left")
+        df = df.join(F.broadcast(ref_ids), df[col] == F.col(f"_ref_{col}"), how="left")
         df = df.withColumn(f"_viol_fk_{col}", F.col(f"_ref_{col}").isNull())
         df = df.drop(f"_ref_{col}")
     return df
