@@ -18,17 +18,18 @@ from pyspark.sql.types import DecimalType
 
 def type_clientes(df: DataFrame) -> DataFrame:
     return (
-        df
-        .withColumn("fecha_nacimiento", F.to_date("fecha_nacimiento"))
+        df.withColumn("fecha_nacimiento", F.to_date("fecha_nacimiento"))
         .withColumn("fecha_alta", F.to_date("fecha_alta"))
-        .withColumn("ingreso_mensual_declarado", F.col("ingreso_mensual_declarado").cast(DecimalType(12, 2)))
+        .withColumn(
+            "ingreso_mensual_declarado",
+            F.col("ingreso_mensual_declarado").cast(DecimalType(12, 2)),
+        )
     )
 
 
 def type_cuentas(df: DataFrame) -> DataFrame:
     return (
-        df
-        .withColumn("fecha_apertura", F.to_date("fecha_apertura"))
+        df.withColumn("fecha_apertura", F.to_date("fecha_apertura"))
         .withColumn("saldo_actual", F.col("saldo_actual").cast(DecimalType(12, 2)))
         .withColumn("limite_credito", F.col("limite_credito").cast(DecimalType(12, 2)))
         .withColumn("monto_original", F.col("monto_original").cast(DecimalType(12, 2)))
@@ -37,19 +38,20 @@ def type_cuentas(df: DataFrame) -> DataFrame:
 
 def type_cetes_inversiones(df: DataFrame) -> DataFrame:
     return (
-        df
-        .withColumn("fecha_inicio", F.to_date("fecha_inicio"))
+        df.withColumn("fecha_inicio", F.to_date("fecha_inicio"))
         .withColumn("fecha_vencimiento", F.to_date("fecha_vencimiento"))
-        .withColumn("monto_invertido", F.col("monto_invertido").cast(DecimalType(12, 2)))
-        .withColumn("tasa_interes_anual", F.col("tasa_interes_anual").cast(DecimalType(6, 4)))
+        .withColumn(
+            "monto_invertido", F.col("monto_invertido").cast(DecimalType(12, 2))
+        )
+        .withColumn(
+            "tasa_interes_anual", F.col("tasa_interes_anual").cast(DecimalType(6, 4))
+        )
     )
 
 
 def type_transacciones(df: DataFrame) -> DataFrame:
-    return (
-        df
-        .withColumn("fecha", F.to_date("fecha"))
-        .withColumn("monto", F.col("monto").cast(DecimalType(12, 2)))
+    return df.withColumn("fecha", F.to_date("fecha")).withColumn(
+        "monto", F.col("monto").cast(DecimalType(12, 2))
     )
 
 
