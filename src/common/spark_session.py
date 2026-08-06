@@ -28,17 +28,19 @@ def get_spark_session(app_name: str) -> SparkSession:
     shuffle_partitions = os.environ.get("SPARK_SHUFFLE_PARTITIONS", "8")
 
     builder = (
-        SparkSession.builder
-        .appName(app_name)
+        SparkSession.builder.appName(app_name)
         .master(master_url)
         .config("spark.sql.shuffle.partitions", shuffle_partitions)
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog",
-                "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .config(
+            "spark.sql.catalog.spark_catalog",
+            "org.apache.spark.sql.delta.catalog.DeltaCatalog",
+        )
     )
 
     try:
         from delta import configure_spark_with_delta_pip
+
         builder = configure_spark_with_delta_pip(builder)
     except ImportError:
         pass  # delta-spark no instalado; asume que los JARs ya estan en el classpath (caso Docker)

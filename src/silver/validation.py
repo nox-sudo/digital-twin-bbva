@@ -24,6 +24,7 @@ from pyspark.sql import DataFrame, functions as F
 @dataclass
 class ValidationReport:
     """Resultado de validar una entidad: conteos por regla violada."""
+
     entidad: str
     filas_entrada: int
     filas_validas: int
@@ -39,7 +40,9 @@ def _check_not_null(df: DataFrame, columns: list[str]) -> DataFrame:
 
 def _check_unique(df: DataFrame, columns: list[str]) -> DataFrame:
     for col in columns:
-        window_counts = df.groupBy(col).count().withColumnRenamed("count", f"_cnt_{col}")
+        window_counts = (
+            df.groupBy(col).count().withColumnRenamed("count", f"_cnt_{col}")
+        )
         df = df.join(window_counts, on=col, how="left")
         df = df.withColumn(f"_viol_unique_{col}", F.col(f"_cnt_{col}") > 1)
         df = df.drop(f"_cnt_{col}")
@@ -144,9 +147,15 @@ def validate_entity(
 
     violaciones_por_regla = {}
     if viol_cols:
-        counts_row = df.select([F.sum(F.col(c).cast("int")).alias(c) for c in viol_cols]).collect()[0]
-        violaciones_por_regla = {c.replace("_viol_", ""): (counts_row[c] or 0) for c in viol_cols}
-        violaciones_por_regla = {k: v for k, v in violaciones_por_regla.items() if v > 0}
+        counts_row = df.select(
+            [F.sum(F.col(c).cast("int")).alias(c) for c in viol_cols]
+        ).collect()[0]
+        violaciones_por_regla = {
+            c.replace("_viol_", ""): (counts_row[c] or 0) for c in viol_cols
+        }
+        violaciones_por_regla = {
+            k: v for k, v in violaciones_por_regla.items() if v > 0
+        }
 
     if viol_cols:
         es_invalido = F.lit(False)
@@ -167,7 +176,14 @@ def validate_entity(
         "_row_id_tmp", "_es_invalido", "_motivo_cuarentena", *viol_cols
     )
     df_cuarentena = df.filter(F.col("_es_invalido")).select(
-        "_row_id_tmp", "_motivo_cuarentena", *[c for c in df.columns if not c.startswith("_viol_") and c not in ("_row_id_tmp", "_es_invalido", "_motivo_cuarentena")]
+        "_row_id_tmp",
+        "_motivo_cuarentena",
+        *[
+            c
+            for c in df.columns
+            if not c.startswith("_viol_")
+            and c not in ("_row_id_tmp", "_es_invalido", "_motivo_cuarentena")
+        ],
     )
 
     filas_validas = df_valido.count()

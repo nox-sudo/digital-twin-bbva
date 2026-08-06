@@ -32,10 +32,10 @@ from pyspark.sql import DataFrame, functions as F, Window
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from src.common.spark_session import get_spark_session
-from src.common.logging_utils import PipelineRunLogger
-from src.silver.validation import validate_entity
-from src.silver.typing_rules import TYPING_REGISTRY
+from src.common.spark_session import get_spark_session  # noqa: E402
+from src.common.logging_utils import PipelineRunLogger  # noqa: E402
+from src.silver.validation import validate_entity  # noqa: E402
+from src.silver.typing_rules import TYPING_REGISTRY  # noqa: E402
 
 # Orden de procesamiento: entidades sin dependencias primero.
 PROCESSING_ORDER = ["clientes", "cuentas", "cetes_inversiones", "transacciones"]
@@ -53,7 +53,9 @@ def deduplicate(df: DataFrame, primary_key: str) -> tuple[DataFrame, int]:
     """Se queda con el registro mas reciente por llave primaria,
     segun _ingestion_timestamp heredado de Bronze."""
     filas_antes = df.count()
-    window = Window.partitionBy(primary_key).orderBy(F.col("_ingestion_timestamp").desc())
+    window = Window.partitionBy(primary_key).orderBy(
+        F.col("_ingestion_timestamp").desc()
+    )
     df = (
         df.withColumn("_rn", F.row_number().over(window))
         .filter(F.col("_rn") == 1)
@@ -64,8 +66,14 @@ def deduplicate(df: DataFrame, primary_key: str) -> tuple[DataFrame, int]:
 
 
 def process_entity(
-    spark, entity_name: str, bronze_path: str, silver_path: str,
-    quarantine_path: str, rules: dict, silver_context: dict, logger: PipelineRunLogger,
+    spark,
+    entity_name: str,
+    bronze_path: str,
+    silver_path: str,
+    quarantine_path: str,
+    rules: dict,
+    silver_context: dict,
+    logger: PipelineRunLogger,
 ) -> DataFrame:
     logger.start_entity(entity_name)
 
@@ -82,13 +90,15 @@ def process_entity(
     )
 
     (
-        df_valido.write.mode("overwrite").format("delta")
+        df_valido.write.mode("overwrite")
+        .format("delta")
         .save(f"{silver_path}/{entity_name}")
     )
 
     if reporte.filas_cuarentena > 0:
         (
-            df_cuarentena.write.mode("overwrite").format("delta")
+            df_cuarentena.write.mode("overwrite")
+            .format("delta")
             .save(f"{quarantine_path}/{entity_name}")
         )
 
@@ -124,8 +134,14 @@ def main():
     try:
         for entity_name in PROCESSING_ORDER:
             df_valido = process_entity(
-                spark, entity_name, args.bronze, args.silver,
-                args.quarantine, rules, silver_context, logger,
+                spark,
+                entity_name,
+                args.bronze,
+                args.silver,
+                args.quarantine,
+                rules,
+                silver_context,
+                logger,
             )
             silver_context[entity_name] = df_valido
     except Exception as e:

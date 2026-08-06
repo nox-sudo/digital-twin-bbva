@@ -50,11 +50,16 @@ class PipelineRunLogger:
             "layer": self.layer,
             "inicio": self.run_start.isoformat(),
             "fin": run_end.isoformat(),
-            "duracion_total_segundos": round((run_end - self.run_start).total_seconds(), 3),
+            "duracion_total_segundos": round(
+                (run_end - self.run_start).total_seconds(), 3
+            ),
             "status": status,
             "entities": self.entities,
         }
-        out_path = self.log_dir / f"{self.layer}_run_{self.run_start.strftime('%Y%m%d_%H%M%S')}.json"
+        out_path = (
+            self.log_dir
+            / f"{self.layer}_run_{self.run_start.strftime('%Y%m%d_%H%M%S')}.json"
+        )
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=2, ensure_ascii=False)
         print(f"[log] resumen de corrida escrito en {out_path}")
