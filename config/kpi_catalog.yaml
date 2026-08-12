@@ -1,0 +1,83 @@
+# config/kpi_catalog.yaml
+#
+# Metadata de los 12 KPIs del catalogo. La logica de CALCULO de cada
+# uno vive en src/gold/kpi_definitions.py (no se puede expresar un
+# calculo arbitrario de forma puramente declarativa como si hicimos
+# con las reglas de negocio de Silver). Este archivo declara el
+# nombre, categoria, y unidad de cada KPI, para que el orquestador y
+# los consumidores (dashboard, RAG) tengan una sola fuente de verdad
+# sobre el catalogo, sin tener que leerla desde el codigo Python.
+
+ingreso_mensual_promedio:
+  categoria: ingresos
+  nombre: Ingreso mensual promedio
+  unidad: MXN
+  tipo_valor: numerico
+
+estabilidad_ingreso:
+  categoria: ingresos
+  nombre: Estabilidad de ingreso
+  unidad: desviacion_estandar_MXN
+  tipo_valor: numerico
+
+gasto_mensual_total:
+  categoria: gastos
+  nombre: Gasto mensual total
+  unidad: MXN
+  tipo_valor: numerico
+
+gasto_promedio_3_meses:
+  categoria: gastos
+  nombre: Gasto promedio ultimos 3 meses
+  unidad: MXN
+  tipo_valor: numerico
+
+categoria_gasto_dominante:
+  categoria: gastos
+  nombre: Categoria de gasto dominante
+  unidad: categoria
+  tipo_valor: texto
+
+capacidad_ahorro:
+  categoria: ahorro_y_liquidez
+  nombre: Capacidad de ahorro
+  unidad: MXN
+  tipo_valor: numerico
+
+saldo_liquido_disponible:
+  categoria: ahorro_y_liquidez
+  nombre: Saldo liquido disponible
+  unidad: MXN
+  tipo_valor: numerico
+
+ratio_endeudamiento:
+  categoria: riesgo_y_endeudamiento
+  nombre: Ratio de endeudamiento
+  unidad: ratio
+  tipo_valor: numerico
+
+uso_linea_credito:
+  categoria: riesgo_y_endeudamiento
+  nombre: Uso de linea de credito
+  unidad: ratio
+  tipo_valor: numerico
+
+probabilidad_impago:
+  categoria: riesgo_y_endeudamiento
+  nombre: Probabilidad de impago
+  unidad: probabilidad
+  tipo_valor: numerico
+  pendiente: true
+  nota_pendiente: "Requiere el modelo de clasificacion de riesgo (aun no construido). Valor NULL hasta entonces."
+
+frecuencia_transacciones:
+  categoria: comportamiento_transaccional
+  nombre: Frecuencia de transacciones
+  unidad: conteo_mensual
+  tipo_valor: numerico
+
+actividad_p2p:
+  categoria: comportamiento_transaccional
+  nombre: Actividad P2P
+  unidad: MXN
+  tipo_valor: numerico
