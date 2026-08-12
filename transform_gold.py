@@ -28,9 +28,9 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from src.common.spark_session import get_spark_session
-from src.common.logging_utils import PipelineRunLogger
-from src.gold.kpi_definitions import KPI_REGISTRY
+from src.common.spark_session import get_spark_session  # noqa: E402
+from src.common.logging_utils import PipelineRunLogger  # noqa: E402
+from src.gold.kpi_definitions import KPI_REGISTRY  # noqa: E402
 
 
 def cargar_silver_context(spark, silver_path: str) -> dict:
@@ -62,8 +62,17 @@ def calcular_kpi(kpi_id: str, metadata: dict, silver_context: dict) -> pd.DataFr
     resultado["nombre"] = metadata["nombre"]
     resultado["fecha_calculo"] = datetime.now()
 
-    return resultado[["cliente_id", "kpi_id", "categoria", "nombre",
-                       "valor_numerico", "valor_texto", "fecha_calculo"]]
+    return resultado[
+        [
+            "cliente_id",
+            "kpi_id",
+            "categoria",
+            "nombre",
+            "valor_numerico",
+            "valor_texto",
+            "fecha_calculo",
+        ]
+    ]
 
 
 def main():
@@ -96,12 +105,17 @@ def main():
             logger.end_entity(
                 kpi_id,
                 filas=len(df_kpi),
-                clientes_con_valor=int(df_kpi["valor_numerico"].notna().sum()
-                                        + df_kpi["valor_texto"].notna().sum()),
+                clientes_con_valor=int(
+                    df_kpi["valor_numerico"].notna().sum()
+                    + df_kpi["valor_texto"].notna().sum()
+                ),
                 pendiente=pendiente,
             )
 
-        tabla_final = pd.concat(resultados, ignore_index=True)
+        # DuckDB referencia esta variable por nombre dentro del SQL de abajo
+        # (replacement scan sobre el frame de Python) - no es un uso normal
+        # de Python, asi que flake8 no lo detecta y la marca como no usada.
+        tabla_final = pd.concat(resultados, ignore_index=True)  # noqa: F841
 
         con = duckdb.connect(args.out)
         con.execute("DROP TABLE IF EXISTS gold_kpis")
@@ -109,8 +123,10 @@ def main():
         total_filas = con.execute("SELECT COUNT(*) FROM gold_kpis").fetchone()[0]
         con.close()
 
-        print(f"\nGold escrito en {args.out}: {total_filas} filas "
-              f"({len(catalogo)} KPIs x clientes)")
+        print(
+            f"\nGold escrito en {args.out}: {total_filas} filas "
+            f"({len(catalogo)} KPIs x clientes)"
+        )
 
     except Exception as e:
         status = f"FAILED: {e}"

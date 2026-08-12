@@ -7,7 +7,7 @@ se puede expresar de forma puramente declarativa (son agregaciones,
 joins, y ventanas de tiempo distintas entre si) - por eso cada KPI es
 una funcion pequeña, no una entrada de configuracion.
 
-Cada funcion recibe el silver_context (diccionario de entidad -> 
+Cada funcion recibe el silver_context (diccionario de entidad ->
 DataFrame de PySpark) y devuelve un DataFrame de pandas con las
 columnas: cliente_id, valor_numerico (o valor_texto para KPIs de
 categoria).
@@ -24,8 +24,7 @@ def kpi_ingreso_mensual_promedio(ctx):
     tx = ctx["transacciones"]
     nomina = tx.filter(F.col("tipo_transaccion") == "nomina")
     por_mes = (
-        nomina
-        .withColumn("mes", F.date_format("fecha", "yyyy-MM"))
+        nomina.withColumn("mes", F.date_format("fecha", "yyyy-MM"))
         .groupBy("cliente_id", "mes")
         .agg(F.sum("monto").alias("ingreso_mes"))
     )
@@ -39,8 +38,7 @@ def kpi_estabilidad_ingreso(ctx):
     tx = ctx["transacciones"]
     nomina = tx.filter(F.col("tipo_transaccion") == "nomina")
     por_mes = (
-        nomina
-        .withColumn("mes", F.date_format("fecha", "yyyy-MM"))
+        nomina.withColumn("mes", F.date_format("fecha", "yyyy-MM"))
         .groupBy("cliente_id", "mes")
         .agg(F.sum("monto").alias("ingreso_mes"))
     )
@@ -54,8 +52,7 @@ def kpi_gasto_mensual_total(ctx):
     tx = ctx["transacciones"]
     compras = tx.filter(F.col("tipo_transaccion") == "compra")
     por_mes = (
-        compras
-        .withColumn("mes", F.date_format("fecha", "yyyy-MM"))
+        compras.withColumn("mes", F.date_format("fecha", "yyyy-MM"))
         .groupBy("cliente_id", "mes")
         .agg(F.sum(F.abs("monto")).alias("gasto_mes"))
     )
@@ -79,8 +76,7 @@ def kpi_gasto_promedio_3_meses(ctx):
         (F.col("tipo_transaccion") == "compra") & (F.col("fecha") >= fecha_corte)
     )
     por_mes = (
-        compras
-        .withColumn("mes", F.date_format("fecha", "yyyy-MM"))
+        compras.withColumn("mes", F.date_format("fecha", "yyyy-MM"))
         .groupBy("cliente_id", "mes")
         .agg(F.sum(F.abs("monto")).alias("gasto_mes"))
     )
@@ -93,15 +89,17 @@ def kpi_gasto_promedio_3_meses(ctx):
 def kpi_categoria_gasto_dominante(ctx):
     tx = ctx["transacciones"]
     compras = tx.filter(F.col("tipo_transaccion") == "compra")
-    por_categoria = (
-        compras.groupBy("cliente_id", "categoria")
-        .agg(F.sum(F.abs("monto")).alias("total_categoria"))
+    por_categoria = compras.groupBy("cliente_id", "categoria").agg(
+        F.sum(F.abs("monto")).alias("total_categoria")
     )
     window_rank = (
-        por_categoria
-        .withColumn(
+        por_categoria.withColumn(
             "rango",
-            F.row_number().over(Window.partitionBy("cliente_id").orderBy(F.col("total_categoria").desc())),
+            F.row_number().over(
+                Window.partitionBy("cliente_id").orderBy(
+                    F.col("total_categoria").desc()
+                )
+            ),
         )
         .filter(F.col("rango") == 1)
         .select("cliente_id", F.col("categoria").alias("valor_texto"))
@@ -110,7 +108,9 @@ def kpi_categoria_gasto_dominante(ctx):
 
 
 def kpi_capacidad_ahorro(ctx):
-    ingreso = kpi_ingreso_mensual_promedio(ctx).rename(columns={"valor_numerico": "ingreso"})
+    ingreso = kpi_ingreso_mensual_promedio(ctx).rename(
+        columns={"valor_numerico": "ingreso"}
+    )
     gasto = kpi_gasto_mensual_total(ctx).rename(columns={"valor_numerico": "gasto"})
     combinado = ingreso.merge(gasto, on="cliente_id", how="outer").fillna(0)
     combinado["valor_numerico"] = combinado["ingreso"] - combinado["gasto"]
@@ -129,11 +129,15 @@ def kpi_saldo_liquido_disponible(ctx):
 def kpi_ratio_endeudamiento(ctx):
     cuentas = ctx["cuentas"]
     deuda = (
-        cuentas.filter(F.col("tipo_cuenta").isin("tarjeta_credito", "prestamo_personal"))
+        cuentas.filter(
+            F.col("tipo_cuenta").isin("tarjeta_credito", "prestamo_personal")
+        )
         .groupBy("cliente_id")
         .agg(F.sum("saldo_actual").alias("deuda_total"))
     )
-    ingreso = kpi_ingreso_mensual_promedio(ctx).rename(columns={"valor_numerico": "ingreso"})
+    ingreso = kpi_ingreso_mensual_promedio(ctx).rename(
+        columns={"valor_numerico": "ingreso"}
+    )
 
     deuda_pd = deuda.toPandas()
     combinado = deuda_pd.merge(ingreso, on="cliente_id", how="left")
@@ -145,7 +149,9 @@ def kpi_ratio_endeudamiento(ctx):
 def kpi_uso_linea_credito(ctx):
     cuentas = ctx["cuentas"]
     tarjetas = cuentas.filter(F.col("tipo_cuenta") == "tarjeta_credito")
-    tarjetas = tarjetas.filter(F.col("limite_credito").isNotNull() & (F.col("limite_credito") > 0))
+    tarjetas = tarjetas.filter(
+        F.col("limite_credito").isNotNull() & (F.col("limite_credito") > 0)
+    )
     resultado = tarjetas.select(
         "cliente_id",
         (F.col("saldo_actual") / F.col("limite_credito")).alias("valor_numerico"),
