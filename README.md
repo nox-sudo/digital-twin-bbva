@@ -9,8 +9,8 @@ Plataforma de Ingeniería de Datos que construye un gemelo digital financiero pe
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)
 ![Airflow](https://img.shields.io/badge/orquestacion-Apache%20Airflow-017CEE)
 
-Path Data Engineering — BBVA / Universidad Tecmilenio
-Proyecto individual, junio–diciembre 2026 · Mentor: Oscar Daniel Florín Beltrán
+Path Data Engineering — BBVA | Universidad Tecmilenio
+Proyecto individual, Julio–Noviembre 2026 · Mentor: Oscar Daniel Florín Beltrán
 
 ---
 
