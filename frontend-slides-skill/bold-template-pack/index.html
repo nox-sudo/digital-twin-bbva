@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Bold template pack — example deck</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="../viewport-base.css" />
+  <link rel="stylesheet" href="bold.css" />
+</head>
+<body>
+  <div id="stage">
+    <div id="deck">
+
+      <!-- Title / hero slide -->
+      <section class="slide slide--hero is-active" id="slide-1">
+        <div class="col center grow gap-md" style="text-align:center;">
+          <div class="eyebrow">Example deck &middot; Bold preset</div>
+          <h1 class="slide-title reveal" style="--i:0">Say the big thing<br />first.</h1>
+          <p class="lede reveal" style="--i:1">One sentence of framing — what this deck is, for whom, and why now.</p>
+        </div>
+        <div class="slide-footer">
+          <span>Company name</span>
+          <span class="slide-counter"></span>
+        </div>
+      </section>
+
+      <!-- Section header -->
+      <section class="slide" id="slide-2">
+        <div class="col center grow gap-sm">
+          <div class="eyebrow">01</div>
+          <h1 class="slide-title">The problem</h1>
+        </div>
+        <div class="slide-footer">
+          <span>Company name</span>
+          <span class="slide-counter"></span>
+        </div>
+      </section>
+
+      <!-- Content + image, two column -->
+      <section class="slide" id="slide-3">
+        <div class="eyebrow">Context</div>
+        <h2 class="slide-title">One idea per slide, said plainly</h2>
+        <div class="row grow gap-lg">
+          <ul class="col grow gap-sm reveal-group" style="justify-content:center; list-style:none; margin:0; padding:0;">
+            <li class="reveal" style="--i:0;">Short, scannable point one.</li>
+            <li class="reveal" style="--i:1;">Short, scannable point two.</li>
+            <li class="reveal" style="--i:2;">Short, scannable point three.</li>
+          </ul>
+          <div class="image-frame grow">Replace with a screenshot or photo (image-frame)</div>
+        </div>
+        <div class="slide-footer">
+          <span>Company name</span>
+          <span class="slide-counter"></span>
+        </div>
+      </section>
+
+      <!-- Stat callout -->
+      <section class="slide" id="slide-4">
+        <div class="col center grow gap-sm" style="text-align:center;">
+          <div class="eyebrow">Traction</div>
+          <div class="stat-number" data-count-to="42" data-suffix="%">42%</div>
+          <div class="stat-label">One line explaining what this stat means and over what period.</div>
+        </div>
+        <div class="slide-footer">
+          <span>Company name</span>
+          <span class="slide-counter"></span>
+        </div>
+      </section>
+
+      <!-- Quote -->
+      <section class="slide" id="slide-5">
+        <div class="col center grow gap-sm" style="max-width:1400px; margin:0 auto; text-align:center;">
+          <div class="quote-mark">&ldquo;</div>
+          <p class="lede">A short, punchy quote from a customer, advisor, or teammate goes here — one or two sentences, no more.</p>
+          <div class="stat-label" style="margin-top:24px;">— Name, Title, Company</div>
+        </div>
+        <div class="slide-footer">
+          <span>Company name</span>
+          <span class="slide-counter"></span>
+        </div>
+      </section>
+
+      <!-- Closing -->
+      <section class="slide slide--hero" id="slide-6">
+        <div class="col center grow gap-md" style="text-align:center;">
+          <h1 class="slide-title">Thank you</h1>
+          <p class="lede">contact@example.com &middot; example.com</p>
+        </div>
+        <div class="slide-footer">
+          <span>Company name</span>
+          <span class="slide-counter"></span>
+        </div>
+      </section>
+
+    </div>
+  </div>
+  <div id="progress"></div>
+
+  <script>
+    (function () {
+      const CANVAS_W = 1920;
+      const CANVAS_H = 1080;
+      const deck = document.getElementById("deck");
+      const slides = Array.from(document.querySelectorAll(".slide"));
+      const progress = document.getElementById("progress");
+      let current = Math.max(0, slides.findIndex((s) => s.classList.contains("is-active")));
+
+      function fitStage() {
+        const scale = Math.min(window.innerWidth / CANVAS_W, window.innerHeight / CANVAS_H);
+        deck.style.transform = `scale(${scale})`;
+      }
+
+      function animateCountUp(el) {
+        const to = Number(el.dataset.countTo || 0);
+        const suffix = el.dataset.suffix || "";
+        const start = performance.now();
+        const duration = 900;
+        function tick(now) {
+          const t = Math.min(1, (now - start) / duration);
+          const eased = 1 - Math.pow(1 - t, 3);
+          el.textContent = Math.round(to * eased).toLocaleString() + suffix;
+          if (t < 1) requestAnimationFrame(tick);
+        }
+        requestAnimationFrame(tick);
+      }
+
+      function showSlide(index) {
+        if (index < 0 || index >= slides.length) return;
+        slides[current].classList.remove("is-active");
+        current = index;
+        const activeSlide = slides[current];
+        activeSlide.classList.add("is-active");
+        document.querySelectorAll(".slide-counter").forEach((el) => {
+          el.textContent = `${current + 1} / ${slides.length}`;
+        });
+        activeSlide.querySelectorAll(".reveal-group .reveal").forEach((el, i) => {
+          el.style.setProperty("--i", i);
+        });
+        const stat = activeSlide.querySelector(".stat-number[data-count-to]");
+        if (stat) animateCountUp(stat);
+        progress.style.width = `${((current + 1) / slides.length) * 100}%`;
+        history.replaceState(null, "", `#slide-${current + 1}`);
+      }
+
+      function next() { showSlide(current + 1); }
+      function prev() { showSlide(current - 1); }
+
+      window.addEventListener("resize", fitStage);
+      window.addEventListener("keydown", (e) => {
+        if (["ArrowRight", "PageDown", " "].includes(e.key)) next();
+        if (["ArrowLeft", "PageUp"].includes(e.key)) prev();
+      });
+      document.getElementById("stage").addEventListener("click", (e) => {
+        const half = window.innerWidth / 2;
+        e.clientX > half ? next() : prev();
+      });
+
+      const hashIndex = parseInt((location.hash || "").replace("#slide-", ""), 10);
+      if (!Number.isNaN(hashIndex) && hashIndex >= 1) current = hashIndex - 1;
+
+      fitStage();
+      showSlide(current);
+    })();
+  </script>
+</body>
+</html>

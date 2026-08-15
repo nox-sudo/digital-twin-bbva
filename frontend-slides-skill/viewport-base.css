@@ -1,0 +1,215 @@
+/*
+ * viewport-base.css
+ * Include this, unmodified, in every deck. Preset files (e.g.
+ * bold-template-pack/bold.css) layer palette/type on top of it — they
+ * should never redefine sizing, scaling, or print rules from this file.
+ */
+
+:root {
+  --slide-w: 1920px;
+  --slide-h: 1080px;
+  --safe-margin: 96px;
+
+  /* Overridable by a preset file */
+  --bg: #ffffff;
+  --fg: #111111;
+  --accent: #2563eb;
+  --font-body: "Inter", "Helvetica Neue", Arial, sans-serif;
+  --font-display: var(--font-body);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: #0b0b0c; /* letterboxing behind the scaled deck */
+  color: var(--fg);
+  font-family: var(--font-body);
+  overflow: hidden;
+}
+
+/* ---------- Scale-to-fit rig ---------- */
+
+/*
+ * #stage centers a fixed 1920x1080 #deck and scales it uniformly via a
+ * transform set by the script in html-template.md. Never size #deck with
+ * vw/vh/% — it is always exactly --slide-w by --slide-h; only the scale
+ * factor changes.
+ */
+#stage {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#deck {
+  position: relative;
+  width: var(--slide-w);
+  height: var(--slide-h);
+  transform-origin: center center;
+  flex: none;
+}
+
+.slide {
+  position: absolute;
+  inset: 0;
+  width: var(--slide-w);
+  height: var(--slide-h);
+  padding: var(--safe-margin);
+  background: var(--bg);
+  color: var(--fg);
+  display: flex;
+  flex-direction: column;
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.slide.is-active {
+  opacity: 1;
+  pointer-events: auto;
+  visibility: visible;
+}
+
+/* ---------- Typography scale (tuned for the 1920x1080 frame) ---------- */
+
+.eyebrow {
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0 0 16px;
+}
+
+h1.slide-title {
+  font-family: var(--font-display);
+  font-size: 88px;
+  line-height: 1.05;
+  font-weight: 700;
+  margin: 0 0 24px;
+}
+
+h2.slide-title {
+  font-family: var(--font-display);
+  font-size: 60px;
+  line-height: 1.1;
+  font-weight: 700;
+  margin: 0 0 32px;
+}
+
+.slide p, .slide li {
+  font-size: 32px;
+  line-height: 1.45;
+}
+
+.slide .lede {
+  font-size: 40px;
+  line-height: 1.4;
+  font-weight: 400;
+}
+
+.stat-number {
+  font-family: var(--font-display);
+  font-size: 140px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.stat-label {
+  font-size: 28px;
+  color: var(--fg);
+  opacity: 0.7;
+}
+
+/* ---------- Layout utilities ---------- */
+
+.row { display: flex; flex-direction: row; }
+.col { display: flex; flex-direction: column; }
+.gap-sm { gap: 24px; }
+.gap-md { gap: 48px; }
+.gap-lg { gap: 96px; }
+.grow { flex: 1; }
+.center { align-items: center; justify-content: center; }
+.spread { justify-content: space-between; }
+
+.slide-footer {
+  position: absolute;
+  left: var(--safe-margin);
+  right: var(--safe-margin);
+  bottom: 40px;
+  display: flex;
+  justify-content: space-between;
+  font-size: 20px;
+  opacity: 0.5;
+}
+
+/* ---------- Print / PDF export ---------- */
+/*
+ * scripts/export-pdf.sh renders this deck with print CSS active. Each
+ * .slide becomes one physical page at exactly the canvas size — no
+ * scale-to-fit, no letterboxing, one slide per page.
+ */
+@media print {
+  @page {
+    size: 1920px 1080px;
+    margin: 0;
+  }
+
+  html, body {
+    overflow: visible;
+    background: none;
+  }
+
+  #stage {
+    position: static;
+    display: block;
+  }
+
+  #deck {
+    transform: none !important;
+    width: auto;
+    height: auto;
+  }
+
+  .slide {
+    position: relative;
+    opacity: 1 !important;
+    visibility: visible !important;
+    break-after: page;
+    page-break-after: always;
+  }
+
+  .slide:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+
+  /*
+   * Entrance-animation patterns (.reveal, etc. — see animation-patterns.md)
+   * only reach their visible state via the .slide.is-active JS toggle,
+   * which only ever applies to one slide at a time in the live DOM. Force
+   * every element back to its resting, fully-visible state for print so
+   * every page renders complete rather than mid-animation.
+   */
+  .slide * {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+    animation: none !important;
+    visibility: visible !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
