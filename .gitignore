@@ -29,3 +29,8 @@ gfd:silver.zip
 
 # Config local de Docker (UID y ruta absoluta, especifico por maquina)
 .env
+
+# Artefactos de ejecucion del modelo de riesgo (se regeneran con
+# train_model.py: el .joblib y el grafico SHAP no son codigo fuente)
+models/*.joblib
+models/*.png

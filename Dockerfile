@@ -15,8 +15,14 @@ FROM python:3.11-slim
 # ofrece el paquete openjdk-17-jre-headless -- solo openjdk-21-*. En tu
 # entorno local usas 21 sin problema, la version exacta de Java no
 # afecta el resultado del pipeline.)
+#
+# libgomp1: runtime de OpenMP que XGBoost necesita para cargar su
+# libreria nativa (libxgboost.so). python:3.11-slim no lo trae por
+# defecto; sin esto, predict_risk.py falla al importar xgboost dentro
+# del contenedor con un error de libreria no encontrada.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         openjdk-21-jre-headless \
+        libgomp1 \
         curl \
     && rm -rf /var/lib/apt/lists/*
 
