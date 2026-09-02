@@ -177,7 +177,7 @@ def generar_cuentas(clientes_df: pd.DataFrame) -> list[dict]:
             {
                 "cuenta_id": f"CTA-{contador:06d}",
                 "cliente_id": cliente["cliente_id"],
-                "tipo_cuenta": "cuenta_digital",
+                "tipo_cuenta": TIPOS_CUENTA[0],
                 "fecha_apertura": cliente["fecha_alta"],
                 "saldo_actual": round(float(np.random.uniform(500, 50000)), 2),
                 "moneda": "MXN",
@@ -193,7 +193,7 @@ def generar_cuentas(clientes_df: pd.DataFrame) -> list[dict]:
                 {
                     "cuenta_id": f"CTA-{contador:06d}",
                     "cliente_id": cliente["cliente_id"],
-                    "tipo_cuenta": "tarjeta_credito",
+                    "tipo_cuenta": TIPOS_CUENTA[1],
                     "fecha_apertura": fake.date_between(
                         start_date="-2y", end_date="-1M"
                     ).isoformat(),
@@ -212,7 +212,7 @@ def generar_cuentas(clientes_df: pd.DataFrame) -> list[dict]:
                 {
                     "cuenta_id": f"CTA-{contador:06d}",
                     "cliente_id": cliente["cliente_id"],
-                    "tipo_cuenta": "prestamo_personal",
+                    "tipo_cuenta": TIPOS_CUENTA[2],
                     "fecha_apertura": fake.date_between(
                         start_date="-2y", end_date="-1M"
                     ).isoformat(),
@@ -233,7 +233,7 @@ def generar_cuentas(clientes_df: pd.DataFrame) -> list[dict]:
                 {
                     "cuenta_id": f"CTA-{contador:06d}",
                     "cliente_id": cliente["cliente_id"],
-                    "tipo_cuenta": "cetes",
+                    "tipo_cuenta": TIPOS_CUENTA[3],
                     "fecha_apertura": fake.date_between(
                         start_date="-1y", end_date="-1M"
                     ).isoformat(),
