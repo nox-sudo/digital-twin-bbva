@@ -32,6 +32,56 @@ from pathlib import Path
 from delta.pip_utils import configure_spark_with_delta_pip
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
+from pyspark.sql.types import ArrayType, StringType, StructField, StructType
+
+# Bronze es inmutable y sin tipar a proposito: cada campo de negocio se
+# lee como StringType, sin importar como se vea en el JSON de origen.
+# inferSchema no es una opcion real para el lector JSON de Spark (se
+# ignora en silencio, verificado empiricamente) - por eso el unico
+# control real de tipo para JSON es un StructType explicito.
+SCHEMA_CUENTAS = StructType(
+    [
+        StructField("cuenta_id", StringType(), True),
+        StructField("cliente_id", StringType(), True),
+        StructField("tipo_cuenta", StringType(), True),
+        StructField("fecha_apertura", StringType(), True),
+        StructField("saldo_actual", StringType(), True),
+        StructField("moneda", StringType(), True),
+        StructField("estatus", StringType(), True),
+        StructField("limite_credito", StringType(), True),
+        StructField("monto_original", StringType(), True),
+        StructField("plazo_meses", StringType(), True),
+    ]
+)
+
+# plazos_meses y plazos_dias son listas en el JSON de origen (los
+# plazos que el producto ofrece en general, ej. [12, 24, 36, 48]) - no
+# confundir con plazo_meses (singular, escalar) de cuentas, que es el
+# plazo de una cuenta especifica. Se preservan como ArrayType para no
+# perder la estructura, pero cada elemento queda como string, sin
+# inferencia numerica.
+SCHEMA_CATALOGO_PRODUCTOS = StructType(
+    [
+        StructField(
+            "productos",
+            ArrayType(
+                StructType(
+                    [
+                        StructField("producto_id", StringType(), True),
+                        StructField("nombre", StringType(), True),
+                        StructField("tasa_interes_anual", StringType(), True),
+                        StructField("requiere_ingreso_minimo", StringType(), True),
+                        StructField("limite_credito_min", StringType(), True),
+                        StructField("limite_credito_max", StringType(), True),
+                        StructField("plazos_meses", ArrayType(StringType()), True),
+                        StructField("plazos_dias", ArrayType(StringType()), True),
+                    ]
+                )
+            ),
+            True,
+        )
+    ]
+)
 
 
 def get_spark_session() -> SparkSession:
@@ -64,7 +114,9 @@ def con_metadata_ingesta(df, nombre_archivo_origen: str, formato_origen: str):
 
 def ingest_clientes(spark: SparkSession, source_dir: Path, out_dir: Path):
     print("[Bronze] Ingiriendo clientes.csv ...")
-    df = spark.read.csv(str(source_dir / "clientes.csv"), header=True, inferSchema=True)
+    df = spark.read.csv(
+        str(source_dir / "clientes.csv"), header=True, inferSchema=False
+    )
     df = con_metadata_ingesta(df, "clientes.csv", "csv")
     (df.write.mode("overwrite").format("delta").save(str(out_dir / "clientes")))
     print(f"  -> {df.count()} filas escritas en {out_dir / 'clientes'}")
@@ -73,8 +125,10 @@ def ingest_clientes(spark: SparkSession, source_dir: Path, out_dir: Path):
 def ingest_catalogo_productos(spark: SparkSession, source_dir: Path, out_dir: Path):
     print("[Bronze] Ingiriendo catalogo_productos.json ...")
     # multiLine=True porque es un JSON anidado (no JSON-lines)
-    df = spark.read.option("multiLine", True).json(
-        str(source_dir / "catalogo_productos.json")
+    df = (
+        spark.read.option("multiLine", True)
+        .schema(SCHEMA_CATALOGO_PRODUCTOS)
+        .json(str(source_dir / "catalogo_productos.json"))
     )
     # El JSON trae un arreglo "productos" -> lo explotamos a filas
     df = df.select(F.explode("productos").alias("producto"))
@@ -90,7 +144,11 @@ def ingest_catalogo_productos(spark: SparkSession, source_dir: Path, out_dir: Pa
 
 def ingest_cuentas(spark: SparkSession, source_dir: Path, out_dir: Path):
     print("[Bronze] Ingiriendo cuentas.json ...")
-    df = spark.read.option("multiLine", True).json(str(source_dir / "cuentas.json"))
+    df = (
+        spark.read.option("multiLine", True)
+        .schema(SCHEMA_CUENTAS)
+        .json(str(source_dir / "cuentas.json"))
+    )
     df = con_metadata_ingesta(df, "cuentas.json", "json")
     (df.write.mode("overwrite").format("delta").save(str(out_dir / "cuentas")))
     print(f"  -> {df.count()} filas escritas en {out_dir / 'cuentas'}")
@@ -99,7 +157,7 @@ def ingest_cuentas(spark: SparkSession, source_dir: Path, out_dir: Path):
 def ingest_cetes(spark: SparkSession, source_dir: Path, out_dir: Path):
     print("[Bronze] Ingiriendo cetes_inversiones.csv ...")
     df = spark.read.csv(
-        str(source_dir / "cetes_inversiones.csv"), header=True, inferSchema=True
+        str(source_dir / "cetes_inversiones.csv"), header=True, inferSchema=False
     )
     df = con_metadata_ingesta(df, "cetes_inversiones.csv", "csv")
     (
@@ -128,7 +186,7 @@ def ingest_transacciones(spark: SparkSession, source_dir: Path, out_dir: Path):
 
     df = (
         spark.read.option("header", True)
-        .option("inferSchema", True)
+        .option("inferSchema", False)
         .csv(str(tx_dir / "transacciones_*.csv"))
         .withColumn(
             "_source_file",
