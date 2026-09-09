@@ -188,7 +188,15 @@ def ingest_transacciones(spark: SparkSession, source_dir: Path, out_dir: Path):
         spark.read.option("header", True)
         .option("inferSchema", False)
         .csv(str(tx_dir / "transacciones_*.csv"))
-        .withColumn("_source_file", F.input_file_name())
+        .withColumn(
+            "_source_file",
+            # input_file_name() devuelve la ruta completa (ej.
+            # file:///opt/lakehouse/data/.../transacciones_2026_06.csv);
+            # se extrae solo el nombre de archivo para que _source_file
+            # tenga el mismo formato que con_metadata_ingesta() usa en
+            # clientes/cuentas/cetes/catalogo_productos.
+            F.regexp_extract(F.input_file_name(), r"([^/\\]+)$", 1),
+        )
     )
     df = (
         df.withColumn("_ingestion_timestamp", F.current_timestamp())
