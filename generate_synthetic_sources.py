@@ -23,6 +23,7 @@ Salida:
 """
 
 import argparse
+import calendar
 import json
 import random
 from datetime import date, datetime, timedelta
@@ -291,12 +292,12 @@ def generar_transacciones_mes(cuentas: list[dict], anio: int, mes: int) -> pd.Da
 
         # Nómina quincenal (día 15 y último día del mes) - no todos son empleados formales
         if random.random() < 0.75:
-            for dia_pago in [15, 28]:
-                try:
-                    fecha = date(anio, mes, dia_pago)
-                except ValueError:
-                    fecha = date(anio, mes, 28)
-                monto_nomina = round(float(np.random.uniform(4000, 25000)), 2)
+            ultimo_dia = calendar.monthrange(anio, mes)[1]
+            # Mismo monto en ambas quincenas del mes: un empleado con
+            # salario fijo no cobra un monto distinto cada quincena.
+            monto_nomina = round(float(np.random.uniform(4000, 25000)), 2)
+            for dia_pago in [15, ultimo_dia]:
+                fecha = date(anio, mes, dia_pago)
                 registros.append(
                     {
                         "transaccion_id": f"TX-{anio}{mes:02d}-{tx_id:07d}",
