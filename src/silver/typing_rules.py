@@ -13,7 +13,7 @@ de negocio, sin validaciones (eso ya vive en validation.py).
 
 from pyspark.sql import DataFrame
 from pyspark.sql import functions as F
-from pyspark.sql.types import DecimalType
+from pyspark.sql.types import DecimalType, IntegerType
 
 
 def type_clientes(df: DataFrame) -> DataFrame:
@@ -33,6 +33,12 @@ def type_cuentas(df: DataFrame) -> DataFrame:
         .withColumn("saldo_actual", F.col("saldo_actual").cast(DecimalType(12, 2)))
         .withColumn("limite_credito", F.col("limite_credito").cast(DecimalType(12, 2)))
         .withColumn("monto_original", F.col("monto_original").cast(DecimalType(12, 2)))
+        # plazo_meses (cuentas): escalar, el plazo de esta cuenta
+        # especifica en meses. No confundir con plazos_meses (lista) de
+        # catalogo_productos, que son los plazos que el producto ofrece
+        # en general. Sin este cast, fluia sin tipo explicito desde
+        # Bronze - no tenia uso downstream, pero quedaba inconsistente.
+        .withColumn("plazo_meses", F.col("plazo_meses").cast(IntegerType()))
     )
 
 
