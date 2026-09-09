@@ -30,6 +30,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from dateutil.relativedelta import relativedelta
 from faker import Faker
 
 fake = Faker("es_MX")
@@ -451,10 +452,23 @@ def main():
     print(f"Generando transacciones para {args.meses} meses...")
     hoy = date.today()
     total_tx = 0
+    # Salvaguarda defensiva: con el calculo via relativedelta cada mes ya
+    # deberia ser unico por diseno, pero si algo vuelve a romper esto, es
+    # mejor fallar ruidosamente aca que generar transaccion_id duplicados
+    # en silencio (ver generar_transacciones_mes: el contador tx_id se
+    # reinicia por mes, y el ID incluye anio+mes).
+    meses_generados: set[tuple[int, int]] = set()
     for i in range(args.meses):
-        mes_idx = hoy.month - i - 1
-        anio = hoy.year + (mes_idx // 12)
-        mes = (mes_idx % 12) + 1
+        fecha_mes = hoy.replace(day=1) - relativedelta(months=i)
+        anio, mes = fecha_mes.year, fecha_mes.month
+
+        assert (anio, mes) not in meses_generados, (
+            f"Colision de anio-mes detectada: ({anio}, {mes}) ya se genero "
+            f"antes en esta misma corrida. No deberia pasar con "
+            f"relativedelta; revisa el calculo de fecha_mes."
+        )
+        meses_generados.add((anio, mes))
+
         tx_df = generar_transacciones_mes(cuentas, anio, mes)
         archivo = out_dir / "transacciones" / f"transacciones_{anio}_{mes:02d}.csv"
         tx_df.to_csv(archivo, index=False)
