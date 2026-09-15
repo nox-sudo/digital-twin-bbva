@@ -23,6 +23,16 @@ Como ratio_endeudamiento y uso_linea_credito no existen para clientes
 sin ese producto (sin tarjeta de credito o prestamo), su ausencia se
 interpreta como "no cumple la condicion", no como dato faltante.
 
+Ruido estocastico: la regla de arriba (>= 2 de 3 condiciones) usa
+exactamente las mismas 3 variables que train_model.py despues expone
+como top features via SHAP. Sin ruido, el label es una funcion
+determinista de esas variables y el modelo no predice riesgo, redescubre
+la formula con la que se genero el label - un AUC-ROC de ~0.97-0.99 es
+circular por diseno, no evidencia de poder predictivo. Se aplica un XOR
+con probabilidad 0.08 (label_final = label_regla XOR ruido(8%)) para
+simular el error de medicion / factores no observados de un dataset real
+de impago, y bajar el AUC a un rango defendible (~0.75-0.85).
+
 Uso:
     python generate_labels.py --silver data/silver \
         --out data/labels/risk_labels.parquet
@@ -32,6 +42,8 @@ import argparse
 import logging
 import sys
 from pathlib import Path
+
+import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -44,6 +56,12 @@ from src.gold.kpi_definitions import (  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
+
+# Probabilidad de invertir el label de la regla determinista (ver nota
+# de diseno "Ruido estocastico" arriba). Semilla fija para que la
+# corrida sea reproducible, igual que generate_synthetic_sources.py.
+PROBABILIDAD_RUIDO = 0.08
+SEMILLA_RUIDO = 42
 
 
 def generar_etiquetas(spark, silver_path: str):
@@ -93,7 +111,20 @@ def generar_etiquetas(spark, silver_path: str):
         + (etiquetas["capacidad_ahorro"] < p25_ahorro).fillna(False).astype(int)
         + (etiquetas["uso_linea_credito"] > p75_uso).fillna(False).astype(int)
     )
-    etiquetas["label"] = (condiciones_cumplidas >= 2).astype(int)
+    label_regla = condiciones_cumplidas >= 2
+
+    rng = np.random.default_rng(SEMILLA_RUIDO)
+    ruido = rng.random(len(etiquetas)) < PROBABILIDAD_RUIDO
+    etiquetas["label"] = (label_regla ^ ruido).astype(int)
+
+    n_invertidos = int(ruido.sum())
+    logger.info(
+        "Ruido aplicado: %d de %d labels invertidos (%.1f%%, probabilidad configurada %.0f%%)",
+        n_invertidos,
+        len(etiquetas),
+        100 * n_invertidos / len(etiquetas),
+        100 * PROBABILIDAD_RUIDO,
+    )
 
     return etiquetas[
         [
