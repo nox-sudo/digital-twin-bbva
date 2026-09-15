@@ -208,6 +208,7 @@ Catálogo de 12 KPIs en 5 categorías (ingresos, gastos, ahorro y liquidez, ries
 - Diccionario de datos formal — Google Drive
 - Diagrama de arquitectura de infraestructura — Lucid
 - Diagrama de flujo de datos end-to-end — Lucid
+- [Deuda técnica conocida](docs/technical-debt.md) — gaps registrados dentro del repo, con fecha de última verificación
 
 Enlaces disponibles en el reporte técnico principal del proyecto.
 
