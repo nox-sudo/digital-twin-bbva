@@ -23,6 +23,7 @@ Salida:
 """
 
 import argparse
+import calendar
 import json
 import random
 from datetime import date, datetime, timedelta
@@ -30,6 +31,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from dateutil.relativedelta import relativedelta
 from faker import Faker
 
 fake = Faker("es_MX")
@@ -177,7 +179,7 @@ def generar_cuentas(clientes_df: pd.DataFrame) -> list[dict]:
             {
                 "cuenta_id": f"CTA-{contador:06d}",
                 "cliente_id": cliente["cliente_id"],
-                "tipo_cuenta": "cuenta_digital",
+                "tipo_cuenta": TIPOS_CUENTA[0],
                 "fecha_apertura": cliente["fecha_alta"],
                 "saldo_actual": round(float(np.random.uniform(500, 50000)), 2),
                 "moneda": "MXN",
@@ -193,7 +195,7 @@ def generar_cuentas(clientes_df: pd.DataFrame) -> list[dict]:
                 {
                     "cuenta_id": f"CTA-{contador:06d}",
                     "cliente_id": cliente["cliente_id"],
-                    "tipo_cuenta": "tarjeta_credito",
+                    "tipo_cuenta": TIPOS_CUENTA[1],
                     "fecha_apertura": fake.date_between(
                         start_date="-2y", end_date="-1M"
                     ).isoformat(),
@@ -212,7 +214,7 @@ def generar_cuentas(clientes_df: pd.DataFrame) -> list[dict]:
                 {
                     "cuenta_id": f"CTA-{contador:06d}",
                     "cliente_id": cliente["cliente_id"],
-                    "tipo_cuenta": "prestamo_personal",
+                    "tipo_cuenta": TIPOS_CUENTA[2],
                     "fecha_apertura": fake.date_between(
                         start_date="-2y", end_date="-1M"
                     ).isoformat(),
@@ -233,7 +235,7 @@ def generar_cuentas(clientes_df: pd.DataFrame) -> list[dict]:
                 {
                     "cuenta_id": f"CTA-{contador:06d}",
                     "cliente_id": cliente["cliente_id"],
-                    "tipo_cuenta": "cetes",
+                    "tipo_cuenta": TIPOS_CUENTA[3],
                     "fecha_apertura": fake.date_between(
                         start_date="-1y", end_date="-1M"
                     ).isoformat(),
@@ -290,12 +292,12 @@ def generar_transacciones_mes(cuentas: list[dict], anio: int, mes: int) -> pd.Da
 
         # Nómina quincenal (día 15 y último día del mes) - no todos son empleados formales
         if random.random() < 0.75:
-            for dia_pago in [15, 28]:
-                try:
-                    fecha = date(anio, mes, dia_pago)
-                except ValueError:
-                    fecha = date(anio, mes, 28)
-                monto_nomina = round(float(np.random.uniform(4000, 25000)), 2)
+            ultimo_dia = calendar.monthrange(anio, mes)[1]
+            # Mismo monto en ambas quincenas del mes: un empleado con
+            # salario fijo no cobra un monto distinto cada quincena.
+            monto_nomina = round(float(np.random.uniform(4000, 25000)), 2)
+            for dia_pago in [15, ultimo_dia]:
+                fecha = date(anio, mes, dia_pago)
                 registros.append(
                     {
                         "transaccion_id": f"TX-{anio}{mes:02d}-{tx_id:07d}",
@@ -451,10 +453,23 @@ def main():
     print(f"Generando transacciones para {args.meses} meses...")
     hoy = date.today()
     total_tx = 0
+    # Salvaguarda defensiva: con el calculo via relativedelta cada mes ya
+    # deberia ser unico por diseno, pero si algo vuelve a romper esto, es
+    # mejor fallar ruidosamente aca que generar transaccion_id duplicados
+    # en silencio (ver generar_transacciones_mes: el contador tx_id se
+    # reinicia por mes, y el ID incluye anio+mes).
+    meses_generados: set[tuple[int, int]] = set()
     for i in range(args.meses):
-        mes_idx = hoy.month - i - 1
-        anio = hoy.year + (mes_idx // 12)
-        mes = (mes_idx % 12) + 1
+        fecha_mes = hoy.replace(day=1) - relativedelta(months=i)
+        anio, mes = fecha_mes.year, fecha_mes.month
+
+        assert (anio, mes) not in meses_generados, (
+            f"Colision de anio-mes detectada: ({anio}, {mes}) ya se genero "
+            f"antes en esta misma corrida. No deberia pasar con "
+            f"relativedelta; revisa el calculo de fecha_mes."
+        )
+        meses_generados.add((anio, mes))
+
         tx_df = generar_transacciones_mes(cuentas, anio, mes)
         archivo = out_dir / "transacciones" / f"transacciones_{anio}_{mes:02d}.csv"
         tx_df.to_csv(archivo, index=False)
