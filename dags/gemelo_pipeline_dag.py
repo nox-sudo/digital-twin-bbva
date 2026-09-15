@@ -2,7 +2,8 @@
 dags/gemelo_pipeline_dag.py
 
 DAG que orquesta el pipeline completo: generacion de datos sinteticos
--> ingesta Bronze -> transformacion Silver.
+-> ingesta Bronze -> transformacion Silver -> transformacion Gold ->
+prediccion de riesgo crediticio.
 
 Cada tarea lanza el contenedor "worker" (definido en docker-compose.yml)
 para hacer el trabajo pesado — Airflow solo decide CUANDO y en que
@@ -37,7 +38,10 @@ default_args = {
 
 with DAG(
     dag_id="gemelo_digital_financiero_pipeline",
-    description="Genera datos sinteticos, ingiere Bronze, transforma a Silver",
+    description=(
+        "Genera datos sinteticos, ingiere Bronze, transforma a Silver y Gold, "
+        "y predice riesgo crediticio"
+    ),
     default_args=default_args,
     schedule=None,  # disparo manual; cambiar a "@daily" cuando el proyecto lo requiera
     start_date=datetime(2026, 1, 1),
@@ -89,4 +93,33 @@ with DAG(
         docker_url="unix://var/run/docker.sock",
     )
 
-    generar_fuentes >> ingesta_bronze >> transformacion_silver
+    transformacion_gold = DockerOperator(
+        task_id="transformacion_gold",
+        image="gemelo-worker:local",
+        command=(
+            "transform_gold.py --silver data/silver --out data/gold/kpis.duckdb "
+            "--catalog config/kpi_catalog.yaml"
+        ),
+        mounts=mounts,
+        network_mode="bridge",
+        auto_remove="success",
+        docker_url="unix://var/run/docker.sock",
+    )
+
+    predict_risk = DockerOperator(
+        task_id="predict_risk",
+        image="gemelo-worker:local",
+        command="predict_risk.py --silver data/silver --gold data/gold/kpis.duckdb",
+        mounts=mounts,
+        network_mode="bridge",
+        auto_remove="success",
+        docker_url="unix://var/run/docker.sock",
+    )
+
+    (
+        generar_fuentes
+        >> ingesta_bronze
+        >> transformacion_silver
+        >> transformacion_gold
+        >> predict_risk
+    )
