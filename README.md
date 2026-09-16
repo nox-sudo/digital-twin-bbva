@@ -96,12 +96,17 @@ digital-twin-bbva/
 │   └── gemelo_pipeline_dag.py    # DAG de Airflow (DockerOperator)
 ├── tests/
 │   ├── conftest.py
-│   └── test_validation.py        # Pruebas del motor de Silver
+│   ├── test_validation.py        # Pruebas del motor de Silver
+│   └── test_main_cli.py          # Pruebas de enrutamiento del CLI (main.py)
 ├── .github/workflows/ci.yml      # Lint, tests, smoke test Bronze→Silver→Gold
+├── main.py                       # CLI unico: python main.py <paso> [opciones]
 ├── generate_synthetic_sources.py
 ├── ingest_bronze.py
 ├── transform_silver.py
 ├── transform_gold.py
+├── generate_labels.py
+├── train_model.py
+├── predict_risk.py
 ├── pipeline_summary.py           # Reporte visual HTML de una corrida
 ├── Dockerfile                    # Imagen del worker (PySpark + Delta)
 ├── docker-compose.yml            # Airflow, Postgres, MinIO, worker
@@ -130,6 +135,18 @@ uv run python transform_silver.py --bronze data/bronze --silver data/silver \
 uv run python transform_gold.py --silver data/silver --out data/gold/kpis.duckdb \
     --catalog config/kpi_catalog.yaml
 ```
+
+También existe `main.py` como punto de entrada único: expone cada paso como
+subcomando (`generate`, `bronze`, `silver`, `gold`, `labels`, `train-model`,
+`predict-risk`), reenviando las mismas opciones al script real. Por ejemplo,
+las primeras dos líneas de arriba son equivalentes a:
+
+```bash
+uv run python main.py generate --clientes 500 --meses 12
+uv run python main.py bronze --source data/raw_sources --out data/bronze
+```
+
+Ver las opciones de un paso puntual: `uv run python main.py <paso> --help`.
 
 Corre de extremo a extremo en menos de 2 minutos. Para ver un resumen visual del resultado:
 
