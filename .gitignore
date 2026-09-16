@@ -21,8 +21,16 @@ logs/
 # Herramienta personal de automatizacion de documentos (no es parte del repo)
 docs_editor.py
 cleanup_preguntas.py
+add_correccion_brecha5.py
+add_robustez.py
+rewrite_completo.py
+rewrite_diccionario.py
+rewrite_visual.py
 credentials.json
 token.json
+
+# Output de pipeline_summary.py (se regenera, no es codigo fuente)
+reporte_pipeline.html
 
 # Zip temporal de descarga
 gfd:silver.zip
