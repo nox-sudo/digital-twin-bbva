@@ -4,8 +4,8 @@ Plataforma de Ingeniería de Datos que construye un gemelo digital financiero pe
 
 [![CI](https://github.com/nox-sudo/digital-twin-bbva/actions/workflows/ci.yml/badge.svg)](https://github.com/nox-sudo/digital-twin-bbva/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.11-blue)
-![PySpark](https://img.shields.io/badge/PySpark-3.5-orange)
-![Delta Lake](https://img.shields.io/badge/Delta%20Lake-3.2-informational)
+![PySpark](https://img.shields.io/badge/PySpark-4.1-orange)
+![Delta Lake](https://img.shields.io/badge/Delta%20Lake-4.3-informational)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)
 ![Airflow](https://img.shields.io/badge/orquestacion-Apache%20Airflow-017CEE)
 
@@ -36,13 +36,15 @@ flowchart LR
     A[Fuentes sintéticas] --> B[Bronze<br/>Delta Lake, crudo]
     B --> C[Silver<br/>Delta Lake, validado]
     C --> D[Gold<br/>DuckDB, KPIs]
-    D --> E[Modelo de riesgo<br/>pendiente]
+    D --> E[Modelo de riesgo<br/>XGBoost + SHAP]
+    E -->|probabilidad_impago| D
     D --> F[Asistente RAG<br/>pendiente]
     D --> G[Dashboards<br/>pendiente]
 
     H[Apache Airflow] -.orquesta.-> B
     H -.orquesta.-> C
     H -.orquesta.-> D
+    H -.orquesta.-> E
 ```
 
 Cada capa tiene una responsabilidad distinta:
@@ -67,6 +69,7 @@ Diagramas formales (arquitectura de infraestructura y flujo de datos completo) d
 | Almacenamiento Bronze/Silver | Delta Lake | Transacciones ACID y versionado |
 | Reglas de calidad | YAML | Reglas de negocio como datos, no como código |
 | Base analítica Gold | DuckDB | Motor ligero, sin infraestructura adicional |
+| Modelado de riesgo | XGBoost, SHAP | Estándar de la industria para clasificación tabular; SHAP hace interpretable cada predicción |
 | Orquestación | Apache Airflow (LocalExecutor) | Suficiente para esta escala, sin la complejidad de Celery/Redis |
 | Infraestructura | Docker Compose | Ambiente reproducible con un comando |
 | Almacenamiento objeto | MinIO | S3-compatible, preparado para migración futura |
@@ -91,14 +94,20 @@ digital-twin-bbva/
 │   │   ├── validation.py         # Motor genérico de validación
 │   │   └── typing_rules.py       # Tipado específico por entidad
 │   └── gold/
-│       └── kpi_definitions.py    # Lógica de cálculo de cada KPI
+│       ├── kpi_definitions.py    # Lógica de cálculo de cada KPI
+│       └── risk_features.py      # Matriz de features del modelo de riesgo
 ├── dags/
 │   └── gemelo_pipeline_dag.py    # DAG de Airflow (DockerOperator)
 ├── tests/
 │   ├── conftest.py
 │   ├── test_validation.py        # Pruebas del motor de Silver
+│   ├── test_model.py             # Contrato de carga y predicción del modelo
 │   └── test_main_cli.py          # Pruebas de enrutamiento del CLI (main.py)
-├── .github/workflows/ci.yml      # Lint, tests, smoke test Bronze→Silver→Gold
+├── docs/
+│   ├── ejecucion-local.md        # Guía para correr el proyecto en otra máquina
+│   └── technical-debt.md         # Deuda técnica conocida
+├── models/                       # Modelo entrenado y gráfico SHAP (se regeneran)
+├── .github/workflows/ci.yml      # Lint, tests, smoke test Bronze→Silver→Gold→modelo
 ├── main.py                       # CLI unico: python main.py <paso> [opciones]
 ├── generate_synthetic_sources.py
 ├── ingest_bronze.py
@@ -110,20 +119,30 @@ digital-twin-bbva/
 ├── pipeline_summary.py           # Reporte visual HTML de una corrida
 ├── Dockerfile                    # Imagen del worker (PySpark + Delta)
 ├── docker-compose.yml            # Airflow, Postgres, MinIO, worker
-└── setup.sh                      # Genera .env automáticamente
+├── demo.sh                       # Arranque de un comando: levanta todo y corre el DAG
+└── setup.sh                      # Genera .env automáticamente (lo invoca demo.sh)
 ```
 
 ---
 
 ## Cómo correrlo
 
-### Requisitos
+### Opción A — un comando, con Docker (recomendada para correrlo en otra máquina)
 
-- Python 3.11 y [uv](https://docs.astral.sh/uv/)
-- Java 21 (JDK)
-- Docker Desktop (solo si vas a levantar la infraestructura completa)
+Solo requiere Docker; no hace falta Python, Java ni Spark en la máquina.
 
-### Opción A — pipeline directo, sin Docker (más rápido)
+```bash
+bash demo.sh
+```
+
+Genera `.env`, construye el worker, levanta Airflow, Postgres y MinIO, dispara el DAG y muestra el avance tarea por tarea hasta terminar. Requisitos, comandos adicionales (`pipeline`, `reporte`, `limpiar`), instrucciones para Windows y problemas comunes: [docs/ejecucion-local.md](docs/ejecucion-local.md).
+
+- Airflow: `http://localhost:8080` (usuario `admin`, contraseña `admin`)
+- Consola de MinIO: `http://localhost:9001` (`minioadmin` / `minioadmin`)
+
+### Opción B — pipeline directo, sin Docker (desarrollo)
+
+Requiere Python 3.11, [uv](https://docs.astral.sh/uv/) y Java 21 (JDK).
 
 ```bash
 uv sync
@@ -134,6 +153,9 @@ uv run python transform_silver.py --bronze data/bronze --silver data/silver \
     --quarantine data/silver_quarantine --rules config/business_rules.yaml
 uv run python transform_gold.py --silver data/silver --out data/gold/kpis.duckdb \
     --catalog config/kpi_catalog.yaml
+uv run python generate_labels.py --silver data/silver
+uv run python train_model.py
+uv run python predict_risk.py
 ```
 
 También existe `main.py` como punto de entrada único: expone cada paso como
@@ -154,22 +176,6 @@ Corre de extremo a extremo en menos de 2 minutos. Para ver un resumen visual del
 uv run python pipeline_summary.py
 ```
 
-### Opción B — infraestructura completa (Airflow, MinIO, worker en Docker)
-
-```bash
-bash setup.sh          # genera .env automáticamente, sin edición manual
-docker compose up --build -d
-```
-
-- Airflow: `http://localhost:8080` (usuario `admin`, contraseña `admin`)
-- Consola de MinIO: `http://localhost:9001` (`minioadmin` / `minioadmin`)
-
-Disparar el pipeline completo desde Airflow:
-
-```bash
-docker compose exec airflow-webserver airflow dags unpause gemelo_digital_financiero_pipeline
-docker compose exec airflow-webserver airflow dags trigger gemelo_digital_financiero_pipeline
-```
 
 ---
 
@@ -184,9 +190,9 @@ El workflow de GitHub Actions (`.github/workflows/ci.yml`) corre en cada Pull Re
 | Job | Qué valida |
 |---|---|
 | `lint` | flake8 y black |
-| `docker-compose-validate` | Sintaxis de `docker-compose.yml`, sin build de imágenes |
+| `docker-compose-validate` | Sintaxis de `docker-compose.yml` con un `.env` generado por `setup.sh`, y shellcheck de `setup.sh`/`demo.sh` |
 | `unit-tests` | Motor de validación de Silver (pytest) |
-| `pipeline-smoke-test` | Pipeline completo Bronze → Silver → Gold con volumen reducido, parametrizable vía `workflow_dispatch` |
+| `pipeline-smoke-test` | Pipeline completo Bronze → Silver → Gold → modelo de riesgo con volumen reducido (100 clientes, 2 meses), parametrizable vía `workflow_dispatch`; verifica los 12 KPIs y que `probabilidad_impago` tenga valor en [0, 1] para todos los clientes |
 
 ---
 
@@ -196,7 +202,7 @@ El workflow de GitHub Actions (`.github/workflows/ci.yml`) corre en cada Pull Re
 
 El esquema completo, con tipo de dato y regla de calidad por columna, está documentado en el diccionario de datos — ver [Documentación adicional](#documentación-adicional).
 
-Catálogo de 12 KPIs en 5 categorías (ingresos, gastos, ahorro y liquidez, riesgo y endeudamiento, comportamiento transaccional), calculados en Gold y almacenados en formato normalizado en DuckDB. El KPI `probabilidad_impago` está declarado en el catálogo con valor `NULL` hasta que exista el modelo de riesgo crediticio.
+Catálogo de 12 KPIs en 5 categorías (ingresos, gastos, ahorro y liquidez, riesgo y endeudamiento, comportamiento transaccional), calculados en Gold y almacenados en formato normalizado en DuckDB. El KPI `probabilidad_impago` se calcula en Gold como `NULL` y el modelo de riesgo (XGBoost) lo completa en el último paso del pipeline (`predict_risk.py`).
 
 ---
 
@@ -211,7 +217,8 @@ Catálogo de 12 KPIs en 5 categorías (ingresos, gastos, ahorro y liquidez, ries
 - [x] Pruebas de robustez con inyección deliberada de datos sucios (5 escenarios)
 - [x] Capa Gold — catálogo de 12 KPIs en DuckDB
 - [x] Diccionario de datos formal
-- [ ] Modelo predictivo de riesgo crediticio
+- [x] Modelo predictivo de riesgo crediticio (XGBoost + SHAP), entrenado dentro del DAG
+- [x] Arranque reproducible con un comando en cualquier máquina con Docker (`demo.sh`)
 - [ ] Simulador de escenarios Monte Carlo
 - [ ] Asistente conversacional RAG local (Ollama + Llama 3 + LangChain)
 - [ ] Dashboards (Streamlit — decisión documentada, construcción pendiente)
@@ -223,6 +230,7 @@ Catálogo de 12 KPIs en 5 categorías (ingresos, gastos, ahorro y liquidez, ries
 
 - Reporte técnico completo (arquitectura, decisiones de diseño, hallazgos de robustez) — Google Drive
 - Diccionario de datos formal — Google Drive
+- Ejecución en otra máquina — [docs/ejecucion-local.md](docs/ejecucion-local.md)
 - Diagrama de arquitectura de infraestructura — Lucid
 - Diagrama de flujo de datos end-to-end — Lucid
 - [Deuda técnica conocida](docs/technical-debt.md) — gaps registrados dentro del repo, con fecha de última verificación
