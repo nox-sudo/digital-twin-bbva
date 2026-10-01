@@ -271,4 +271,4 @@ Documentos académicos del programa, fuera del repositorio: reporte técnico, bi
 
 ---
 
-Este es un proyecto académico individual. El repositorio es privado durante el desarrollo del semestre.
+Este es un proyecto académico individual. El repositorio es público: no contiene datos ni secretos (ver [docs/seguridad.md](docs/seguridad.md)).

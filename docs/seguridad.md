@@ -141,14 +141,15 @@ Se revisaron las 34 entradas del historial en todas las ramas, incluida
 
 ## Repositorio en GitHub
 
-- **Visibilidad: privado** (decision del 2026-10-01). El repositorio no
-  contiene datos ni secretos, pero en un contexto bancario lo esperado
-  es que el codigo no sea publico. El acceso de mentor y evaluadores es
-  explicito, como colaboradores.
-- **Escaneo de secretos.** La proteccion de push de GitHub (que bloquea
-  un push con un secreto reconocido) es gratuita solo en repositorios
-  publicos; en privados requiere GitHub Advanced Security. Por eso el
-  control efectivo es el escaneo de `detect-secrets` del CI, que corre
-  en cada PR sin depender del plan de GitHub.
+- **Visibilidad: publico** (decision del 2026-10-01). El repositorio no
+  contiene datos ni secretos, y en un repositorio publico GitHub ofrece
+  gratis la proteccion de push, que en uno privado requiere GitHub
+  Advanced Security. Publico da dos capas de control en vez de una.
+- **Proteccion de push** (Settings > Code security > Secret Protection >
+  Push protection): GitHub bloquea un push que contenga un secreto
+  reconocido, antes de que llegue al historial.
+- **Escaneo de secretos en CI.** `detect-secrets` en cada PR: cubre lo
+  que la proteccion de push no reconoce (contrasenas genericas, cadenas
+  de alta entropia) y no depende de la configuracion del repositorio.
 - **Reglas de proteccion** en `main` y `develop` (Settings > Branches):
   PR obligatorio y CI en verde para mergear.
