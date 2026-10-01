@@ -22,6 +22,20 @@ Ultima revision: 2026-10-01.
 4. **Minima exposicion de red.** Los servicios solo escuchan en la
    maquina local.
 
+## Datos personales sinteticos
+
+El generador crea, por cliente: nombre y apellidos, sexo, estado de
+nacimiento, CURP, RFC (excepto estudiantes), telefono, correo y
+domicilio. CURP y RFC se calculan con los algoritmos oficiales a partir
+de los datos del propio cliente, asi que son coherentes con su nombre y
+fecha de nacimiento. Para que ningun dato coincida con el de una persona
+real:
+
+- Los correos usan `example.com`, `example.org` y `example.net`,
+  dominios reservados que no pertenecen a nadie (RFC 2606).
+- Los telefonos usan ladas reales, pero el numero local empieza con 0;
+  en Mexico ningun numero asignado empieza asi.
+
 ## Clasificacion de datos por capa
 
 | Zona | PII | Acceso esperado en un banco |
@@ -47,6 +61,19 @@ hash, asi que se puede unir y contar clientes unicos sin ver el valor.
 La sal es un secreto (`PII_HASH_SALT` en `.env`): la CURP tiene una
 estructura predecible, y sin sal alguien podria calcular el hash de
 todas las combinaciones plausibles y compararlos.
+
+Implementacion: `config/politica_pii.yaml` declara el tratamiento de
+cada campo y `src/silver/pii.py` lo aplica, con expresiones nativas de
+Spark. `transform_silver.py` verifica antes de escribir que ningun campo
+de la politica siga en claro, y si alguno lo esta, detiene el pipeline.
+El CI repite esa verificacion sobre el Silver que produce el smoke test.
+
+**Validacion antes de proteger.** Las reglas de calidad corren sobre los
+valores reales, porque verificar el digito de una CURP exige verla
+completa. Para CURP y RFC se valida formato, digito verificador y
+coherencia con la fecha de nacimiento del propio cliente
+(`src/common/identificadores.py`, comprobado contra los ejemplos
+publicos de RENAPO y el SAT).
 
 **Cuarentena.** Las filas que fallan una regla de calidad se guardan
 con la PII ya protegida. Para diagnosticar una fila se usa su llave y
@@ -107,6 +134,7 @@ Se revisaron las 34 entradas del historial en todas las ramas, incluida
 
 | Riesgo | Por que se acepta | Mitigacion |
 |---|---|---|
+| Cuasi-identificadores en Silver: fecha de nacimiento, sexo y codigo postal juntos pueden reidentificar a una persona aun sin nombre ni CURP | La edad y la region son variables del modelo de riesgo y del analisis | Gold (KPIs y feature store) expone la edad, no la fecha exacta, y no incluye sexo ni codigo postal; para publicar datos fuera del equipo, generalizar a rangos de edad |
 | El socket de Docker montado en Airflow equivale a control total del Docker del host | Es el mecanismo de DockerOperator para lanzar el worker | Uso local; puertos solo en 127.0.0.1 |
 | El worker corre como root dentro del contenedor | Ver `docs/technical-debt.md` | Contenedor efimero, sin puertos |
 | Imagenes `minio/minio:latest` y `minio/mc:latest` sin version fija | Pendiente de fijar | Registrado en `docs/technical-debt.md` |

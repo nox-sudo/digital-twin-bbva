@@ -72,6 +72,11 @@ def _required_columns_from_rules(rules: dict) -> set[str]:
         columnas.add(regla["column"])
         columnas.add(regla["when_column"])
 
+    columnas.update(rules.get("patterns", {}).keys())
+    for col, regla in rules.get("identificadores", {}).items():
+        columnas.add(col)
+        columnas.add(regla["fecha_column"])
+
     return columnas
 
 
@@ -170,13 +175,57 @@ def _check_date_not_future(df: DataFrame, columns: list[str]) -> DataFrame:
 
 
 def _check_conditional_not_null(df: DataFrame, rules: list[dict]) -> DataFrame:
+    """La columna es obligatoria cuando otra columna tiene cierto valor
+    (when_equals) o alguno de varios valores (when_in)."""
     for i, rule in enumerate(rules):
         col = rule["column"]
         when_col = rule["when_column"]
-        when_val = rule["when_equals"]
+        if "when_in" in rule:
+            aplica = F.col(when_col).isin(rule["when_in"])
+        else:
+            aplica = F.col(when_col) == rule["when_equals"]
         df = df.withColumn(
             f"_viol_condnull_{col}_{i}",
-            (F.col(when_col) == when_val) & F.col(col).isNull(),
+            F.coalesce(aplica, F.lit(False)) & F.col(col).isNull(),
+        )
+    return df
+
+
+def _check_patterns(df: DataFrame, rules: dict) -> DataFrame:
+    """Formato por expresion regular. Un NULL no viola esta regla: la
+    presencia se declara aparte con not_null, para que cada regla tenga
+    un solo motivo y el reporte de cuarentena sea claro."""
+    for col, patron in rules.items():
+        df = df.withColumn(
+            f"_viol_pattern_{col}",
+            F.col(col).isNotNull() & ~F.col(col).rlike(patron),
+        )
+    return df
+
+
+def _check_identificadores(df: DataFrame, rules: dict) -> DataFrame:
+    """Identificadores oficiales (CURP, RFC): formato, digito verificador
+    y coherencia con la fecha de nacimiento de la misma fila. Como en
+    patterns, un NULL no es violacion de esta regla.
+
+    El coalesce a False es importante: si fecha_nacimiento fuera NULL, la
+    comparacion daria NULL, y una violacion NULL hace que la fila
+    desaparezca de valido y de cuarentena a la vez (filter() descarta
+    tanto False como NULL; mismo problema documentado en _check_unique).
+    """
+    from src.silver.identificadores_spark import VALIDADORES
+
+    for col, regla in rules.items():
+        tipo = regla["tipo"]
+        if tipo not in VALIDADORES:
+            raise ValueError(
+                f"Identificador '{tipo}' no soportado para '{col}'. "
+                f"Disponibles: {sorted(VALIDADORES)}"
+            )
+        es_valido = VALIDADORES[tipo](col, regla["fecha_column"])
+        df = df.withColumn(
+            f"_viol_ident_{col}",
+            F.col(col).isNotNull() & ~F.coalesce(es_valido, F.lit(False)),
         )
     return df
 
@@ -245,6 +294,10 @@ def validate_entity(
         df = _check_date_not_future(df, rules["date_not_future"])
     if "conditional_not_null" in rules:
         df = _check_conditional_not_null(df, rules["conditional_not_null"])
+    if "patterns" in rules:
+        df = _check_patterns(df, rules["patterns"])
+    if "identificadores" in rules:
+        df = _check_identificadores(df, rules["identificadores"])
     if "foreign_keys" in rules:
         df = _check_foreign_keys(df, rules["foreign_keys"], silver_context)
 

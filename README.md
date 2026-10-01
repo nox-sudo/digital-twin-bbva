@@ -88,14 +88,19 @@ digital-twin-bbva/
 ├── config/
 │   ├── sesion.yaml               # Parámetros de la sesión de datos (semilla, fecha, volumen)
 │   ├── business_rules.yaml       # Reglas de calidad de Silver, declarativas
+│   ├── politica_pii.yaml         # Qué datos personales se protegen en Silver, y cómo
 │   └── kpi_catalog.yaml          # Metadata de los 12 KPIs de Gold
 ├── src/
 │   ├── common/
 │   │   ├── spark_session.py      # SparkSession compartido, Docker-ready
 │   │   ├── sesiones.py           # Sesiones de datos: manifest, checksums, reuso
+│   │   ├── identificadores.py    # CURP y RFC: construcción y validación (RENAPO/SAT)
+│   │   ├── secretos.py           # Lectura de secretos desde entorno o .env
 │   │   └── logging_utils.py      # Logging estructurado por entidad
 │   ├── silver/
 │   │   ├── validation.py         # Motor genérico de validación
+│   │   ├── identificadores_spark.py  # Validación de CURP/RFC nativa en Spark
+│   │   ├── pii.py                # Hash con sal (HMAC), enmascarado y descarte de PII
 │   │   └── typing_rules.py       # Tipado específico por entidad
 │   └── gold/
 │       ├── kpi_definitions.py    # Lógica de cálculo de cada KPI
@@ -108,6 +113,7 @@ digital-twin-bbva/
 │   ├── test_model.py             # Contrato de carga y predicción del modelo
 │   ├── test_features.py          # Persistencia y preparación del feature store
 │   ├── test_sesiones.py          # Reproducibilidad y reuso de sesiones de datos
+│   ├── test_pii.py               # Identificadores, HMAC Spark == Python, política de PII
 │   └── test_main_cli.py          # Pruebas de enrutamiento del CLI (main.py)
 ├── docs/
 │   ├── ejecucion-local.md        # Guía para correr el proyecto en otra máquina
@@ -231,6 +237,7 @@ Catálogo de 12 KPIs en 5 categorías (ingresos, gastos, ahorro y liquidez, ries
 - [x] Diccionario de datos formal
 - [x] Modelo predictivo de riesgo crediticio (XGBoost + SHAP), entrenado dentro del DAG
 - [x] Feature store ligero en Gold (`gold_features_cliente`), fuente única de features
+- [x] PII sintética (CURP, RFC, teléfono, domicilio) validada y protegida en Silver con hash y enmascarado
 - [x] Seguridad base: secretos por máquina fuera del repo, puertos locales, escaneo de secretos en CI
 - [x] Sesiones de datos reproducibles, con manifest, checksums y reuso
 - [x] Arranque reproducible con un comando en cualquier máquina con Docker (`demo.sh`)

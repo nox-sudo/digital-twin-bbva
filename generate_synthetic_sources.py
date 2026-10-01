@@ -49,6 +49,11 @@ from faker import Faker
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from src.common.identificadores import (  # noqa: E402
+    ESTADOS_CURP,
+    construir_curp,
+    construir_rfc,
+)
 from src.common.sesiones import (  # noqa: E402
     activar_sesion,
     escribir_manifest,
@@ -60,15 +65,24 @@ from src.common.sesiones import (  # noqa: E402
 
 fake = Faker("es_MX")
 
+# Generadores aleatorios exclusivos para la identidad del cliente (PII).
+# Separados de los de arriba a proposito: agregar o cambiar columnas de
+# PII no altera la secuencia aleatoria del resto del dataset, asi que
+# cuentas, saldos y transacciones siguen saliendo iguales.
+fake_pii = Faker("es_MX")
+rng_pii = random.Random()
+
 
 def sembrar(semilla: int) -> None:
-    """Fija la semilla de los tres generadores aleatorios que usa este
+    """Fija la semilla de todos los generadores aleatorios que usa este
     script. Se llama al inicio de cada generacion, no al importar el
     modulo, para que dos generaciones en el mismo proceso (como en los
     tests) partan del mismo estado."""
     Faker.seed(semilla)
     random.seed(semilla)
     np.random.seed(semilla)
+    fake_pii.seed_instance(semilla)
+    rng_pii.seed(semilla)
 
 
 def fecha_entre(fecha_ref: date, desde: relativedelta, hasta: relativedelta) -> date:
@@ -164,8 +178,109 @@ TIPOS_TRANSACCION = [
 ]
 
 
+# Datos por ciudad para domicilio y telefono: estado, clave de estado
+# en la CURP, lada y rango de codigos postales reales de la ciudad.
+DATOS_CIUDAD = {
+    "Ciudad de México": ("Ciudad de México", "DF", "55", 1000, 16999),
+    "Guadalajara": ("Jalisco", "JC", "33", 44100, 44990),
+    "Monterrey": ("Nuevo León", "NL", "81", 64000, 64999),
+    "Culiacán": ("Sinaloa", "SL", "667", 80000, 80299),
+    "Puebla": ("Puebla", "PL", "222", 72000, 72599),
+    "Tijuana": ("Baja California", "BC", "664", 22000, 22699),
+    "Querétaro": ("Querétaro", "QT", "442", 76000, 76249),
+    "Mérida": ("Yucatán", "YN", "999", 97000, 97399),
+    "León": ("Guanajuato", "GT", "477", 37000, 37699),
+    "Toluca": ("Estado de México", "MC", "722", 50000, 50299),
+}
+
+# Ocupaciones sin RFC: no perciben ingresos propios ante el SAT.
+OCUPACIONES_SIN_RFC = {"Estudiante"}
+
+
+def _ascii(texto: str) -> str:
+    """Minusculas sin acentos ni espacios, para armar correos."""
+    import unicodedata
+
+    plano = unicodedata.normalize("NFD", texto.lower())
+    return "".join(c for c in plano if c.isalnum() and c.isascii())
+
+
+def generar_identidad(fecha_nacimiento: date, ciudad: str, ocupacion: str) -> dict:
+    """PII sintetica y coherente de un cliente: los identificadores se
+    calculan a partir de sus propios datos (como en la realidad), asi que
+    Silver puede validar que la CURP y el RFC le correspondan.
+
+    Medidas para que ningun dato coincida con el de una persona real:
+    - Correo en example.com/.org/.net, dominios reservados que no
+      pertenecen a nadie (RFC 2606).
+    - Telefono con lada real, pero numero local que empieza en 0: en
+      Mexico ningun numero asignado empieza asi.
+    """
+    sexo = rng_pii.choice(["H", "M"])
+    nombre = fake_pii.first_name_male() if sexo == "H" else fake_pii.first_name_female()
+    apellido_paterno = fake_pii.last_name()
+    apellido_materno = fake_pii.last_name()
+
+    estado, clave_estado, lada, cp_min, cp_max = DATOS_CIUDAD[ciudad]
+    # La mayoria nacio en el estado donde vive; una parte en otro estado
+    # o en el extranjero (NE).
+    sorteo = rng_pii.random()
+    if sorteo < 0.70:
+        estado_nacimiento = clave_estado
+    elif sorteo < 0.98:
+        estado_nacimiento = rng_pii.choice([e for e in ESTADOS_CURP if e != "NE"])
+    else:
+        estado_nacimiento = "NE"
+
+    # Caracter 17 de la CURP: digito si nacio antes de 2000, letra despues.
+    if fecha_nacimiento.year < 2000:
+        homoclave = rng_pii.choice("0123456789")
+    else:
+        homoclave = rng_pii.choice("ABCDEFGHIJKLMNPQRSTUVWXYZ")
+
+    numero_local_digitos = 10 - len(lada)
+    numero_local = "0" + "".join(
+        rng_pii.choice("0123456789") for _ in range(numero_local_digitos - 1)
+    )
+
+    usuario = f"{_ascii(nombre.split()[0])}.{_ascii(apellido_paterno)}{rng_pii.randint(1, 99)}"
+    dominio = rng_pii.choice(["example.com", "example.org", "example.net"])
+
+    return {
+        "nombre": nombre,
+        "apellido_paterno": apellido_paterno,
+        "apellido_materno": apellido_materno,
+        "sexo": sexo,
+        "estado_nacimiento": estado_nacimiento,
+        "curp": construir_curp(
+            nombre,
+            apellido_paterno,
+            apellido_materno,
+            fecha_nacimiento,
+            sexo,
+            estado_nacimiento,
+            homoclave,
+        ),
+        "rfc": (
+            None
+            if ocupacion in OCUPACIONES_SIN_RFC
+            else construir_rfc(
+                nombre, apellido_paterno, apellido_materno, fecha_nacimiento
+            )
+        ),
+        "telefono": lada + numero_local,
+        "email": f"{usuario}@{dominio}",
+        "calle": fake_pii.street_name(),
+        "numero_exterior": fake_pii.building_number(),
+        "colonia": f"Colonia {fake_pii.last_name()}",
+        "codigo_postal": f"{rng_pii.randint(cp_min, cp_max):05d}",
+        "municipio": ciudad,
+        "estado": estado,
+    }
+
+
 def generar_clientes(n_clientes: int, fecha_ref: date) -> pd.DataFrame:
-    """Genera el perfil demográfico base de los clientes."""
+    """Genera el perfil demográfico base de los clientes, con su PII."""
     registros = []
     for i in range(n_clientes):
         fecha_nacimiento = fecha_entre(
@@ -174,18 +289,19 @@ def generar_clientes(n_clientes: int, fecha_ref: date) -> pd.DataFrame:
         ingreso_base = np.random.lognormal(
             mean=9.8, sigma=0.5
         )  # distribución realista de ingresos
+        ocupacion = random.choice(OCUPACIONES)
+        ciudad = random.choice(CIUDADES)
         registros.append(
             {
                 "cliente_id": f"CLI-{i+1:06d}",
-                "nombre": fake.name(),
                 "fecha_nacimiento": fecha_nacimiento.isoformat(),
-                "ocupacion": random.choice(OCUPACIONES),
+                "ocupacion": ocupacion,
                 "ingreso_mensual_declarado": round(float(ingreso_base), 2),
-                "ciudad": random.choice(CIUDADES),
+                "ciudad": ciudad,
                 "fecha_alta": fecha_entre(
                     fecha_ref, relativedelta(years=3), relativedelta(months=1)
                 ).isoformat(),
-                "email": fake.email(),
+                **generar_identidad(fecha_nacimiento, ciudad, ocupacion),
             }
         )
     return pd.DataFrame(registros)

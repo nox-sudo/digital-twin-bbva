@@ -15,13 +15,53 @@ clientes:
     - ingreso_mensual_declarado
     - ciudad
     - fecha_alta
+    - nombre
+    - apellido_paterno
+    - sexo
+    - curp
+    - telefono
+    - codigo_postal
   unique:
     - cliente_id
+    - curp
+    - rfc
   numeric_ranges:
     ingreso_mensual_declarado:
       min: 0.01
   date_not_future:
     - fecha_alta
+    - fecha_nacimiento
+  allowed_values:
+    sexo:
+      - H
+      - M
+  # Formato por expresion regular (un NULL no cuenta como violacion;
+  # la obligatoriedad se declara en not_null).
+  patterns:
+    # 10 digitos; ningun numero en Mexico empieza con 0 o 1.
+    telefono: "^[2-9][0-9]{9}$"
+    codigo_postal: "^[0-9]{5}$"
+    email: "^[^@ ]+@[^@ ]+\\.[a-z]{2,}$"
+  # Identificadores oficiales: formato, digito verificador, y coherencia
+  # con la fecha de nacimiento del propio cliente.
+  identificadores:
+    curp:
+      tipo: curp
+      fecha_column: fecha_nacimiento
+    rfc:
+      tipo: rfc
+      fecha_column: fecha_nacimiento
+  conditional_not_null:
+    # El RFC es obligatorio para quien percibe ingresos propios.
+    - column: rfc
+      when_column: ocupacion
+      when_in:
+        - Empleado
+        - Independiente
+        - Empresario
+        - Jubilado
+        - Profesionista
+        - Comerciante
 
 cuentas:
   primary_key: cuenta_id
