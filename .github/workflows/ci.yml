@@ -8,8 +8,8 @@ on:
   workflow_dispatch:
     inputs:
       smoke_test_clientes:
-        description: "Numero de clientes para el smoke test (default 20, escalar para prueba de carga manual)"
-        default: "20"
+        description: "Numero de clientes para el smoke test (default 100, escalar para prueba de carga manual)"
+        default: "100"
       smoke_test_meses:
         description: "Numero de meses para el smoke test"
         default: "2"
@@ -35,10 +35,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Generar .env de prueba
-        run: |
-          echo "AIRFLOW_UID=50000" > .env
-          echo "HOST_PROJECT_DIR=${{ github.workspace }}" >> .env
+      # shellcheck viene preinstalado en ubuntu-latest.
+      - name: Lint de scripts de arranque
+        run: shellcheck setup.sh demo.sh
+      # Se usa el mismo setup.sh que corre un usuario nuevo, en vez de un
+      # .env escrito a mano: si setup.sh deja de generar una variable que
+      # docker-compose.yml espera, este job lo detecta.
+      - name: Generar .env con setup.sh
+        run: bash setup.sh
       - run: docker compose config --quiet
 
   # Pruebas unitarias del motor de validacion. Corre en paralelo a lint
@@ -78,7 +82,7 @@ jobs:
       - name: Generar fuentes sinteticas (volumen reducido)
         run: |
           uv run python generate_synthetic_sources.py \
-            --clientes ${{ github.event.inputs.smoke_test_clientes || '20' }} \
+            --clientes ${{ github.event.inputs.smoke_test_clientes || '100' }} \
             --meses ${{ github.event.inputs.smoke_test_meses || '2' }} \
             --out data/raw_sources
 
@@ -126,6 +130,56 @@ jobs:
               sys.exit(1)
 
           print(f'Gold verificado: {n_kpis} KPIs distintos, {n_filas} filas totales')
+          "
+
+      # Pipeline del modelo de riesgo, con el mismo volumen reducido.
+      # El default del smoke test es 100 clientes (no 20) por este bloque:
+      # la etiqueta de riesgo sale positiva en ~15% de los clientes, y con
+      # 20 clientes el split estratificado 80/20 puede dejar el conjunto
+      # de prueba sin positivos, lo que hace fallar el calculo de AUC-ROC.
+      - name: Etiquetas de riesgo
+        run: |
+          uv run python generate_labels.py \
+            --silver data/silver --out data/labels/risk_labels.parquet
+
+      - name: Entrenamiento del modelo
+        run: |
+          uv run python train_model.py \
+            --silver data/silver --gold data/gold/kpis.duckdb \
+            --labels data/labels/risk_labels.parquet \
+            --model-out models/risk_model.joblib \
+            --shap-out models/shap_importancia.png
+
+      - name: Prediccion de riesgo
+        run: |
+          uv run python predict_risk.py \
+            --silver data/silver --gold data/gold/kpis.duckdb \
+            --model models/risk_model.joblib
+
+      - name: Verificar probabilidad_impago en Gold
+        run: |
+          uv run python -c "
+          import duckdb
+          import sys
+
+          con = duckdb.connect('data/gold/kpis.duckdb')
+          total, con_valor, fuera_rango = con.execute('''
+              SELECT
+                  COUNT(*),
+                  COUNT(valor_numerico),
+                  COUNT(*) FILTER (WHERE valor_numerico < 0 OR valor_numerico > 1)
+              FROM gold_kpis
+              WHERE kpi_id = 'probabilidad_impago'
+          ''').fetchone()
+
+          if total == 0 or con_valor != total:
+              print(f'ERROR: probabilidad_impago con valor en {con_valor} de {total} filas')
+              sys.exit(1)
+          if fuera_rango:
+              print(f'ERROR: {fuera_rango} probabilidades fuera de [0, 1]')
+              sys.exit(1)
+
+          print(f'Modelo verificado: probabilidad_impago en {con_valor}/{total} clientes')
           "
 
       - name: Subir logs como artefacto

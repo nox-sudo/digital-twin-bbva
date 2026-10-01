@@ -4,33 +4,36 @@ Registro de gaps conocidos que no bloquean el estado actual del pipeline,
 pero que un futuro colaborador (o evaluador) deberia poder encontrar aca,
 sin tener que preguntar directamente.
 
-Ultima verificacion: 2026-09-15 (PR #8)
+Ultima verificacion: 2026-10-01 (rama feature/arranque-reproducible)
 
-## CI: el smoke test no cubre el pipeline del modelo de riesgo end-to-end
+## Abiertos
 
-**Que falta:** `.github/workflows/ci.yml` (job `pipeline-smoke-test`) corre
-`generate_synthetic_sources.py` -> `ingest_bronze.py` -> `transform_silver.py`
--> `transform_gold.py`, y verifica que Gold tenga los 12 KPIs esperados. No
-incluye `generate_labels.py` -> `train_model.py` -> `predict_risk.py`.
+### Archivos del worker quedan con dueno root en Linux
 
-**Que si existe:** `tests/test_model.py` prueba el contrato de carga y
-prediccion del modelo (`joblib.dump`/`load`, rango valido de
-`predict_proba`) con un modelo minimo entrenado en memoria sobre datos
-sinteticos generados en el propio test. No ejercita el feature engineering
-real (`src/gold/risk_features.py`) ni el entrenamiento contra datos
-generados por el pipeline.
+**Que pasa:** el worker corre como root dentro del contenedor, asi que
+en un host Linux los archivos que escribe en `data/` y `models/` quedan
+con dueno root. En Mac y Windows (Docker Desktop) no ocurre.
 
-**Por que no bloquea:** el pipeline del modelo se verifico manualmente
-end-to-end en Docker (imagen `gemelo-worker:local`, con `libgomp1`) antes
-de mergear el PR #8 - resultado reproducible, sin perdida de filas en
-Gold (5602 filas antes y despues, `probabilidad_impago` 500/500 con valor
-real). Esa verificacion fue manual, no automatica: un cambio futuro en
-`risk_features.py` o `kpi_definitions.py` podria romper el pipeline del
-modelo sin que CI lo detecte.
+**Mitigacion actual:** `bash demo.sh limpiar` los borra desde un
+contenedor, sin necesitar sudo.
 
-## Posible fix
+**Posible fix:** correr el worker con el UID del host (`user=` en
+DockerOperator y en el servicio `worker`). Requiere mover el cache de
+Ivy con los JARs de Delta a una ruta legible por cualquier usuario,
+porque hoy vive en el home de root dentro de la imagen.
 
-Agregar un job (o extender `pipeline-smoke-test`) que corra
-`generate_labels.py` -> `train_model.py` -> `predict_risk.py` con el
-volumen reducido del smoke test, y verifique que `probabilidad_impago` en
-`gold_kpis` deja de tener `NULL`.
+## Resueltos
+
+### CI: el smoke test no cubria el pipeline del modelo de riesgo
+
+Registrado el 2026-09-15 (PR #8). El job `pipeline-smoke-test` corria
+Bronze -> Silver -> Gold pero no `generate_labels.py` ->
+`train_model.py` -> `predict_risk.py`, asi que un cambio en
+`risk_features.py` o `kpi_definitions.py` podia romper el modelo sin
+que CI lo detectara.
+
+Resuelto en `feature/arranque-reproducible`: el smoke test corre los
+tres pasos del modelo y verifica que `probabilidad_impago` tenga valor
+en [0, 1] para todos los clientes de Gold. El volumen por default del
+smoke test subio de 20 a 100 clientes, porque con 20 el split
+estratificado 80/20 puede dejar el conjunto de prueba sin positivos.
