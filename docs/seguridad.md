@@ -139,14 +139,16 @@ Se revisaron las 34 entradas del historial en todas las ramas, incluida
 | El worker corre como root dentro del contenedor | Ver `docs/technical-debt.md` | Contenedor efimero, sin puertos |
 | Imagenes `minio/minio:latest` y `minio/mc:latest` sin version fija | Pendiente de fijar | Registrado en `docs/technical-debt.md` |
 
-## Recomendaciones para el repositorio en GitHub
+## Repositorio en GitHub
 
-- **Visibilidad.** El repositorio es publico. No contiene datos ni
-  secretos (verificado por CI en cada PR), pero en un contexto bancario
-  lo esperado es privado, con acceso explicito para mentor y
-  evaluadores.
-- **Secret scanning y push protection** (Settings > Code security):
-  GitHub bloquea un push que contenga un secreto reconocido, antes de
-  que llegue al historial.
-- **Reglas de proteccion** en `main` y `develop`: PR obligatorio y CI en
-  verde para mergear.
+- **Visibilidad: privado** (decision del 2026-10-01). El repositorio no
+  contiene datos ni secretos, pero en un contexto bancario lo esperado
+  es que el codigo no sea publico. El acceso de mentor y evaluadores es
+  explicito, como colaboradores.
+- **Escaneo de secretos.** La proteccion de push de GitHub (que bloquea
+  un push con un secreto reconocido) es gratuita solo en repositorios
+  publicos; en privados requiere GitHub Advanced Security. Por eso el
+  control efectivo es el escaneo de `detect-secrets` del CI, que corre
+  en cada PR sin depender del plan de GitHub.
+- **Reglas de proteccion** en `main` y `develop` (Settings > Branches):
+  PR obligatorio y CI en verde para mergear.

@@ -23,7 +23,7 @@ Proyecto individual, Julio–Noviembre 2026 · Mentor: Oscar Daniel Florín Belt
 - [Pruebas y CI/CD](#pruebas-y-cicd)
 - [Datos y KPIs](#datos-y-kpis)
 - [Estado del proyecto](#estado-del-proyecto)
-- [Documentación adicional](#documentación-adicional)
+- [Documentación](#documentación)
 
 ---
 
@@ -58,7 +58,7 @@ Cada capa tiene una responsabilidad distinta:
 | **Silver** | Tipado correcto, deduplicación, y validación contra reglas de negocio declaradas en `config/business_rules.yaml`. Motor genérico basado en configuración — agregar una regla no requiere código nuevo. Registros inválidos se aíslan en cuarentena, sin detener el pipeline. |
 | **Gold** | KPIs calculados a partir de Silver, en formato normalizado en DuckDB. Catálogo declarado en `config/kpi_catalog.yaml`. Incluye `gold_features_cliente`, el feature store: una fila por cliente que consumen el modelo, el dashboard, el simulador y el asistente. |
 
-Diagramas formales (arquitectura de infraestructura y flujo de datos completo) disponibles en Lucid — ver [Documentación adicional](#documentación-adicional).
+Detalle completo de zonas, tareas del DAG y decisiones de diseño en [docs/arquitectura.md](docs/arquitectura.md).
 
 ---
 
@@ -118,6 +118,8 @@ digital-twin-bbva/
 │   ├── test_landing.py           # Landing zone (S3 simulado) e ingesta incremental
 │   └── test_main_cli.py          # Pruebas de enrutamiento del CLI (main.py)
 ├── docs/
+│   ├── arquitectura.md           # Flujo, zonas, DAG y decisiones de diseño
+│   ├── diccionario-datos.md      # Columnas, tipos, reglas y tratamiento de PII
 │   ├── ejecucion-local.md        # Guía para correr el proyecto en otra máquina
 │   ├── seguridad.md              # Secretos, clasificación de datos por capa, auditoría
 │   └── technical-debt.md         # Deuda técnica conocida
@@ -221,7 +223,7 @@ El workflow de GitHub Actions (`.github/workflows/ci.yml`) corre en cada Pull Re
 
 **Landing zone e ingesta incremental.** Cada sesión se publica en MinIO como una *entrega* inmutable (`landing/entregas/<id>/`, con SHA-256 por objeto y un manifest escrito al final). Una entrega solo sube lo que no llegó idéntico antes: `bash demo.sh nueva-entrega` simula que llega el mes siguiente, y su entrega trae solo ese mes de transacciones (las sesiones son extensibles: cada mes tiene su propia semilla, así que agregar uno no altera los anteriores). Bronze ya no se sobrescribe: ingiere solo los archivos que no tiene, según un registro de control por archivo y checksum (`data/bronze/_control_ingesta.jsonl`), y acumula las versiones de cada snapshot; Silver se queda con la más reciente por llave. Si Bronze se pierde, se reconstruye completo desde la landing zone.
 
-El esquema completo, con tipo de dato y regla de calidad por columna, está documentado en el diccionario de datos — ver [Documentación adicional](#documentación-adicional).
+El esquema completo, con tipo de dato, regla de calidad y tratamiento de PII por columna, está en [docs/diccionario-datos.md](docs/diccionario-datos.md).
 
 Catálogo de 12 KPIs en 5 categorías (ingresos, gastos, ahorro y liquidez, riesgo y endeudamiento, comportamiento transaccional), calculados en Gold y almacenados en formato normalizado en DuckDB. El KPI `probabilidad_impago` se calcula en Gold como `NULL` y el modelo de riesgo (XGBoost) lo completa en el último paso del pipeline (`predict_risk.py`).
 
@@ -253,17 +255,19 @@ Catálogo de 12 KPIs en 5 categorías (ingresos, gastos, ahorro y liquidez, ries
 
 ---
 
-## Documentación adicional
+## Documentación
 
-- Reporte técnico completo (arquitectura, decisiones de diseño, hallazgos de robustez) — Google Drive
-- Diccionario de datos formal — Google Drive
-- Ejecución en otra máquina — [docs/ejecucion-local.md](docs/ejecucion-local.md)
-- Seguridad y manejo de datos sensibles — [docs/seguridad.md](docs/seguridad.md)
-- Diagrama de arquitectura de infraestructura — Lucid
-- Diagrama de flujo de datos end-to-end — Lucid
-- [Deuda técnica conocida](docs/technical-debt.md) — gaps registrados dentro del repo, con fecha de última verificación
+La documentación técnica vive en el repositorio y se actualiza en el mismo PR que el código que describe:
 
-Enlaces disponibles en el reporte técnico principal del proyecto.
+| Documento | Contenido |
+|---|---|
+| [docs/arquitectura.md](docs/arquitectura.md) | Flujo de punta a punta, zonas, tareas del DAG, configuración y decisiones de diseño con sus alternativas descartadas |
+| [docs/diccionario-datos.md](docs/diccionario-datos.md) | Columnas por entidad y capa: tipos, reglas de calidad, tratamiento de PII, KPIs y feature store |
+| [docs/seguridad.md](docs/seguridad.md) | Secretos, clasificación de datos por capa, protección de PII, auditoría del repositorio y riesgos aceptados |
+| [docs/ejecucion-local.md](docs/ejecucion-local.md) | Cómo correr el proyecto en otra máquina, comandos de `demo.sh` y problemas comunes |
+| [docs/technical-debt.md](docs/technical-debt.md) | Deuda técnica conocida, con fecha de última verificación |
+
+Documentos académicos del programa, fuera del repositorio: reporte técnico, bitácora de incidentes y diagramas en Lucid (infraestructura y flujo de datos).
 
 ---
 
