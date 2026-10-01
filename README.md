@@ -86,11 +86,13 @@ Decisiones descartadas y por qué: Scala (PySpark cubre lo mismo sin costo de ap
 ```
 digital-twin-bbva/
 ├── config/
+│   ├── sesion.yaml               # Parámetros de la sesión de datos (semilla, fecha, volumen)
 │   ├── business_rules.yaml       # Reglas de calidad de Silver, declarativas
 │   └── kpi_catalog.yaml          # Metadata de los 12 KPIs de Gold
 ├── src/
 │   ├── common/
 │   │   ├── spark_session.py      # SparkSession compartido, Docker-ready
+│   │   ├── sesiones.py           # Sesiones de datos: manifest, checksums, reuso
 │   │   └── logging_utils.py      # Logging estructurado por entidad
 │   ├── silver/
 │   │   ├── validation.py         # Motor genérico de validación
@@ -105,6 +107,7 @@ digital-twin-bbva/
 │   ├── test_validation.py        # Pruebas del motor de Silver
 │   ├── test_model.py             # Contrato de carga y predicción del modelo
 │   ├── test_features.py          # Persistencia y preparación del feature store
+│   ├── test_sesiones.py          # Reproducibilidad y reuso de sesiones de datos
 │   └── test_main_cli.py          # Pruebas de enrutamiento del CLI (main.py)
 ├── docs/
 │   ├── ejecucion-local.md        # Guía para correr el proyecto en otra máquina
@@ -151,7 +154,7 @@ Requiere Python 3.11, [uv](https://docs.astral.sh/uv/) y Java 21 (JDK).
 ```bash
 uv sync
 
-uv run python generate_synthetic_sources.py --clientes 500 --meses 12
+uv run python generate_synthetic_sources.py   # parámetros de config/sesion.yaml
 uv run python ingest_bronze.py --source data/raw_sources --out data/bronze
 uv run python transform_silver.py --bronze data/bronze --silver data/silver \
     --quarantine data/silver_quarantine --rules config/business_rules.yaml
@@ -203,7 +206,9 @@ El workflow de GitHub Actions (`.github/workflows/ci.yml`) corre en cada Pull Re
 
 ## Datos y KPIs
 
-5 entidades sintéticas (Faker + NumPy, semillas fijas para reproducibilidad): `clientes`, `cuentas`, `catalogo_productos`, `cetes_inversiones`, `transacciones` (6 tipos de movimiento). Volumen de referencia: 500 clientes, 979 cuentas, 115,797 transacciones.
+5 entidades sintéticas (Faker + NumPy): `clientes`, `cuentas`, `catalogo_productos`, `cetes_inversiones`, `transacciones` (6 tipos de movimiento). Volumen de referencia: 500 clientes, 979 cuentas, 115,797 transacciones.
+
+**Sesiones de datos reproducibles.** Cada conjunto generado es una sesión identificada por sus parámetros (`config/sesion.yaml`: semilla, fecha de referencia, clientes, meses), por ejemplo `s42_20260930_500c_12m`. Todas las fechas se calculan contra la fecha de referencia, nunca contra el reloj del sistema, así que los mismos parámetros producen exactamente los mismos archivos cualquier día y en cualquier máquina; el CI lo verifica comparando checksums. La sesión se guarda en `data/sesiones/<id>/` con un `manifest.json` (parámetros, conteos, SHA-256 de cada archivo); si ya existe y está íntegra, el pipeline la reutiliza en vez de regenerarla, y si algún archivo fue alterado, lo detecta y la regenera. `data/raw_sources/` apunta a la sesión activa mediante hard links, y cada fila de Bronze guarda su `_sesion_id`. Las sesiones viven en disco, fuera de los contenedores: sobreviven a `docker compose down` y a `demo.sh limpiar`.
 
 El esquema completo, con tipo de dato y regla de calidad por columna, está documentado en el diccionario de datos — ver [Documentación adicional](#documentación-adicional).
 
@@ -226,6 +231,7 @@ Catálogo de 12 KPIs en 5 categorías (ingresos, gastos, ahorro y liquidez, ries
 - [x] Diccionario de datos formal
 - [x] Modelo predictivo de riesgo crediticio (XGBoost + SHAP), entrenado dentro del DAG
 - [x] Feature store ligero en Gold (`gold_features_cliente`), fuente única de features
+- [x] Sesiones de datos reproducibles, con manifest, checksums y reuso
 - [x] Arranque reproducible con un comando en cualquier máquina con Docker (`demo.sh`)
 - [ ] Simulador de escenarios Monte Carlo
 - [ ] Asistente conversacional RAG local (Ollama + Llama 3 + LangChain)

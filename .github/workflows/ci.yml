@@ -86,6 +86,30 @@ jobs:
             --meses ${{ github.event.inputs.smoke_test_meses || '2' }} \
             --out data/raw_sources
 
+      # Misma sesion, dos comprobaciones: (1) una segunda corrida con los
+      # mismos parametros reutiliza la sesion en vez de regenerarla, y
+      # (2) regenerarla desde cero en otra carpeta produce archivos
+      # identicos byte por byte (mismos checksums en el manifest).
+      - name: Verificar reproducibilidad de la sesion de datos
+        run: |
+          ARGS="--clientes ${{ github.event.inputs.smoke_test_clientes || '100' }} \
+            --meses ${{ github.event.inputs.smoke_test_meses || '2' }}"
+          uv run python generate_synthetic_sources.py $ARGS --out data/raw_sources \
+            | tee /tmp/segunda_corrida.log
+          grep -q "se reutiliza" /tmp/segunda_corrida.log
+
+          uv run python generate_synthetic_sources.py $ARGS \
+            --sesiones-dir /tmp/sesiones_copia --out /tmp/activa_copia
+          uv run python -c "
+          import json, sys
+          a = json.load(open('data/raw_sources/manifest.json'))
+          b = json.load(open('/tmp/activa_copia/manifest.json'))
+          if a['archivos'] != b['archivos']:
+              print('ERROR: la misma sesion generada dos veces produjo archivos distintos')
+              sys.exit(1)
+          print(f'Sesion {a[\"sesion_id\"]} reproducible: {len(a[\"archivos\"])} archivos identicos')
+          "
+
       - name: Ingesta Bronze
         run: uv run python ingest_bronze.py --source data/raw_sources --out data/bronze
 

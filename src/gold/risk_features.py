@@ -99,12 +99,19 @@ def _variables_comportamiento_silver(spark, silver_path: str) -> pd.DataFrame:
     cuentas = spark.read.format("delta").load(f"{silver_path}/cuentas")
     transacciones = spark.read.format("delta").load(f"{silver_path}/transacciones")
 
+    # Fecha de corte de los datos: la ultima transaccion observada. Edad y
+    # antiguedad se miden contra ella y no contra current_date(): con la
+    # fecha del sistema, la misma sesion de datos daba features distintas
+    # segun el dia en que se corria el pipeline (y el modelo entrenado un
+    # dia no veia las mismas edades que el modelo que predice otro dia).
+    fecha_corte = transacciones.agg(F.max(F.to_date("fecha"))).first()[0]
+    logger.info("Fecha de corte de los datos: %s", fecha_corte)
+    corte = F.lit(fecha_corte)
+
     demograficas = clientes.select(
         "cliente_id",
-        (F.datediff(F.current_date(), F.col("fecha_nacimiento")) / 365.25).alias(
-            "edad_anios"
-        ),
-        F.datediff(F.current_date(), F.col("fecha_alta")).alias("antiguedad_dias"),
+        (F.datediff(corte, F.col("fecha_nacimiento")) / 365.25).alias("edad_anios"),
+        F.datediff(corte, F.col("fecha_alta")).alias("antiguedad_dias"),
         F.col("ingreso_mensual_declarado").cast("double").alias("ingreso_declarado"),
     )
 

@@ -14,7 +14,9 @@
 #   bash demo.sh reporte      genera data/reporte_pipeline.html con conteos y tiempos
 #   bash demo.sh estado       muestra el estado de las ultimas corridas del DAG
 #   bash demo.sh bajar        detiene los contenedores (conserva datos)
-#   bash demo.sh limpiar      detiene todo y borra datos, modelo y volumenes
+#   bash demo.sh sesiones     lista las sesiones de datos guardadas en data/sesiones/
+#   bash demo.sh limpiar      borra capas, modelo y volumenes; conserva las sesiones
+#   bash demo.sh limpiar todo igual, pero borra tambien las sesiones
 #
 # Guia completa: docs/ejecucion-local.md
 
@@ -151,7 +153,7 @@ cmd_pipeline() {
     # unico (main.py). Util para una demo rapida o para aislar si un
     # problema es del pipeline o de la orquestacion.
     local pasos=(
-        "generate --clientes 500 --meses 12 --out data/raw_sources"
+        "generate --config config/sesion.yaml --out data/raw_sources"
         "bronze --source data/raw_sources --out data/bronze"
         "silver --bronze data/bronze --silver data/silver --quarantine data/silver_quarantine --rules config/business_rules.yaml"
         "gold --silver data/silver --out data/gold/kpis.duckdb --catalog config/kpi_catalog.yaml"
@@ -185,8 +187,25 @@ cmd_bajar() {
     docker compose down
 }
 
+cmd_sesiones() {
+    if [ ! -d data/sesiones ] || [ -z "$(ls -A data/sesiones 2>/dev/null)" ]; then
+        echo "No hay sesiones guardadas todavia."
+        return
+    fi
+    echo "Sesiones en data/sesiones/ (semilla_fecha_clientes_meses):"
+    find data/sesiones -mindepth 1 -maxdepth 1 -type d ! -name '.*' -exec basename {} \; \
+        | sort | sed 's/^/  /'
+    echo "Parametros de la sesion por default: config/sesion.yaml"
+}
+
 cmd_limpiar() {
-    printf 'Esto borra data/, el modelo entrenado y los volumenes de Airflow y MinIO. Escribe "si" para continuar: '
+    local alcance="${1:-}" que_se_borra="capas Bronze/Silver/Gold, modelo y volumenes (las sesiones se conservan)"
+    local filtro="! -name sesiones"
+    if [ "${alcance}" = "todo" ]; then
+        que_se_borra="todo data/ INCLUIDAS las sesiones, el modelo y los volumenes"
+        filtro=""
+    fi
+    printf 'Esto borra %s. Escribe "si" para continuar: ' "${que_se_borra}"
     local respuesta
     read -r respuesta
     [ "${respuesta}" = "si" ] || error "Cancelado."
@@ -194,7 +213,8 @@ cmd_limpiar() {
     # Los archivos los escribio el worker (root dentro del contenedor);
     # se borran desde un contenedor para no necesitar sudo en Linux.
     docker compose run --rm --entrypoint sh worker -c \
-        'rm -rf /opt/lakehouse/data/* /opt/lakehouse/models/*.joblib /opt/lakehouse/models/*.png'
+        "find /opt/lakehouse/data -mindepth 1 -maxdepth 1 ${filtro} -exec rm -rf {} + ;
+         rm -f /opt/lakehouse/models/*.joblib /opt/lakehouse/models/*.png"
     docker compose down -v
     echo "Listo."
 }
@@ -205,7 +225,8 @@ case "${1:-levantar}" in
     reporte) cmd_reporte ;;
     estado) cmd_estado ;;
     bajar) cmd_bajar ;;
-    limpiar) cmd_limpiar ;;
-    -h | --help | ayuda) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//' ;;
+    sesiones) cmd_sesiones ;;
+    limpiar) cmd_limpiar "${2:-}" ;;
+    -h | --help | ayuda) sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//' ;;
     *) error "Comando desconocido: $1 (usa: bash demo.sh ayuda)" ;;
 esac

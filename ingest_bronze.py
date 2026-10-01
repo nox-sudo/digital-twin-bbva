@@ -99,30 +99,49 @@ def get_spark_session() -> SparkSession:
     return configure_spark_with_delta_pip(builder).getOrCreate()
 
 
-def con_metadata_ingesta(df, nombre_archivo_origen: str, formato_origen: str):
+def leer_sesion_id(source_dir: Path) -> str | None:
+    """Id de la sesion de datos que se esta ingiriendo, desde el
+    manifest.json que deja el generador (ver src/common/sesiones.py).
+    None si las fuentes no vienen de una sesion (carpeta armada a mano)."""
+    ruta = source_dir / "manifest.json"
+    if not ruta.exists():
+        return None
+    with open(ruta, encoding="utf-8") as f:
+        return json.load(f).get("sesion_id")
+
+
+def con_metadata_ingesta(
+    df, nombre_archivo_origen: str, formato_origen: str, sesion_id: str | None
+):
     """
     Adjunta las columnas de metadata que exige el kick-off:
     timestamp de ingesta y archivo fuente. Esto es lo que hace
-    que Bronze sea trazable y auditable.
+    que Bronze sea trazable y auditable. _sesion_id liga cada fila con
+    la sesion de datos (y por lo tanto los parametros) que la produjo.
     """
     return (
         df.withColumn("_ingestion_timestamp", F.current_timestamp())
         .withColumn("_source_file", F.lit(nombre_archivo_origen))
         .withColumn("_source_format", F.lit(formato_origen))
+        .withColumn("_sesion_id", F.lit(sesion_id).cast("string"))
     )
 
 
-def ingest_clientes(spark: SparkSession, source_dir: Path, out_dir: Path):
+def ingest_clientes(
+    spark: SparkSession, source_dir: Path, out_dir: Path, sesion_id: str | None
+):
     print("[Bronze] Ingiriendo clientes.csv ...")
     df = spark.read.csv(
         str(source_dir / "clientes.csv"), header=True, inferSchema=False
     )
-    df = con_metadata_ingesta(df, "clientes.csv", "csv")
+    df = con_metadata_ingesta(df, "clientes.csv", "csv", sesion_id)
     (df.write.mode("overwrite").format("delta").save(str(out_dir / "clientes")))
     print(f"  -> {df.count()} filas escritas en {out_dir / 'clientes'}")
 
 
-def ingest_catalogo_productos(spark: SparkSession, source_dir: Path, out_dir: Path):
+def ingest_catalogo_productos(
+    spark: SparkSession, source_dir: Path, out_dir: Path, sesion_id: str | None
+):
     print("[Bronze] Ingiriendo catalogo_productos.json ...")
     # multiLine=True porque es un JSON anidado (no JSON-lines)
     df = (
@@ -133,7 +152,7 @@ def ingest_catalogo_productos(spark: SparkSession, source_dir: Path, out_dir: Pa
     # El JSON trae un arreglo "productos" -> lo explotamos a filas
     df = df.select(F.explode("productos").alias("producto"))
     df = df.select("producto.*")
-    df = con_metadata_ingesta(df, "catalogo_productos.json", "json")
+    df = con_metadata_ingesta(df, "catalogo_productos.json", "json", sesion_id)
     (
         df.write.mode("overwrite")
         .format("delta")
@@ -142,24 +161,28 @@ def ingest_catalogo_productos(spark: SparkSession, source_dir: Path, out_dir: Pa
     print(f"  -> {df.count()} filas escritas en {out_dir / 'catalogo_productos'}")
 
 
-def ingest_cuentas(spark: SparkSession, source_dir: Path, out_dir: Path):
+def ingest_cuentas(
+    spark: SparkSession, source_dir: Path, out_dir: Path, sesion_id: str | None
+):
     print("[Bronze] Ingiriendo cuentas.json ...")
     df = (
         spark.read.option("multiLine", True)
         .schema(SCHEMA_CUENTAS)
         .json(str(source_dir / "cuentas.json"))
     )
-    df = con_metadata_ingesta(df, "cuentas.json", "json")
+    df = con_metadata_ingesta(df, "cuentas.json", "json", sesion_id)
     (df.write.mode("overwrite").format("delta").save(str(out_dir / "cuentas")))
     print(f"  -> {df.count()} filas escritas en {out_dir / 'cuentas'}")
 
 
-def ingest_cetes(spark: SparkSession, source_dir: Path, out_dir: Path):
+def ingest_cetes(
+    spark: SparkSession, source_dir: Path, out_dir: Path, sesion_id: str | None
+):
     print("[Bronze] Ingiriendo cetes_inversiones.csv ...")
     df = spark.read.csv(
         str(source_dir / "cetes_inversiones.csv"), header=True, inferSchema=False
     )
-    df = con_metadata_ingesta(df, "cetes_inversiones.csv", "csv")
+    df = con_metadata_ingesta(df, "cetes_inversiones.csv", "csv", sesion_id)
     (
         df.write.mode("overwrite")
         .format("delta")
@@ -168,7 +191,9 @@ def ingest_cetes(spark: SparkSession, source_dir: Path, out_dir: Path):
     print(f"  -> {df.count()} filas escritas en {out_dir / 'cetes_inversiones'}")
 
 
-def ingest_transacciones(spark: SparkSession, source_dir: Path, out_dir: Path):
+def ingest_transacciones(
+    spark: SparkSession, source_dir: Path, out_dir: Path, sesion_id: str | None
+):
     """
     Las transacciones llegan en múltiples archivos (uno por mes),
     simulando cargas incrementales reales. Se leen todos juntos,
@@ -201,6 +226,7 @@ def ingest_transacciones(spark: SparkSession, source_dir: Path, out_dir: Path):
     df = (
         df.withColumn("_ingestion_timestamp", F.current_timestamp())
         .withColumn("_source_format", F.lit("csv"))
+        .withColumn("_sesion_id", F.lit(sesion_id).cast("string"))
         .withColumn("anio_mes", F.substring(F.col("fecha"), 1, 7))  # ej. "2026-07"
     )
 
@@ -255,16 +281,19 @@ def main():
             f"No existe {source_dir}. Corre primero generate_synthetic_sources.py"
         )
 
+    sesion_id = leer_sesion_id(source_dir)
+    print(f"[Bronze] Sesion de datos: {sesion_id or 'sin manifest'}")
+
     inicio = datetime.now()
     spark = get_spark_session()
     spark.sparkContext.setLogLevel("WARN")  # menos ruido en consola
 
     try:
-        ingest_clientes(spark, source_dir, out_dir)
-        ingest_catalogo_productos(spark, source_dir, out_dir)
-        ingest_cuentas(spark, source_dir, out_dir)
-        ingest_cetes(spark, source_dir, out_dir)
-        ingest_transacciones(spark, source_dir, out_dir)
+        ingest_clientes(spark, source_dir, out_dir, sesion_id)
+        ingest_catalogo_productos(spark, source_dir, out_dir, sesion_id)
+        ingest_cuentas(spark, source_dir, out_dir, sesion_id)
+        ingest_cetes(spark, source_dir, out_dir, sesion_id)
+        ingest_transacciones(spark, source_dir, out_dir, sesion_id)
 
         estatus = "SUCCESS"
     except Exception as e:
@@ -280,6 +309,7 @@ def main():
                 "duracion_segundos": (fin - inicio).total_seconds(),
                 "estatus": estatus,
                 "source_dir": str(source_dir),
+                "sesion_id": sesion_id,
                 "out_dir": str(out_dir),
             },
         )

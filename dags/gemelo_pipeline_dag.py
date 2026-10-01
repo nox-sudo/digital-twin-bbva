@@ -90,7 +90,9 @@ with DAG(
 
     generar_fuentes = tarea_worker(
         "generar_fuentes_sinteticas",
-        "generate_synthetic_sources.py --clientes 500 --meses 12 --out data/raw_sources",
+        # Parametros de la sesion en config/sesion.yaml. Si la sesion ya
+        # existe en data/sesiones/, se reutiliza en vez de regenerarse.
+        "generate_synthetic_sources.py --config config/sesion.yaml --out data/raw_sources",
     )
 
     ingesta_bronze = tarea_worker(

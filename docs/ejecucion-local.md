@@ -50,6 +50,7 @@ los siguientes reutilizan el cache de Docker.
 | Modelo de riesgo y grafico SHAP | `models/risk_model.joblib`, `models/shap_importancia.png` |
 | Filas rechazadas por validaciones de Silver | `data/silver_quarantine/` (vacio con datos limpios) |
 | Logs de cada corrida | `data/logs/` |
+| Sesion de datos usada, con parametros y checksums | `data/sesiones/<id>/manifest.json` |
 | Resumen visual Bronze/Silver | `bash demo.sh reporte` genera `data/reporte_pipeline.html` |
 
 Consulta rapida a Gold sin instalar nada:
@@ -71,7 +72,21 @@ print(con.sql('SELECT kpi_id, COUNT(*) AS clientes FROM gold_kpis GROUP BY 1 ORD
 | `bash demo.sh reporte` | Genera el reporte HTML de conteos y tiempos |
 | `bash demo.sh estado` | Lista las corridas del DAG |
 | `bash demo.sh bajar` | Detiene los contenedores, conserva datos |
-| `bash demo.sh limpiar` | Borra datos, modelo y volumenes (pide confirmacion) |
+| `bash demo.sh sesiones` | Lista las sesiones de datos guardadas |
+| `bash demo.sh limpiar` | Borra capas, modelo y volumenes; conserva las sesiones (pide confirmacion) |
+| `bash demo.sh limpiar todo` | Igual, pero borra tambien las sesiones |
+
+## Sesiones de datos
+
+Los datos sinteticos se generan a partir de `config/sesion.yaml`
+(semilla, fecha de referencia, clientes, meses). Con los mismos valores
+se obtienen exactamente los mismos datos, en cualquier maquina y
+cualquier dia. La primera corrida guarda la sesion en
+`data/sesiones/<id>/`; las siguientes la reutilizan en segundos.
+
+Para correr con otro volumen, cambiar `clientes` en
+`config/sesion.yaml` y volver a correr `bash demo.sh`: se genera una
+sesion nueva y la anterior queda guardada.
 
 ## Windows
 
