@@ -22,6 +22,15 @@ DockerOperator y en el servicio `worker`). Requiere mover el cache de
 Ivy con los JARs de Delta a una ruta legible por cualquier usuario,
 porque hoy vive en el home de root dentro de la imagen.
 
+### Imagenes de MinIO sin version fija
+
+**Que pasa:** `docker-compose.yml` usa `minio/minio:latest` y
+`minio/mc:latest`. Un build futuro puede traer una version con cambios
+incompatibles, y no hay forma de saber que version corrio una demo.
+
+**Posible fix:** fijar ambas a un tag `RELEASE.*` verificado, igual que
+Airflow (`2.10.3`) y Postgres (`16-alpine`).
+
 ## Resueltos
 
 ### CI: el smoke test no cubria el pipeline del modelo de riesgo

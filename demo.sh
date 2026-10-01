@@ -119,13 +119,20 @@ correr_dag() {
     fi
 }
 
+# Lee un valor de .env sin cargar el archivo completo al entorno.
+valor_env() {
+    grep -E "^$1=" .env | tail -1 | cut -d= -f2-
+}
+
 resumen_final() {
+    # Las credenciales se generaron para esta maquina (setup.sh) y solo
+    # se muestran en esta terminal; no estan en el repo.
     cat << EOF
 
 Pipeline completado.
 
-  Airflow (DAG y logs por tarea)   ${AIRFLOW_URL}        usuario admin / admin
-  MinIO (consola)                  http://localhost:9001 usuario minioadmin / minioadmin
+  Airflow (DAG y logs por tarea)   ${AIRFLOW_URL}        usuario admin / $(valor_env AIRFLOW_ADMIN_PASSWORD)
+  MinIO (consola)                  http://localhost:9001 usuario $(valor_env MINIO_ROOT_USER) / $(valor_env MINIO_ROOT_PASSWORD)
   KPIs en Gold (DuckDB)            data/gold/kpis.duckdb
   Modelo de riesgo y grafico SHAP  models/
 
@@ -199,10 +206,10 @@ cmd_sesiones() {
 }
 
 cmd_limpiar() {
-    local alcance="${1:-}" que_se_borra="capas Bronze/Silver/Gold, modelo y volumenes (las sesiones se conservan)"
-    local filtro="! -name sesiones"
+    local alcance="${1:-}" que_se_borra="capas Bronze/Silver/Gold, modelo y volumenes (se conservan las sesiones y el historico de MinIO)"
+    local filtro="! -name sesiones ! -name minio"
     if [ "${alcance}" = "todo" ]; then
-        que_se_borra="todo data/ INCLUIDAS las sesiones, el modelo y los volumenes"
+        que_se_borra="todo data/ INCLUIDAS las sesiones y el historico de MinIO, el modelo y los volumenes"
         filtro=""
     fi
     printf 'Esto borra %s. Escribe "si" para continuar: ' "${que_se_borra}"

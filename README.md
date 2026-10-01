@@ -111,6 +111,7 @@ digital-twin-bbva/
 │   └── test_main_cli.py          # Pruebas de enrutamiento del CLI (main.py)
 ├── docs/
 │   ├── ejecucion-local.md        # Guía para correr el proyecto en otra máquina
+│   ├── seguridad.md              # Secretos, clasificación de datos por capa, auditoría
 │   └── technical-debt.md         # Deuda técnica conocida
 ├── models/                       # Modelo entrenado y gráfico SHAP (se regeneran)
 ├── .github/workflows/ci.yml      # Lint, tests, smoke test Bronze→Silver→Gold→modelo
@@ -144,8 +145,7 @@ bash demo.sh
 
 Genera `.env`, construye el worker, levanta Airflow, Postgres y MinIO, dispara el DAG y muestra el avance tarea por tarea hasta terminar. Requisitos, comandos adicionales (`pipeline`, `reporte`, `limpiar`), instrucciones para Windows y problemas comunes: [docs/ejecucion-local.md](docs/ejecucion-local.md).
 
-- Airflow: `http://localhost:8080` (usuario `admin`, contraseña `admin`)
-- Consola de MinIO: `http://localhost:9001` (`minioadmin` / `minioadmin`)
+- Airflow: `http://localhost:8080` y consola de MinIO: `http://localhost:9001`. Las credenciales se generan al azar por máquina en `.env` (nunca en el repo) y `demo.sh` las muestra al terminar. Detalle en [docs/seguridad.md](docs/seguridad.md).
 
 ### Opción B — pipeline directo, sin Docker (desarrollo)
 
@@ -231,6 +231,7 @@ Catálogo de 12 KPIs en 5 categorías (ingresos, gastos, ahorro y liquidez, ries
 - [x] Diccionario de datos formal
 - [x] Modelo predictivo de riesgo crediticio (XGBoost + SHAP), entrenado dentro del DAG
 - [x] Feature store ligero en Gold (`gold_features_cliente`), fuente única de features
+- [x] Seguridad base: secretos por máquina fuera del repo, puertos locales, escaneo de secretos en CI
 - [x] Sesiones de datos reproducibles, con manifest, checksums y reuso
 - [x] Arranque reproducible con un comando en cualquier máquina con Docker (`demo.sh`)
 - [ ] Simulador de escenarios Monte Carlo
@@ -244,6 +245,7 @@ Catálogo de 12 KPIs en 5 categorías (ingresos, gastos, ahorro y liquidez, ries
 - Reporte técnico completo (arquitectura, decisiones de diseño, hallazgos de robustez) — Google Drive
 - Diccionario de datos formal — Google Drive
 - Ejecución en otra máquina — [docs/ejecucion-local.md](docs/ejecucion-local.md)
+- Seguridad y manejo de datos sensibles — [docs/seguridad.md](docs/seguridad.md)
 - Diagrama de arquitectura de infraestructura — Lucid
 - Diagrama de flujo de datos end-to-end — Lucid
 - [Deuda técnica conocida](docs/technical-debt.md) — gaps registrados dentro del repo, con fecha de última verificación

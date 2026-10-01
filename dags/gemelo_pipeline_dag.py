@@ -58,18 +58,42 @@ MOUNTS = [
 ]
 
 
+# Red de docker-compose (nombre fijo en docker-compose.yml): el worker
+# corre en ella para poder resolver "minio" por nombre.
+RED_COMPOSE = "gemelo-net"
+
+# Variables no sensibles para el worker.
+ENTORNO_WORKER = {
+    "DATA_ROOT": "/opt/lakehouse/data",
+    "SPARK_MASTER_URL": "local[*]",
+    "MINIO_ENDPOINT": "http://minio:9000",
+}
+
+# Secretos para el worker. Van en private_environment, no en
+# environment: Airflow no los muestra en la UI ni los escribe en los
+# logs de la tarea. Se leen al parsear el DAG desde el entorno del
+# contenedor de Airflow, que a su vez los recibe de .env.
+SECRETOS_WORKER = {
+    nombre: os.environ.get(nombre, "")
+    for nombre in ("PII_HASH_SALT", "MINIO_ROOT_USER", "MINIO_ROOT_PASSWORD")
+}
+
+
 def tarea_worker(task_id: str, command: str) -> DockerOperator:
     """Crea una tarea que corre un script del proyecto en el worker.
 
-    Centraliza la configuracion comun (imagen, montajes, red, limpieza)
-    para que agregar un paso nuevo al pipeline sea una sola linea.
+    Centraliza la configuracion comun (imagen, montajes, red, entorno,
+    limpieza) para que agregar un paso nuevo al pipeline sea una sola
+    llamada.
     """
     return DockerOperator(
         task_id=task_id,
         image=WORKER_IMAGE,
         command=command,
         mounts=MOUNTS,
-        network_mode="bridge",
+        environment=ENTORNO_WORKER,
+        private_environment=SECRETOS_WORKER,
+        network_mode=RED_COMPOSE,
         auto_remove="success",
         docker_url="unix://var/run/docker.sock",
     )

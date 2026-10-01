@@ -8,5 +8,7 @@ models/*.joblib
 models/*.png
 *.log
 .env
+.env.*
+.pytest_cache
 credentials.json
 token.json

@@ -1,0 +1,124 @@
+# Seguridad y manejo de datos sensibles
+
+Como se protegen los secretos de la infraestructura y los datos
+personales (PII) a lo largo del Lakehouse. Los datos del proyecto son
+sinteticos, pero se tratan con las mismas reglas que se aplicarian a
+datos reales de clientes: el objetivo es que el diseno sea defendible
+como si lo fueran.
+
+Ultima revision: 2026-10-01.
+
+## Principios
+
+1. **Nada sensible en el repositorio.** Ni secretos ni datos. Todo lo
+   generado vive en `data/` y `models/`, fuera de git (`.gitignore`) y
+   fuera de la imagen de Docker (`.dockerignore`). El CI lo verifica en
+   cada PR.
+2. **PII en claro solo donde es inevitable.** Existe en la zona de
+   aterrizaje y en Bronze (el registro fiel de lo que llego); desde
+   Silver en adelante solo existen versiones protegidas.
+3. **Secretos por maquina, nunca compartidos.** Cada instalacion genera
+   los suyos; no existe una contrasena "del proyecto".
+4. **Minima exposicion de red.** Los servicios solo escuchan en la
+   maquina local.
+
+## Clasificacion de datos por capa
+
+| Zona | PII | Acceso esperado en un banco |
+|---|---|---|
+| Fuentes / sesiones (`data/sesiones/`, MinIO) | En claro | Restringido: procesos de ingesta y auditoria |
+| Bronze | En claro | Restringido: ingenieria de datos, auditoria |
+| Cuarentena de Silver | Protegida, igual que Silver | Ingenieria de datos (diagnostico) |
+| Silver | Hash + enmascarado + generalizada | Analistas, ciencia de datos |
+| Gold, feature store, modelo | Sin PII | Negocio, dashboards, asistente |
+
+Como se protege cada campo en Silver:
+
+| Campo | Tratamiento | Ejemplo |
+|---|---|---|
+| CURP, RFC | Hash con sal (para unir y deduplicar) + enmascarado (para personas) | `GOMA**********09` |
+| Telefono | Hash + enmascarado | `******4821` |
+| Correo | Hash + enmascarado | `a***@ejemplo.com` |
+| Nombre y apellidos | Hash; no se conserva legible | |
+| Domicilio | Generalizacion: se conservan codigo postal, municipio y estado; calle y numero se descartan | |
+
+**Hash con sal (HMAC-SHA256).** La misma CURP produce siempre el mismo
+hash, asi que se puede unir y contar clientes unicos sin ver el valor.
+La sal es un secreto (`PII_HASH_SALT` en `.env`): la CURP tiene una
+estructura predecible, y sin sal alguien podria calcular el hash de
+todas las combinaciones plausibles y compararlos.
+
+**Cuarentena.** Las filas que fallan una regla de calidad se guardan
+con la PII ya protegida. Para diagnosticar una fila se usa su llave y
+`_source_file` para rastrearla en Bronze, que es la zona autorizada a
+tener el valor real.
+
+## Secretos
+
+`setup.sh` genera `.env` con permisos 600 (solo el dueno puede leerlo):
+
+| Variable | Protege |
+|---|---|
+| `POSTGRES_PASSWORD` | Base de metadata de Airflow |
+| `AIRFLOW_ADMIN_PASSWORD` | Usuario `admin` de la UI de Airflow |
+| `AIRFLOW_FERNET_KEY` | Cifrado de conexiones y variables guardadas por Airflow |
+| `AIRFLOW_SECRET_KEY` | Firma de cookies de sesion de la UI |
+| `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` | Zona de aterrizaje |
+| `PII_HASH_SALT` | Irreversibilidad de los hashes de PII |
+
+- Se generan una sola vez y se conservan en corridas posteriores. Rotar
+  `POSTGRES_PASSWORD` exige recrear la base (`docker compose down -v`),
+  y rotar `PII_HASH_SALT` cambia todos los hashes de Silver.
+- `docker-compose.yml` usa `${VAR:?}`: si falta un secreto, compose no
+  arranca, en vez de caer a un valor por default inseguro.
+- El DAG pasa los secretos al worker con `private_environment` de
+  DockerOperator, que Airflow no muestra en la UI ni en los logs.
+- `demo.sh` muestra las credenciales de acceso solo en la terminal
+  local, al terminar.
+
+## Red
+
+Airflow (8080) y MinIO (9000, 9001) se publican en `127.0.0.1`: son
+accesibles desde la maquina, no desde la red local.
+
+## Controles automaticos en CI
+
+| Control | Detecta |
+|---|---|
+| `detect-secrets` sobre los archivos versionados | Llaves de nube, contrasenas en texto, cadenas de alta entropia |
+| Busqueda de archivos de datos versionados | `.csv`, `.parquet`, `.duckdb`, `.joblib`, `.env` |
+| `shellcheck` | Errores en `setup.sh` y `demo.sh` |
+
+## Auditoria del repositorio (2026-10-01)
+
+Se revisaron las 34 entradas del historial en todas las ramas, incluida
+`main`:
+
+- Ningun secreto en el historial (llaves de nube, tokens, llaves
+  privadas, credenciales de Google) ni archivos de credenciales
+  (`credentials.json`, `token.json`), que siempre estuvieron en
+  `.gitignore`.
+- Ningun archivo de datos ni `.env` versionado en ningun momento.
+- Corregido en esta revision: contrasenas fijas en `docker-compose.yml`
+  (`airflow`, `admin`, `minioadmin`), puertos expuestos a toda la red,
+  Airflow sin llave Fernet, y `.pytest_cache/` sin ignorar.
+
+## Riesgos aceptados
+
+| Riesgo | Por que se acepta | Mitigacion |
+|---|---|---|
+| El socket de Docker montado en Airflow equivale a control total del Docker del host | Es el mecanismo de DockerOperator para lanzar el worker | Uso local; puertos solo en 127.0.0.1 |
+| El worker corre como root dentro del contenedor | Ver `docs/technical-debt.md` | Contenedor efimero, sin puertos |
+| Imagenes `minio/minio:latest` y `minio/mc:latest` sin version fija | Pendiente de fijar | Registrado en `docs/technical-debt.md` |
+
+## Recomendaciones para el repositorio en GitHub
+
+- **Visibilidad.** El repositorio es publico. No contiene datos ni
+  secretos (verificado por CI en cada PR), pero en un contexto bancario
+  lo esperado es privado, con acceso explicito para mentor y
+  evaluadores.
+- **Secret scanning y push protection** (Settings > Code security):
+  GitHub bloquea un push que contenga un secreto reconocido, antes de
+  que llegue al historial.
+- **Reglas de proteccion** en `main` y `develop`: PR obligatorio y CI en
+  verde para mergear.

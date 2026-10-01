@@ -44,7 +44,7 @@ los siguientes reutilizan el cache de Docker.
 
 | Que | Donde |
 |---|---|
-| DAG, grafo de tareas y logs de cada una | http://localhost:8080 (admin / admin) |
+| DAG, grafo de tareas y logs de cada una | http://localhost:8080 (usuario `admin`; la contrasena la muestra `demo.sh` al terminar, y esta en `.env`) |
 | KPIs de Gold (12 KPIs, formato largo) | `data/gold/kpis.duckdb`, tabla `gold_kpis` |
 | Features por cliente (una fila por cliente) | `data/gold/kpis.duckdb`, tabla `gold_features_cliente` |
 | Modelo de riesgo y grafico SHAP | `models/risk_model.joblib`, `models/shap_importancia.png` |

@@ -18,7 +18,7 @@ jobs:
 
   # Job rapido, sin Java/PySpark: corre en segundos, siempre primero.
   lint:
-    name: Lint (flake8 + black)
+    name: Lint (flake8 + black) y escaneo de secretos
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,6 +27,29 @@ jobs:
       - run: uv sync --frozen
       - run: uv run flake8 . --max-line-length=100 --exclude=.venv
       - run: uv run black --check . --exclude=.venv
+
+      # Ningun secreto ni archivo de datos versionado. detect-secrets
+      # busca credenciales por patron (llaves de nube, contrasenas en
+      # texto) y por entropia (cadenas aleatorias largas). Solo revisa
+      # archivos versionados; uv.lock se excluye porque sus hashes de
+      # paquetes son cadenas de alta entropia legitimas.
+      - name: Escaneo de secretos y archivos de datos
+        run: |
+          git ls-files -z | grep -zv '^uv.lock$' \
+            | xargs -0 uvx detect-secrets==1.5.0 scan > /tmp/secretos.json
+          uv run python -c "
+          import json, sys
+          hallazgos = json.load(open('/tmp/secretos.json'))['results']
+          for archivo, items in hallazgos.items():
+              for item in items:
+                  print(f'{archivo}:{item[\"line_number\"]} {item[\"type\"]}')
+          sys.exit(1 if hallazgos else 0)
+          "
+          if git ls-files | grep -E '\.(csv|parquet|duckdb|joblib)$|(^|/)\.env$'; then
+            echo "ERROR: hay archivos de datos o .env versionados"
+            exit 1
+          fi
+          echo "Sin secretos ni archivos de datos versionados"
 
   # Job de validacion sintactica de Docker Compose, sin build de imagenes.
   # No requiere Docker Desktop completo, solo el CLI - rapido.
