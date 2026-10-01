@@ -31,6 +31,13 @@ x-airflow-common: &airflow-common
     - airflow_logs:/opt/airflow/logs
     - /var/run/docker.sock:/var/run/docker.sock
   user: "${AIRFLOW_UID:-50000}:0"
+  # Grupo dueno del socket de Docker en el host. En Linux el socket
+  # pertenece al grupo "docker" (GID variable por maquina); sin este
+  # grupo, Airflow no puede lanzar el worker (permission denied). En
+  # Mac/Windows con Docker Desktop el socket ya es accesible y basta 0.
+  # setup.sh detecta el valor correcto y lo escribe en .env.
+  group_add:
+    - "${DOCKER_GID:-0}"
   depends_on:
     postgres:
       condition: service_healthy
@@ -121,6 +128,7 @@ services:
     volumes:
       - ./data:/opt/lakehouse/data
       - ./config:/opt/lakehouse/config
+      - ./models:/opt/lakehouse/models
     # Sin comando por defecto: se invoca puntualmente con
     # docker compose run --rm worker <script>.py [args], o desde Airflow.
 

@@ -1,0 +1,210 @@
+#!/usr/bin/env bash
+# demo.sh
+#
+# Punto de entrada unico para correr el Gemelo Digital Financiero en
+# cualquier maquina con Docker. Pensado para que alguien que nunca ha
+# visto el repo (mentor, evaluador) lo levante con un solo comando, sin
+# conocer Airflow ni la estructura del proyecto.
+#
+# Uso:
+#   bash demo.sh              levanta todo y corre el pipeline completo (= levantar)
+#   bash demo.sh levantar     igual que arriba
+#   bash demo.sh pipeline     corre el pipeline directo en el worker, sin Airflow
+#                             (ruta rapida: no levanta Airflow, Postgres ni MinIO)
+#   bash demo.sh reporte      genera data/reporte_pipeline.html con conteos y tiempos
+#   bash demo.sh estado       muestra el estado de las ultimas corridas del DAG
+#   bash demo.sh bajar        detiene los contenedores (conserva datos)
+#   bash demo.sh limpiar      detiene todo y borra datos, modelo y volumenes
+#
+# Guia completa: docs/ejecucion-local.md
+
+set -euo pipefail
+
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "${PROJECT_DIR}"
+
+DAG_ID="gemelo_digital_financiero_pipeline"
+AIRFLOW_URL="http://localhost:8080"
+MEMORIA_MINIMA_GB=6
+TIMEOUT_AIRFLOW_SEG=600   # el primer arranque instala el provider de Docker
+TIMEOUT_PIPELINE_SEG=1800
+
+info() { printf '\n==> %s\n' "$*"; }
+error() {
+    printf '\nERROR: %s\n' "$*" >&2
+    exit 1
+}
+
+# airflow CLI dentro del scheduler. stderr se descarta porque Airflow
+# imprime advertencias de configuracion en cada llamada.
+airflow_cli() {
+    docker compose exec -T airflow-scheduler airflow "$@" 2>/dev/null
+}
+
+verificar_requisitos() {
+    command -v docker >/dev/null 2>&1 \
+        || error "Docker no esta instalado. Instala Docker Desktop (Mac/Windows) o Docker Engine (Linux)."
+    docker info >/dev/null 2>&1 \
+        || error "Docker esta instalado pero no esta corriendo. Abre Docker Desktop y vuelve a intentar."
+    docker compose version >/dev/null 2>&1 \
+        || error "Falta Docker Compose v2 ('docker compose', sin guion)."
+
+    local memoria_bytes memoria_gb
+    memoria_bytes="$(docker info --format '{{.MemTotal}}' 2>/dev/null || echo 0)"
+    memoria_gb=$((memoria_bytes / 1024 / 1024 / 1024))
+    if [ "${memoria_gb}" -lt "${MEMORIA_MINIMA_GB}" ]; then
+        echo "Aviso: Docker tiene ${memoria_gb} GB de memoria asignada; se recomiendan ${MEMORIA_MINIMA_GB} GB."
+        echo "       En Docker Desktop: Settings > Resources > Memory."
+    fi
+}
+
+preparar_entorno() {
+    if [ ! -f .env ]; then
+        info "Generando .env para esta maquina"
+        bash setup.sh
+    fi
+}
+
+esperar_airflow() {
+    info "Esperando a que Airflow este listo (el primer arranque tarda unos minutos)"
+    local inicio=$SECONDS
+    until curl -fsS "${AIRFLOW_URL}/health" 2>/dev/null | grep -Eq '"scheduler": *\{[^}]*"healthy"'; do
+        [ $((SECONDS - inicio)) -gt ${TIMEOUT_AIRFLOW_SEG} ] \
+            && error "Airflow no respondio en ${TIMEOUT_AIRFLOW_SEG}s. Revisa: docker compose logs airflow-scheduler"
+        sleep 5
+    done
+
+    # El scheduler puede estar sano antes de haber leido el archivo del
+    # DAG; unpause/trigger fallan si el DAG aun no esta registrado.
+    until airflow_cli dags list -o plain | grep -q "${DAG_ID}"; do
+        [ $((SECONDS - inicio)) -gt ${TIMEOUT_AIRFLOW_SEG} ] \
+            && error "El DAG no aparecio en Airflow. Revisa: docker compose logs airflow-scheduler"
+        sleep 5
+    done
+    echo "Airflow listo."
+}
+
+correr_dag() {
+    local run_id
+    run_id="demo_$(date +%Y%m%d_%H%M%S)"
+
+    info "Disparando el DAG ${DAG_ID} (run_id: ${run_id})"
+    # El DAG nace pausado por default; sin unpause, el trigger queda en cola.
+    airflow_cli dags unpause "${DAG_ID}" >/dev/null
+    airflow_cli dags trigger "${DAG_ID}" --run-id "${run_id}" >/dev/null
+
+    local inicio=$SECONDS estado="queued" ultima_linea=""
+    while [ "${estado}" != "success" ] && [ "${estado}" != "failed" ]; do
+        [ $((SECONDS - inicio)) -gt ${TIMEOUT_PIPELINE_SEG} ] \
+            && error "El pipeline sigue corriendo tras ${TIMEOUT_PIPELINE_SEG}s. Revisa la UI: ${AIRFLOW_URL}"
+        sleep 10
+        estado="$(airflow_cli dags list-runs -d "${DAG_ID}" -o plain \
+            | awk -v id="${run_id}" '$2 == id {print $3}')"
+        local en_curso
+        en_curso="$(airflow_cli tasks states-for-dag-run "${DAG_ID}" "${run_id}" -o plain \
+            | awk '$4 == "running" {print $3}' | head -1)"
+        local linea="estado: ${estado:-queued}${en_curso:+ | tarea en curso: ${en_curso}}"
+        if [ "${linea}" != "${ultima_linea}" ]; then
+            printf '  [%4ss] %s\n' $((SECONDS - inicio)) "${linea}"
+            ultima_linea="${linea}"
+        fi
+    done
+
+    if [ "${estado}" = "failed" ]; then
+        airflow_cli tasks states-for-dag-run "${DAG_ID}" "${run_id}" -o plain \
+            | awk 'NR > 1 {printf "  %-28s %s\n", $3, $4}'
+        error "El pipeline fallo. Detalle por tarea en ${AIRFLOW_URL} (DAG ${DAG_ID})."
+    fi
+}
+
+resumen_final() {
+    cat << EOF
+
+Pipeline completado.
+
+  Airflow (DAG y logs por tarea)   ${AIRFLOW_URL}        usuario admin / admin
+  MinIO (consola)                  http://localhost:9001 usuario minioadmin / minioadmin
+  KPIs en Gold (DuckDB)            data/gold/kpis.duckdb
+  Modelo de riesgo y grafico SHAP  models/
+
+Siguiente paso sugerido: bash demo.sh reporte
+EOF
+}
+
+cmd_levantar() {
+    verificar_requisitos
+    preparar_entorno
+    info "Construyendo imagenes y levantando servicios"
+    docker compose up --build -d
+    esperar_airflow
+    correr_dag
+    resumen_final
+}
+
+cmd_pipeline() {
+    verificar_requisitos
+    preparar_entorno
+    info "Construyendo la imagen del worker"
+    docker compose build worker
+
+    # Mismos pasos y argumentos que el DAG, en el mismo orden, via el CLI
+    # unico (main.py). Util para una demo rapida o para aislar si un
+    # problema es del pipeline o de la orquestacion.
+    local pasos=(
+        "generate --clientes 500 --meses 12 --out data/raw_sources"
+        "bronze --source data/raw_sources --out data/bronze"
+        "silver --bronze data/bronze --silver data/silver --quarantine data/silver_quarantine --rules config/business_rules.yaml"
+        "gold --silver data/silver --out data/gold/kpis.duckdb --catalog config/kpi_catalog.yaml"
+        "labels --silver data/silver --out data/labels/risk_labels.parquet"
+        "train-model --silver data/silver --gold data/gold/kpis.duckdb --labels data/labels/risk_labels.parquet --model-out models/risk_model.joblib --shap-out models/shap_importancia.png"
+        "predict-risk --silver data/silver --gold data/gold/kpis.duckdb --model models/risk_model.joblib"
+    )
+    local paso
+    for paso in "${pasos[@]}"; do
+        info "Paso: ${paso%% *}"
+        # shellcheck disable=SC2086  # se separan argumentos a proposito
+        docker compose run --rm worker main.py ${paso}
+    done
+    resumen_final
+}
+
+cmd_reporte() {
+    preparar_entorno
+    info "Generando reporte del pipeline"
+    docker compose run --rm worker pipeline_summary.py --no-abrir --out data/reporte_pipeline.html
+    echo "Reporte: ${PROJECT_DIR}/data/reporte_pipeline.html"
+}
+
+cmd_estado() {
+    airflow_cli dags list-runs -d "${DAG_ID}" -o table \
+        || error "Airflow no esta corriendo. Usa: bash demo.sh levantar"
+}
+
+cmd_bajar() {
+    docker compose down
+}
+
+cmd_limpiar() {
+    printf 'Esto borra data/, el modelo entrenado y los volumenes de Airflow y MinIO. Escribe "si" para continuar: '
+    local respuesta
+    read -r respuesta
+    [ "${respuesta}" = "si" ] || error "Cancelado."
+    preparar_entorno
+    # Los archivos los escribio el worker (root dentro del contenedor);
+    # se borran desde un contenedor para no necesitar sudo en Linux.
+    docker compose run --rm --entrypoint sh worker -c \
+        'rm -rf /opt/lakehouse/data/* /opt/lakehouse/models/*.joblib /opt/lakehouse/models/*.png'
+    docker compose down -v
+    echo "Listo."
+}
+
+case "${1:-levantar}" in
+    levantar) cmd_levantar ;;
+    pipeline) cmd_pipeline ;;
+    reporte) cmd_reporte ;;
+    estado) cmd_estado ;;
+    bajar) cmd_bajar ;;
+    limpiar) cmd_limpiar ;;
+    -h | --help | ayuda) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//' ;;
+    *) error "Comando desconocido: $1 (usa: bash demo.sh ayuda)" ;;
+esac
