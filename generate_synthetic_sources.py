@@ -97,6 +97,23 @@ def fecha_entre(fecha_ref: date, desde: relativedelta, hasta: relativedelta) -> 
     )
 
 
+def semilla_mes(semilla: int, anio: int, mes: int) -> int:
+    """Semilla propia de cada mes de transacciones, derivada de la semilla
+    de la sesion. Asi el contenido de un mes no depende de cuantos meses
+    se generan ni en que orden: agregar un mes nuevo (una nueva entrega)
+    deja identicos todos los anteriores."""
+    digest = hashlib.sha256(f"{semilla}:{anio}:{mes}".encode()).hexdigest()
+    return int(digest[:8], 16)
+
+
+def fecha_de_corte(fecha_base: date, meses_adicionales: int) -> date:
+    """Ultimo dia cubierto por la sesion: fin del mes completo mas reciente
+    de la fecha base, recorrido meses_adicionales hacia adelante."""
+    ultimo_mes = meses_a_generar(fecha_base, 1)[0]
+    inicio = date(*ultimo_mes, 1) + relativedelta(months=meses_adicionales)
+    return inicio.replace(day=calendar.monthrange(inicio.year, inicio.month)[1])
+
+
 def meses_a_generar(fecha_ref: date, n_meses: int) -> list[tuple[int, int]]:
     """Los n_meses completos que terminan en fecha_ref, del mas reciente
     al mas antiguo. Si fecha_ref no es fin de mes, su mes se excluye:
@@ -533,7 +550,11 @@ def generar_transacciones_mes(cuentas: list[dict], anio: int, mes: int) -> pd.Da
                     "tipo_transaccion": "p2p_enviado" if enviado else "p2p_recibido",
                     "categoria": "transferencia_personal",
                     "monto": -monto_p2p if enviado else monto_p2p,
-                    "contraparte": fake.name(),
+                    # contraparte describe el movimiento (nunca una persona);
+                    # el nombre de la otra persona va aparte porque es PII
+                    # de alguien que ni siquiera es cliente.
+                    "contraparte": "Transferencia SPEI",
+                    "contraparte_persona": fake.name(),
                 }
             )
             tx_id += 1
@@ -612,6 +633,7 @@ def resolver_parametros(args) -> dict:
         ),
         "clientes": int(valor(args.clientes, "clientes", 500)),
         "meses": int(valor(args.meses, "meses", 12)),
+        "meses_adicionales": int(valor(args.meses_adicionales, "meses_adicionales", 0)),
     }
 
 
@@ -619,7 +641,12 @@ def generar_fuentes(out_dir: Path, parametros: dict) -> dict:
     """Genera todas las fuentes de una sesion en out_dir. Devuelve los
     conteos por entidad para el manifest."""
     sembrar(parametros["semilla"])
+    # Clientes y cuentas se anclan a la fecha base, no a la de corte: una
+    # entrega nueva trae los mismos clientes con un mes mas de movimientos,
+    # no una poblacion distinta.
     fecha_ref = date.fromisoformat(parametros["fecha_referencia"])
+    corte = fecha_de_corte(fecha_ref, parametros["meses_adicionales"])
+    total_meses = parametros["meses"] + parametros["meses_adicionales"]
     (out_dir / "transacciones").mkdir(parents=True, exist_ok=True)
 
     print(f"Generando {parametros['clientes']} clientes...")
@@ -640,9 +667,13 @@ def generar_fuentes(out_dir: Path, parametros: dict) -> dict:
     cetes_df = generar_cetes_inversiones(cuentas)
     cetes_df.to_csv(out_dir / "cetes_inversiones.csv", index=False)
 
-    print(f"Generando transacciones para {parametros['meses']} meses...")
+    print(f"Generando transacciones para {total_meses} meses (corte {corte})...")
     total_tx = 0
-    for anio, mes in meses_a_generar(fecha_ref, parametros["meses"]):
+    for anio, mes in meses_a_generar(corte, total_meses):
+        semilla = semilla_mes(parametros["semilla"], anio, mes)
+        random.seed(semilla)
+        np.random.seed(semilla)
+        Faker.seed(semilla)  # contraparte_persona (P2P) usa Faker
         tx_df = generar_transacciones_mes(cuentas, anio, mes)
         archivo = out_dir / "transacciones" / f"transacciones_{anio}_{mes:02d}.csv"
         tx_df.to_csv(archivo, index=False)
@@ -667,6 +698,11 @@ def main(argv: list[str] | None = None):
     parser.add_argument("--semilla", type=int)
     parser.add_argument("--fecha-referencia", help="YYYY-MM-DD; 'hoy' de los datos")
     parser.add_argument(
+        "--meses-adicionales",
+        type=int,
+        help="Entregas mensuales posteriores a la fecha de referencia (ver demo.sh nueva-entrega)",
+    )
+    parser.add_argument(
         "--out",
         default="data/raw_sources",
         help="Carpeta de la sesion activa (la que lee Bronze)",
@@ -683,6 +719,7 @@ def main(argv: list[str] | None = None):
         date.fromisoformat(parametros["fecha_referencia"]),
         parametros["clientes"],
         parametros["meses"],
+        parametros["meses_adicionales"],
     )
     sesiones_dir = Path(args.sesiones_dir)
     carpeta_sesion = sesiones_dir / sesion_id

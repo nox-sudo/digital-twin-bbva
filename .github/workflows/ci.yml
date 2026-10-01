@@ -140,6 +140,36 @@ jobs:
       - name: Ingesta Bronze
         run: uv run python ingest_bronze.py --source data/raw_sources --out data/bronze
 
+      # Ingesta incremental con Delta real: (1) reingerir la misma sesion
+      # no agrega nada; (2) una entrega con un mes adicional agrega solo
+      # ese mes, sin duplicar clientes ni meses anteriores.
+      - name: Verificar ingesta incremental de Bronze
+        run: |
+          uv run python ingest_bronze.py --source data/raw_sources --out data/bronze \
+            | tee /tmp/reingesta.log
+          grep -q "No hay archivos nuevos" /tmp/reingesta.log
+
+          uv run python generate_synthetic_sources.py \
+            --clientes ${{ github.event.inputs.smoke_test_clientes || '100' }} \
+            --meses ${{ github.event.inputs.smoke_test_meses || '2' }} \
+            --meses-adicionales 1 --out data/raw_sources
+          uv run python ingest_bronze.py --source data/raw_sources --out data/bronze
+
+          uv run python -c "
+          import json, sys
+          from src.common.spark_session import get_spark_session
+
+          esperado = json.load(open('data/raw_sources/manifest.json'))['conteos']
+          spark = get_spark_session('verificar_incremental')
+          tx = spark.read.format('delta').load('data/bronze/transacciones').count()
+          cl = spark.read.format('delta').load('data/bronze/clientes').count()
+          spark.stop()
+          if tx != esperado['transacciones'] or cl != esperado['clientes']:
+              print(f'ERROR: Bronze tx={tx} clientes={cl}, esperado {esperado}')
+              sys.exit(1)
+          print(f'Incremental OK: {tx} transacciones y {cl} clientes, sin duplicados')
+          "
+
       - name: Transformacion Silver
         run: |
           uv run python transform_silver.py \

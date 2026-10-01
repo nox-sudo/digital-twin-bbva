@@ -37,12 +37,20 @@ from pathlib import Path
 NOMBRE_MANIFEST = "manifest.json"
 
 
-def id_sesion(semilla: int, fecha_referencia: date, clientes: int, meses: int) -> str:
+def id_sesion(
+    semilla: int,
+    fecha_referencia: date,
+    clientes: int,
+    meses: int,
+    meses_adicionales: int = 0,
+) -> str:
     """Id legible y deterministico: los mismos parametros dan el mismo id.
 
-    Ejemplo: s42_20260930_500c_12m
+    Ejemplos: s42_20260930_500c_12m (sesion base),
+              s42_20260930_500c_12m_e2 (la misma, con 2 entregas mensuales mas)
     """
-    return f"s{semilla}_{fecha_referencia:%Y%m%d}_{clientes}c_{meses}m"
+    base = f"s{semilla}_{fecha_referencia:%Y%m%d}_{clientes}c_{meses}m"
+    return f"{base}_e{meses_adicionales}" if meses_adicionales else base
 
 
 def checksum_archivo(ruta: Path) -> str:

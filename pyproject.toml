@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "boto3>=1.43.106",
     "delta-spark==4.3.0",
     "duckdb>=1.5.4",
     "faker>=40.31.0",
@@ -28,5 +29,6 @@ dependencies = [
 dev = [
     "black>=26.5.1",
     "flake8>=7.3.0",
+    "moto[s3]>=5.2.3",
     "pytest>=9.1.1",
 ]

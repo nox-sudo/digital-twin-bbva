@@ -31,6 +31,19 @@ incompatibles, y no hay forma de saber que version corrio una demo.
 **Posible fix:** fijar ambas a un tag `RELEASE.*` verificado, igual que
 Airflow (`2.10.3`) y Postgres (`16-alpine`).
 
+### Las entregas nuevas solo agregan transacciones
+
+**Que pasa:** una entrega mensual (`demo.sh nueva-entrega`) trae un mes
+mas de transacciones, pero los snapshots de clientes, cuentas y CETES
+son identicos a la entrega base: no hay clientes nuevos, bajas ni
+saldos que cambien. Silver y Bronze ya soportan esos cambios (Bronze
+acumula versiones, Silver toma la mas reciente por llave), pero el
+generador no los produce.
+
+**Posible fix:** en cada mes adicional, agregar algunos clientes nuevos
+(al final, para no alterar los existentes) y recalcular saldo_actual a
+partir de los movimientos del mes.
+
 ## Resueltos
 
 ### CI: el smoke test no cubria el pipeline del modelo de riesgo

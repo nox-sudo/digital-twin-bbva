@@ -33,7 +33,8 @@ El proyecto sigue el patrón Medallion sobre una arquitectura Lakehouse: los dat
 
 ```mermaid
 flowchart LR
-    A[Fuentes sintéticas] --> B[Bronze<br/>Delta Lake, crudo]
+    A[Fuentes sintéticas<br/>sesiones] --> L[Landing zone<br/>MinIO, entregas inmutables]
+    L --> B[Bronze<br/>Delta Lake, crudo, incremental]
     B --> C[Silver<br/>Delta Lake, validado]
     C --> D[Gold<br/>DuckDB, KPIs]
     D --> FS[Feature store<br/>gold_features_cliente]
@@ -114,6 +115,7 @@ digital-twin-bbva/
 │   ├── test_features.py          # Persistencia y preparación del feature store
 │   ├── test_sesiones.py          # Reproducibilidad y reuso de sesiones de datos
 │   ├── test_pii.py               # Identificadores, HMAC Spark == Python, política de PII
+│   ├── test_landing.py           # Landing zone (S3 simulado) e ingesta incremental
 │   └── test_main_cli.py          # Pruebas de enrutamiento del CLI (main.py)
 ├── docs/
 │   ├── ejecucion-local.md        # Guía para correr el proyecto en otra máquina
@@ -123,7 +125,8 @@ digital-twin-bbva/
 ├── .github/workflows/ci.yml      # Lint, tests, smoke test Bronze→Silver→Gold→modelo
 ├── main.py                       # CLI unico: python main.py <paso> [opciones]
 ├── generate_synthetic_sources.py
-├── ingest_bronze.py
+├── publish_landing.py            # Publica la sesión activa como entrega en MinIO
+├── ingest_bronze.py              # Ingesta incremental: solo lo no ingerido
 ├── transform_silver.py
 ├── transform_gold.py
 ├── build_features.py             # Feature store en Gold (gold_features_cliente)
@@ -212,9 +215,11 @@ El workflow de GitHub Actions (`.github/workflows/ci.yml`) corre en cada Pull Re
 
 ## Datos y KPIs
 
-5 entidades sintéticas (Faker + NumPy): `clientes`, `cuentas`, `catalogo_productos`, `cetes_inversiones`, `transacciones` (6 tipos de movimiento). Volumen de referencia: 500 clientes, 979 cuentas, 115,797 transacciones.
+5 entidades sintéticas (Faker + NumPy): `clientes`, `cuentas`, `catalogo_productos`, `cetes_inversiones`, `transacciones` (6 tipos de movimiento). Volumen de referencia: 500 clientes, 979 cuentas, 117,081 transacciones.
 
 **Sesiones de datos reproducibles.** Cada conjunto generado es una sesión identificada por sus parámetros (`config/sesion.yaml`: semilla, fecha de referencia, clientes, meses), por ejemplo `s42_20260930_500c_12m`. Todas las fechas se calculan contra la fecha de referencia, nunca contra el reloj del sistema, así que los mismos parámetros producen exactamente los mismos archivos cualquier día y en cualquier máquina; el CI lo verifica comparando checksums. La sesión se guarda en `data/sesiones/<id>/` con un `manifest.json` (parámetros, conteos, SHA-256 de cada archivo); si ya existe y está íntegra, el pipeline la reutiliza en vez de regenerarla, y si algún archivo fue alterado, lo detecta y la regenera. `data/raw_sources/` apunta a la sesión activa mediante hard links, y cada fila de Bronze guarda su `_sesion_id`. Las sesiones viven en disco, fuera de los contenedores: sobreviven a `docker compose down` y a `demo.sh limpiar`.
+
+**Landing zone e ingesta incremental.** Cada sesión se publica en MinIO como una *entrega* inmutable (`landing/entregas/<id>/`, con SHA-256 por objeto y un manifest escrito al final). Una entrega solo sube lo que no llegó idéntico antes: `bash demo.sh nueva-entrega` simula que llega el mes siguiente, y su entrega trae solo ese mes de transacciones (las sesiones son extensibles: cada mes tiene su propia semilla, así que agregar uno no altera los anteriores). Bronze ya no se sobrescribe: ingiere solo los archivos que no tiene, según un registro de control por archivo y checksum (`data/bronze/_control_ingesta.jsonl`), y acumula las versiones de cada snapshot; Silver se queda con la más reciente por llave. Si Bronze se pierde, se reconstruye completo desde la landing zone.
 
 El esquema completo, con tipo de dato y regla de calidad por columna, está documentado en el diccionario de datos — ver [Documentación adicional](#documentación-adicional).
 
@@ -240,6 +245,7 @@ Catálogo de 12 KPIs en 5 categorías (ingresos, gastos, ahorro y liquidez, ries
 - [x] PII sintética (CURP, RFC, teléfono, domicilio) validada y protegida en Silver con hash y enmascarado
 - [x] Seguridad base: secretos por máquina fuera del repo, puertos locales, escaneo de secretos en CI
 - [x] Sesiones de datos reproducibles, con manifest, checksums y reuso
+- [x] Landing zone en MinIO con entregas inmutables e ingesta incremental en Bronze
 - [x] Arranque reproducible con un comando en cualquier máquina con Docker (`demo.sh`)
 - [ ] Simulador de escenarios Monte Carlo
 - [ ] Asistente conversacional RAG local (Ollama + Llama 3 + LangChain)

@@ -14,6 +14,8 @@
 #   bash demo.sh reporte      genera data/reporte_pipeline.html con conteos y tiempos
 #   bash demo.sh estado       muestra el estado de las ultimas corridas del DAG
 #   bash demo.sh bajar        detiene los contenedores (conserva datos)
+#   bash demo.sh nueva-entrega  simula que llega el siguiente mes de datos y lo procesa
+#                             (requiere haber corrido levantar antes)
 #   bash demo.sh sesiones     lista las sesiones de datos guardadas en data/sesiones/
 #   bash demo.sh limpiar      borra capas, modelo y volumenes; conserva las sesiones
 #   bash demo.sh limpiar todo igual, pero borra tambien las sesiones
@@ -87,13 +89,14 @@ esperar_airflow() {
 }
 
 correr_dag() {
+    local conf="${1:-{\}}"
     local run_id
     run_id="demo_$(date +%Y%m%d_%H%M%S)"
 
     info "Disparando el DAG ${DAG_ID} (run_id: ${run_id})"
     # El DAG nace pausado por default; sin unpause, el trigger queda en cola.
     airflow_cli dags unpause "${DAG_ID}" >/dev/null
-    airflow_cli dags trigger "${DAG_ID}" --run-id "${run_id}" >/dev/null
+    airflow_cli dags trigger "${DAG_ID}" --run-id "${run_id}" --conf "${conf}" >/dev/null
 
     local inicio=$SECONDS estado="queued" ultima_linea=""
     while [ "${estado}" != "success" ] && [ "${estado}" != "failed" ]; do
@@ -194,6 +197,22 @@ cmd_bajar() {
     docker compose down
 }
 
+cmd_nueva_entrega() {
+    verificar_requisitos
+    [ -f data/raw_sources/manifest.json ] \
+        || error "No hay una sesion activa todavia. Corre primero: bash demo.sh"
+    # Meses adicionales de la sesion activa, leidos del manifest sin
+    # depender de Python ni jq en la maquina.
+    local actual siguiente
+    actual="$(grep -o '"meses_adicionales": *[0-9]*' data/raw_sources/manifest.json \
+        | grep -o '[0-9]*$' || echo 0)"
+    siguiente=$((${actual:-0} + 1))
+    info "Nueva entrega: mes adicional ${siguiente} sobre la sesion base"
+    esperar_airflow
+    correr_dag "{\"meses_adicionales\": ${siguiente}}"
+    echo "La entrega trae solo el mes nuevo; Bronze lo agrega a lo que ya tenia."
+}
+
 cmd_sesiones() {
     if [ ! -d data/sesiones ] || [ -z "$(ls -A data/sesiones 2>/dev/null)" ]; then
         echo "No hay sesiones guardadas todavia."
@@ -232,8 +251,9 @@ case "${1:-levantar}" in
     reporte) cmd_reporte ;;
     estado) cmd_estado ;;
     bajar) cmd_bajar ;;
+    nueva-entrega) cmd_nueva_entrega ;;
     sesiones) cmd_sesiones ;;
     limpiar) cmd_limpiar "${2:-}" ;;
-    -h | --help | ayuda) sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//' ;;
+    -h | --help | ayuda) sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//' ;;
     *) error "Comando desconocido: $1 (usa: bash demo.sh ayuda)" ;;
 esac

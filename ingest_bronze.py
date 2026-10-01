@@ -4,28 +4,33 @@ ingest_bronze.py
 Pipeline de ingesta Bronze - Gemelo Digital Financiero (BBVA / Tecmilenio)
 
 Responsabilidad de este script (y SOLO esta):
-  - Leer las fuentes crudas desde data/raw_sources/ (CSV, JSON)
-  - Adjuntar metadata de ingesta (timestamp, archivo origen, formato original)
-  - Persistir tal cual en la capa Bronze, sin limpiar ni transformar
-    (eso es responsabilidad de Silver, no de aquí)
+  - Tomar entregas de datos de origen: una carpeta local (una sesion,
+    por default data/raw_sources/) o la zona de aterrizaje en MinIO
+    (--desde-landing), descargando y verificando cada entrega.
+  - Ingerir SOLO los archivos que no se hayan ingerido antes (registro
+    de control por ruta + SHA-256, ver src/bronze/control.py).
+  - Adjuntar metadata de trazabilidad (timestamp, archivo, formato,
+    sesion/entrega de origen).
+  - Agregar (append) a la capa Bronze, sin limpiar ni transformar.
 
-Principio clave del patrón Medallion: Bronze es inmutable y auditable.
-Si algo llega "sucio" del origen, se queda sucio en Bronze a propósito -
-es tu respaldo histórico de lo que realmente se recibió.
+Principio clave del patron Medallion: Bronze es inmutable y auditable.
+Si algo llega "sucio" del origen, se queda sucio en Bronze a proposito.
+Y es acumulativo: cada version de clientes.csv que llego queda en Bronze
+con su timestamp; Silver se queda con la mas reciente por llave.
 
 Uso:
-    python ingest_bronze.py --source data/raw_sources --out bronze
+    python ingest_bronze.py --source data/raw_sources --out data/bronze
+    python ingest_bronze.py --desde-landing --out data/bronze
 
-Salida (Delta Lake, particionado por entidad):
-    bronze/clientes/
-    bronze/catalogo_productos/
-    bronze/cuentas/
-    bronze/cetes_inversiones/
-    bronze/transacciones/   (particionado además por anio_mes de carga)
+Salida (Delta Lake):
+    data/bronze/clientes/, catalogo_productos/, cuentas/, cetes_inversiones/
+    data/bronze/transacciones/   (particionado por anio_mes)
+    data/bronze/_control_ingesta.jsonl
 """
 
 import argparse
 import json
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -33,6 +38,23 @@ from delta.pip_utils import configure_spark_with_delta_pip
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.types import ArrayType, StringType, StructField, StructType
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from src.bronze.control import (  # noqa: E402
+    ArchivoPendiente,
+    Entrega,
+    anotar_ingeridos,
+    bronze_sin_control,
+    leer_control,
+    planear_ingesta,
+)
+from src.common.landing import (  # noqa: E402
+    cliente_s3,
+    descargar_entrega,
+    listar_entregas,
+)
+from src.common.sesiones import checksum_archivo  # noqa: E402
 
 # Bronze es inmutable y sin tipar a proposito: cada campo de negocio se
 # lee como StringType, sin importar como se vea en el JSON de origen.
@@ -99,153 +121,137 @@ def get_spark_session() -> SparkSession:
     return configure_spark_with_delta_pip(builder).getOrCreate()
 
 
-def leer_sesion_id(source_dir: Path) -> str | None:
-    """Id de la sesion de datos que se esta ingiriendo, desde el
-    manifest.json que deja el generador (ver src/common/sesiones.py).
-    None si las fuentes no vienen de una sesion (carpeta armada a mano)."""
-    ruta = source_dir / "manifest.json"
-    if not ruta.exists():
-        return None
-    with open(ruta, encoding="utf-8") as f:
-        return json.load(f).get("sesion_id")
-
-
-def con_metadata_ingesta(
-    df, nombre_archivo_origen: str, formato_origen: str, sesion_id: str | None
-):
+def con_metadata_ingesta(df, formato_origen: str, entrega_id: str):
     """
-    Adjunta las columnas de metadata que exige el kick-off:
-    timestamp de ingesta y archivo fuente. Esto es lo que hace
-    que Bronze sea trazable y auditable. _sesion_id liga cada fila con
-    la sesion de datos (y por lo tanto los parametros) que la produjo.
+    Adjunta las columnas de metadata que exige el kick-off: timestamp de
+    ingesta y archivo fuente. Esto es lo que hace que Bronze sea
+    trazable y auditable. _sesion_id liga cada fila con la sesion (la
+    entrega) que la trajo, y por lo tanto con los parametros que la
+    generaron.
+
+    _source_file se toma de input_file_name() (que trae la ruta completa,
+    ej. file:///opt/lakehouse/data/.../transacciones_2026_06.csv) y se
+    reduce al nombre de archivo, igual para todas las entidades.
     """
     return (
         df.withColumn("_ingestion_timestamp", F.current_timestamp())
-        .withColumn("_source_file", F.lit(nombre_archivo_origen))
-        .withColumn("_source_format", F.lit(formato_origen))
-        .withColumn("_sesion_id", F.lit(sesion_id).cast("string"))
-    )
-
-
-def ingest_clientes(
-    spark: SparkSession, source_dir: Path, out_dir: Path, sesion_id: str | None
-):
-    print("[Bronze] Ingiriendo clientes.csv ...")
-    df = spark.read.csv(
-        str(source_dir / "clientes.csv"), header=True, inferSchema=False
-    )
-    df = con_metadata_ingesta(df, "clientes.csv", "csv", sesion_id)
-    (df.write.mode("overwrite").format("delta").save(str(out_dir / "clientes")))
-    print(f"  -> {df.count()} filas escritas en {out_dir / 'clientes'}")
-
-
-def ingest_catalogo_productos(
-    spark: SparkSession, source_dir: Path, out_dir: Path, sesion_id: str | None
-):
-    print("[Bronze] Ingiriendo catalogo_productos.json ...")
-    # multiLine=True porque es un JSON anidado (no JSON-lines)
-    df = (
-        spark.read.option("multiLine", True)
-        .schema(SCHEMA_CATALOGO_PRODUCTOS)
-        .json(str(source_dir / "catalogo_productos.json"))
-    )
-    # El JSON trae un arreglo "productos" -> lo explotamos a filas
-    df = df.select(F.explode("productos").alias("producto"))
-    df = df.select("producto.*")
-    df = con_metadata_ingesta(df, "catalogo_productos.json", "json", sesion_id)
-    (
-        df.write.mode("overwrite")
-        .format("delta")
-        .save(str(out_dir / "catalogo_productos"))
-    )
-    print(f"  -> {df.count()} filas escritas en {out_dir / 'catalogo_productos'}")
-
-
-def ingest_cuentas(
-    spark: SparkSession, source_dir: Path, out_dir: Path, sesion_id: str | None
-):
-    print("[Bronze] Ingiriendo cuentas.json ...")
-    df = (
-        spark.read.option("multiLine", True)
-        .schema(SCHEMA_CUENTAS)
-        .json(str(source_dir / "cuentas.json"))
-    )
-    df = con_metadata_ingesta(df, "cuentas.json", "json", sesion_id)
-    (df.write.mode("overwrite").format("delta").save(str(out_dir / "cuentas")))
-    print(f"  -> {df.count()} filas escritas en {out_dir / 'cuentas'}")
-
-
-def ingest_cetes(
-    spark: SparkSession, source_dir: Path, out_dir: Path, sesion_id: str | None
-):
-    print("[Bronze] Ingiriendo cetes_inversiones.csv ...")
-    df = spark.read.csv(
-        str(source_dir / "cetes_inversiones.csv"), header=True, inferSchema=False
-    )
-    df = con_metadata_ingesta(df, "cetes_inversiones.csv", "csv", sesion_id)
-    (
-        df.write.mode("overwrite")
-        .format("delta")
-        .save(str(out_dir / "cetes_inversiones"))
-    )
-    print(f"  -> {df.count()} filas escritas en {out_dir / 'cetes_inversiones'}")
-
-
-def ingest_transacciones(
-    spark: SparkSession, source_dir: Path, out_dir: Path, sesion_id: str | None
-):
-    """
-    Las transacciones llegan en múltiples archivos (uno por mes),
-    simulando cargas incrementales reales. Se leen todos juntos,
-    pero se preserva el nombre del archivo origen por fila para
-    trazabilidad, y se particiona la escritura por anio_mes.
-    """
-    print("[Bronze] Ingiriendo transacciones/ (múltiples archivos mensuales) ...")
-    tx_dir = source_dir / "transacciones"
-    archivos = sorted(tx_dir.glob("transacciones_*.csv"))
-
-    if not archivos:
-        raise FileNotFoundError(
-            f"No se encontraron archivos de transacciones en {tx_dir}"
-        )
-
-    df = (
-        spark.read.option("header", True)
-        .option("inferSchema", False)
-        .csv(str(tx_dir / "transacciones_*.csv"))
         .withColumn(
-            "_source_file",
-            # input_file_name() devuelve la ruta completa (ej.
-            # file:///opt/lakehouse/data/.../transacciones_2026_06.csv);
-            # se extrae solo el nombre de archivo para que _source_file
-            # tenga el mismo formato que con_metadata_ingesta() usa en
-            # clientes/cuentas/cetes/catalogo_productos.
-            F.regexp_extract(F.input_file_name(), r"([^/\\]+)$", 1),
+            "_source_file", F.regexp_extract(F.input_file_name(), r"([^/\\]+)$", 1)
         )
-    )
-    df = (
-        df.withColumn("_ingestion_timestamp", F.current_timestamp())
-        .withColumn("_source_format", F.lit("csv"))
-        .withColumn("_sesion_id", F.lit(sesion_id).cast("string"))
-        .withColumn("anio_mes", F.substring(F.col("fecha"), 1, 7))  # ej. "2026-07"
+        .withColumn("_source_format", F.lit(formato_origen))
+        .withColumn("_sesion_id", F.lit(entrega_id))
     )
 
-    (
-        df.write.mode("overwrite")
-        .format("delta")
-        .partitionBy("anio_mes")
-        .save(str(out_dir / "transacciones"))
-    )
-    print(
-        f"  -> {df.count()} filas escritas en {out_dir / 'transacciones'} "
-        f"(particionado por anio_mes, {len(archivos)} archivos origen)"
-    )
+
+def leer_entidad(spark: SparkSession, entidad: str, rutas: list[Path]):
+    """Lee los archivos de una entidad como texto (sin inferir tipos) y
+    devuelve el DataFrame con su formato de origen."""
+    rutas_str = [str(r) for r in rutas]
+    if entidad == "catalogo_productos":
+        # multiLine porque es un JSON anidado (no JSON-lines); el arreglo
+        # "productos" se explota a una fila por producto.
+        df = (
+            spark.read.option("multiLine", True)
+            .schema(SCHEMA_CATALOGO_PRODUCTOS)
+            .json(rutas_str)
+            .select(F.explode("productos").alias("producto"))
+            .select("producto.*")
+        )
+        return df, "json"
+    if entidad == "cuentas":
+        df = spark.read.option("multiLine", True).schema(SCHEMA_CUENTAS).json(rutas_str)
+        return df, "json"
+    # clientes, cetes_inversiones, transacciones: CSV como texto.
+    df = spark.read.option("header", True).option("inferSchema", False).csv(rutas_str)
+    return df, "csv"
+
+
+def escribir_bronze(df, entidad: str, out_dir: Path) -> None:
+    """Agrega a la tabla Delta de la entidad.
+
+    mergeSchema: si una entrega trae columnas nuevas (por ejemplo, la PII
+    agregada a clientes), Delta extiende el esquema de la tabla en vez de
+    rechazar la escritura; las filas anteriores quedan con NULL en esas
+    columnas. Es la evolucion de esquema que se espera en una zona cruda.
+    """
+    escritor = df.write.mode("append").format("delta").option("mergeSchema", "true")
+    if entidad == "transacciones":
+        escritor = escritor.partitionBy("anio_mes")
+    escritor.save(str(out_dir / entidad))
+
+
+def entrega_local(source_dir: Path) -> Entrega:
+    """Una carpeta local como entrega. Si trae manifest (sesion del
+    generador), se usan su id y sus checksums; si no, se calculan."""
+    manifest_path = source_dir / "manifest.json"
+    if manifest_path.exists():
+        with open(manifest_path, encoding="utf-8") as f:
+            manifest = json.load(f)
+        return Entrega(manifest["sesion_id"], source_dir, manifest["archivos"])
+    archivos = {
+        str(p.relative_to(source_dir)): checksum_archivo(p)
+        for p in sorted(source_dir.rglob("*"))
+        if p.is_file()
+    }
+    return Entrega("local", source_dir, archivos)
+
+
+def entregas_desde_landing(staging: Path, ingeridos: set) -> list[Entrega]:
+    """Descarga (verificando checksums) las entregas de la landing zone
+    que tengan algo sin ingerir."""
+    s3 = cliente_s3()
+    entregas = []
+    for manifest in listar_entregas(s3):
+        pendiente = any(
+            (ruta, sha) not in ingeridos for ruta, sha in manifest["archivos"].items()
+        )
+        if not pendiente:
+            continue
+        print(
+            f"[Bronze] Descargando entrega {manifest['entrega_id']} desde la landing zone"
+        )
+        carpeta = descargar_entrega(s3, manifest, staging)
+        entregas.append(Entrega(manifest["entrega_id"], carpeta, manifest["archivos"]))
+    return entregas
+
+
+def ingerir(spark, pendientes: list[ArchivoPendiente], out_dir: Path) -> dict:
+    """Ingiere los pendientes, agrupados por entrega y entidad (una
+    escritura Delta por grupo). Anota cada grupo en el registro de
+    control en cuanto Spark confirma su escritura."""
+    resumen = {}
+    grupos: dict[tuple[str, str], list[ArchivoPendiente]] = {}
+    for p in pendientes:
+        grupos.setdefault((p.entrega_id, p.entidad), []).append(p)
+
+    for (entrega_id, entidad), archivos in grupos.items():
+        rutas = [a.carpeta / a.ruta for a in archivos]
+        df, formato = leer_entidad(spark, entidad, rutas)
+        df = con_metadata_ingesta(df, formato, entrega_id)
+        if entidad == "transacciones":
+            df = df.withColumn("anio_mes", F.substring(F.col("fecha"), 1, 7))
+        df = df.cache()
+        filas_por_archivo = {
+            fila["_source_file"]: fila["count"]
+            for fila in df.groupBy("_source_file").count().collect()
+        }
+        escribir_bronze(df, entidad, out_dir)
+        df.unpersist()
+        anotar_ingeridos(out_dir, archivos, filas_por_archivo)
+
+        filas = sum(filas_por_archivo.values())
+        resumen.setdefault(entidad, 0)
+        resumen[entidad] += filas
+        print(
+            f"[Bronze] {entrega_id} / {entidad}: {len(archivos)} archivo(s), {filas} filas"
+        )
+    return resumen
 
 
 def escribir_log_ingesta(out_dir: Path, resumen: dict):
     """
-    Log simple de la corrida - esto es el embrión de lo que después
-    alimentará tu dashboard de observabilidad (Hito de calidad/monitoreo).
+    Log simple de la corrida - esto es el embrion de lo que despues
+    alimenta el dashboard de observabilidad (Hito de calidad/monitoreo).
     """
     log_dir = out_dir.parent / "logs"
     log_dir.mkdir(exist_ok=True)
@@ -259,61 +265,76 @@ def escribir_log_ingesta(out_dir: Path, resumen: dict):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Ingesta Bronze - Gemelo Digital Financiero"
+        description="Ingesta Bronze incremental - Gemelo Digital Financiero"
     )
     parser.add_argument(
-        "--source",
-        type=str,
-        default="data/raw_sources",
-        help="Carpeta de fuentes crudas",
+        "--source", default="data/raw_sources", help="Carpeta local de fuentes"
     )
     parser.add_argument(
-        "--out", type=str, default="bronze", help="Carpeta de salida Bronze"
+        "--desde-landing",
+        action="store_true",
+        help="Tomar las entregas de la landing zone en MinIO en vez de --source",
     )
+    parser.add_argument("--staging", default="data/staging")
+    parser.add_argument("--out", default="data/bronze", help="Carpeta de salida Bronze")
     args = parser.parse_args()
 
-    source_dir = Path(args.source)
     out_dir = Path(args.out)
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    if not source_dir.exists():
-        raise FileNotFoundError(
-            f"No existe {source_dir}. Corre primero generate_synthetic_sources.py"
+    if bronze_sin_control(out_dir):
+        raise RuntimeError(
+            f"{out_dir} tiene datos de la version anterior (sin registro de control). "
+            "Bronze se reconstruye completo desde las fuentes: borra esa carpeta "
+            "(o usa 'bash demo.sh limpiar') y vuelve a correr."
         )
+    ingeridos = leer_control(out_dir)
 
-    sesion_id = leer_sesion_id(source_dir)
-    print(f"[Bronze] Sesion de datos: {sesion_id or 'sin manifest'}")
+    if args.desde_landing:
+        entregas = entregas_desde_landing(Path(args.staging), ingeridos)
+        origen = "landing"
+    else:
+        source_dir = Path(args.source)
+        if not source_dir.exists():
+            raise FileNotFoundError(
+                f"No existe {source_dir}. Corre primero generate_synthetic_sources.py"
+            )
+        entregas = [entrega_local(source_dir)]
+        origen = str(source_dir)
 
+    pendientes = planear_ingesta(entregas, ingeridos)
     inicio = datetime.now()
-    spark = get_spark_session()
-    spark.sparkContext.setLogLevel("WARN")  # menos ruido en consola
+    resumen = {}
+    estatus = "SUCCESS"
 
-    try:
-        ingest_clientes(spark, source_dir, out_dir, sesion_id)
-        ingest_catalogo_productos(spark, source_dir, out_dir, sesion_id)
-        ingest_cuentas(spark, source_dir, out_dir, sesion_id)
-        ingest_cetes(spark, source_dir, out_dir, sesion_id)
-        ingest_transacciones(spark, source_dir, out_dir, sesion_id)
-
-        estatus = "SUCCESS"
-    except Exception as e:
-        estatus = f"FAILED: {e}"
-        raise
-    finally:
-        fin = datetime.now()
-        escribir_log_ingesta(
-            out_dir,
-            {
-                "inicio": inicio,
-                "fin": fin,
-                "duracion_segundos": (fin - inicio).total_seconds(),
-                "estatus": estatus,
-                "source_dir": str(source_dir),
-                "sesion_id": sesion_id,
-                "out_dir": str(out_dir),
-            },
+    if not pendientes:
+        print("[Bronze] No hay archivos nuevos: todo lo recibido ya estaba ingerido.")
+    else:
+        print(
+            f"[Bronze] {len(pendientes)} archivo(s) nuevo(s) de {len(entregas)} entrega(s)"
         )
-        spark.stop()
+        spark = get_spark_session()
+        spark.sparkContext.setLogLevel("WARN")
+        try:
+            resumen = ingerir(spark, pendientes, out_dir)
+        except Exception as e:
+            estatus = f"FAILED: {e}"
+            raise
+        finally:
+            spark.stop()
+            fin = datetime.now()
+            escribir_log_ingesta(
+                out_dir,
+                {
+                    "inicio": inicio,
+                    "fin": fin,
+                    "duracion_segundos": (fin - inicio).total_seconds(),
+                    "estatus": estatus,
+                    "origen": origen,
+                    "entregas": [e.entrega_id for e in entregas],
+                    "archivos_ingeridos": len(pendientes),
+                    "filas_por_entidad": resumen,
+                    "out_dir": str(out_dir),
+                },
+            )
 
     print("\n=== Ingesta Bronze completada ===")
 

@@ -3,7 +3,7 @@ main.py
 
 CLI unico del proyecto: expone cada paso del pipeline como subcomando,
 delegando al script real (que sigue siendo ejecutable por separado, sin
-cambios). Reemplaza tener que recordar el nombre exacto de 8 archivos
+cambios). Reemplaza tener que recordar el nombre exacto de 9 archivos
 distintos por un solo punto de entrada.
 
 Uso:
@@ -11,6 +11,7 @@ Uso:
 
 Pasos disponibles:
     generate       generate_synthetic_sources.py  (fuentes sinteticas)
+    landing        publish_landing.py              (publica la sesion en MinIO)
     bronze         ingest_bronze.py                (ingesta Bronze)
     silver         transform_silver.py             (Bronze -> Silver)
     gold           transform_gold.py               (Silver -> Gold/KPIs)
@@ -36,6 +37,7 @@ import sys
 # ese paso ni los use.
 PASOS = {
     "generate": "generate_synthetic_sources",
+    "landing": "publish_landing",
     "bronze": "ingest_bronze",
     "silver": "transform_silver",
     "gold": "transform_gold",

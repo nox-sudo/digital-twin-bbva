@@ -2,9 +2,10 @@
 dags/gemelo_pipeline_dag.py
 
 DAG que orquesta el pipeline completo: generacion de datos sinteticos
--> ingesta Bronze -> transformacion Silver -> transformacion Gold ->
-feature store (gold_features_cliente) -> etiquetas de riesgo ->
-entrenamiento del modelo -> prediccion de riesgo crediticio.
+-> publicacion en la landing zone (MinIO) -> ingesta Bronze incremental
+-> transformacion Silver -> transformacion Gold -> feature store
+(gold_features_cliente) -> etiquetas de riesgo -> entrenamiento del
+modelo -> prediccion de riesgo crediticio.
 
 Cada tarea lanza el contenedor "worker" (definido en docker-compose.yml)
 para hacer el trabajo pesado — Airflow solo decide CUANDO y en que
@@ -116,12 +117,21 @@ with DAG(
         "generar_fuentes_sinteticas",
         # Parametros de la sesion en config/sesion.yaml. Si la sesion ya
         # existe en data/sesiones/, se reutiliza en vez de regenerarse.
-        "generate_synthetic_sources.py --config config/sesion.yaml --out data/raw_sources",
+        # meses_adicionales llega en la configuracion del disparo (demo.sh
+        # nueva-entrega): simula que llego el siguiente mes de datos.
+        "generate_synthetic_sources.py --config config/sesion.yaml --out data/raw_sources "
+        "--meses-adicionales {{ (dag_run.conf or {}).get('meses_adicionales', 0) }}",
+    )
+
+    publicar_landing = tarea_worker(
+        "publicar_landing",
+        "publish_landing.py --sesion data/raw_sources",
     )
 
     ingesta_bronze = tarea_worker(
         "ingesta_bronze",
-        "ingest_bronze.py --source data/raw_sources --out data/bronze",
+        # Solo lo que no se haya ingerido antes (registro de control).
+        "ingest_bronze.py --desde-landing --out data/bronze",
     )
 
     transformacion_silver = tarea_worker(
@@ -161,6 +171,7 @@ with DAG(
 
     (
         generar_fuentes
+        >> publicar_landing
         >> ingesta_bronze
         >> transformacion_silver
         >> transformacion_gold

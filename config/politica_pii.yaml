@@ -30,3 +30,10 @@ clientes:
     - calle
     - numero_exterior
     - colonia
+
+transacciones:
+  # Nombre de la otra persona en transferencias P2P (no es cliente del
+  # banco). Se conserva el hash para analizar con quien se transfiere
+  # sin saber quien es.
+  solo_hash:
+    - contraparte_persona
