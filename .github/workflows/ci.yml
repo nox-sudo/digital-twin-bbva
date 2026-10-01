@@ -211,6 +211,28 @@ jobs:
           print('Silver sin PII en claro:', sorted(politica))
           "
 
+      # El registro historico de calidad existe desde la primera corrida
+      # (aunque no haya rechazos) y tiene perfil para las 4 entidades.
+      - name: Verificar registro de calidad
+        run: |
+          uv run python -c "
+          import sys
+          from src.common.spark_session import get_spark_session
+
+          spark = get_spark_session('verificar_calidad')
+          perfil = spark.read.format('delta').load('data/calidad/perfil_columnas')
+          incid = spark.read.format('delta').load('data/calidad/incidencias')
+          entidades = {f.entidad for f in perfil.select('entidad').distinct().collect()}
+          n_incid = incid.count()
+          spark.stop()
+          esperadas = {'clientes', 'cuentas', 'cetes_inversiones', 'transacciones'}
+          if entidades != esperadas:
+              print(f'ERROR: perfil de calidad para {entidades}, se esperaban {esperadas}')
+              sys.exit(1)
+          print(f'Registro de calidad OK: perfil de {len(entidades)} entidades, {n_incid} incidencias')
+          "
+          uv run python quality_report.py
+
       - name: Transformacion Gold
         run: |
           uv run python transform_gold.py \

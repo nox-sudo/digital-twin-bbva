@@ -143,8 +143,15 @@ def _check_unique(df: DataFrame, columns: list[str]) -> DataFrame:
 
 
 def _check_allowed_values(df: DataFrame, rules: dict) -> DataFrame:
+    """Se compara como texto: con el modo ANSI de Spark 4, comparar una
+    columna de texto contra numeros (plazo_dias contra [28, 91, ...])
+    obliga a convertir cada valor, y un valor corrupto ("abc") lanzaba
+    un error que detenia todo Silver."""
     for col, allowed in rules.items():
-        df = df.withColumn(f"_viol_allowed_{col}", ~F.col(col).isin(allowed))
+        permitidos = [str(v) for v in allowed]
+        df = df.withColumn(
+            f"_viol_allowed_{col}", ~F.col(col).cast("string").isin(permitidos)
+        )
     return df
 
 
@@ -303,6 +310,14 @@ def validate_entity(
 
     viol_cols = [c for c in df.columns if c.startswith("_viol_")]
 
+    # Toda violacion queda en True/False, nunca NULL. Una regla evaluada
+    # sobre un valor nulo puede dar NULL (isin, comparaciones), y una fila
+    # con violacion NULL desaparecia de validos Y de cuarentena a la vez:
+    # filter() descarta tanto False como NULL. Se corrige aqui, una vez,
+    # para todas las reglas presentes y futuras.
+    for c in viol_cols:
+        df = df.withColumn(c, F.coalesce(F.col(c), F.lit(False)))
+
     violaciones_por_regla = {}
     if viol_cols:
         counts_row = df.select(
@@ -326,21 +341,48 @@ def validate_entity(
             for c in viol_cols
         ]
         df = df.withColumn("_motivo_cuarentena", F.concat(*motivo_partes))
+
+        # Lo mismo que _motivo_cuarentena, pero estructurado: lista de
+        # (regla, columna) violadas. Es lo que lee el registro historico
+        # de calidad (src/calidad/registro.py), sin tener que interpretar
+        # texto.
+        from src.calidad.registro import descomponer_violacion
+
+        violaciones = []
+        for c in viol_cols:
+            regla, columna = descomponer_violacion(c)
+            violaciones.append(
+                F.when(
+                    F.col(c),
+                    F.struct(
+                        F.lit(regla).alias("regla"), F.lit(columna).alias("columna")
+                    ),
+                )
+            )
+        df = df.withColumn(
+            "_violaciones", F.filter(F.array(*violaciones), lambda v: v.isNotNull())
+        )
     else:
         df = df.withColumn("_es_invalido", F.lit(False))
         df = df.withColumn("_motivo_cuarentena", F.lit(""))
+        df = df.withColumn(
+            "_violaciones",
+            F.array().cast("array<struct<regla:string,columna:string>>"),
+        )
 
     df_valido = df.filter(~F.col("_es_invalido")).drop(
-        "_row_id_tmp", "_es_invalido", "_motivo_cuarentena", *viol_cols
+        "_row_id_tmp", "_es_invalido", "_motivo_cuarentena", "_violaciones", *viol_cols
     )
     df_cuarentena = df.filter(F.col("_es_invalido")).select(
         "_row_id_tmp",
         "_motivo_cuarentena",
+        "_violaciones",
         *[
             c
             for c in df.columns
             if not c.startswith("_viol_")
-            and c not in ("_row_id_tmp", "_es_invalido", "_motivo_cuarentena")
+            and c
+            not in ("_row_id_tmp", "_es_invalido", "_motivo_cuarentena", "_violaciones")
         ],
     )
 

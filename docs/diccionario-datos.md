@@ -119,6 +119,43 @@ se procesa en Silver.
 | `limite_credito_min`, `limite_credito_max` | Tarjeta de credito |
 | `plazos_meses`, `plazos_dias` | Listas de plazos ofrecidos |
 
+## Registro de calidad
+
+`data/calidad/` (Delta), historico que se acumula en cada corrida de
+Silver. Guarda llaves, reglas y conteos, nunca valores de los datos: no
+contiene PII. Se consulta con `bash demo.sh calidad`.
+
+### incidencias
+
+Una fila por cada (fila rechazada, regla violada).
+
+| Columna | Descripcion |
+|---|---|
+| `run_id` | Corrida de Silver (`silver_AAAAMMDD_HHMMSS`) |
+| `fecha_corrida` | |
+| `capa` | `silver` |
+| `entidad` | |
+| `llave` | Llave primaria de la fila rechazada |
+| `regla` | `not_null`, `unique`, `allowed`, `range`, `notzero`, `futuredate`, `condnull`, `pattern`, `ident`, `fk`, `tipo` |
+| `columna` | Columna que viola la regla |
+| `sesion_id` | Sesion o entrega de origen |
+| `archivo_origen` | Archivo de origen |
+
+La regla `tipo` marca un valor que llego pero no se pudo convertir a su
+tipo (una fecha imposible, un monto con coma de miles), distinto de un
+valor que no venia (`not_null`).
+
+### perfil_columnas
+
+Nulos por columna de negocio, por entidad y corrida, incluidas las
+columnas opcionales que ninguna regla obliga.
+
+| Columna | Descripcion |
+|---|---|
+| `run_id`, `fecha_corrida`, `entidad`, `columna` | |
+| `filas` | Filas de la entidad en la corrida |
+| `nulos` | Filas con la columna vacia (incluye valores que no se pudieron convertir) |
+
 ## Gold: gold_kpis
 
 `data/gold/kpis.duckdb`. Formato largo: una fila por (cliente, KPI), para

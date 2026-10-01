@@ -44,6 +44,18 @@ generador no los produce.
 (al final, para no alterar los existentes) y recalcular saldo_actual a
 partir de los movimientos del mes.
 
+### Corrupcion estructural de archivos no se detecta en Bronze
+
+**Que pasa:** el registro de calidad cubre valores invalidos dentro de
+filas bien formadas. Una linea de CSV mal formada (comillas sin cerrar,
+mas o menos columnas que el encabezado) la interpreta Spark en modo
+permisivo: los campos faltantes quedan NULL (y si se detectan despues,
+como not_null o tipo) pero los campos de mas se descartan sin aviso.
+
+**Posible fix:** leer los CSV de Bronze con esquema explicito y
+columnNameOfCorruptRecord, para conservar la linea original en
+_corrupt_record y registrarla como incidencia estructural.
+
 ## Resueltos
 
 ### CI: el smoke test no cubria el pipeline del modelo de riesgo

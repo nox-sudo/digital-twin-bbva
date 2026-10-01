@@ -36,7 +36,8 @@ hace el computo.
 | Sesion | `data/sesiones/<id>/` | Fuentes sinteticas con sus parametros y checksums. Inmutable; se reutiliza si ya existe | En claro |
 | Landing zone | MinIO, `landing/entregas/<id>/` | Historico de lo que realmente llego. Una entrega solo trae lo que no llego antes | En claro |
 | Bronze | `data/bronze/` (Delta) | Registro fiel y acumulativo de lo ingerido, con trazabilidad por fila. Sin limpieza | En claro |
-| Cuarentena | `data/silver_quarantine/` (Delta) | Filas que violan una regla de calidad, con el motivo | Protegida |
+| Cuarentena | `data/silver_quarantine/` (Delta) | Foto de la ultima corrida: filas que violan una regla, con el motivo | Protegida |
+| Registro de calidad | `data/calidad/` (Delta) | Historico de todas las corridas: incidencias por regla y perfil de nulos por columna | Sin valores |
 | Silver | `data/silver/` (Delta) | Datos tipados, deduplicados y validados | Protegida |
 | Gold | `data/gold/kpis.duckdb` | 12 KPIs por cliente y feature store | Sin PII |
 | Modelo | `models/` | Clasificador de riesgo y grafico de importancia SHAP | Sin PII |
@@ -78,6 +79,8 @@ codigo:
 | Delta Lake en Bronze y Silver | Escrituras atomicas (ACID), versionado y evolucion de esquema (`mergeSchema`) | Parquet plano: una escritura interrumpida deja la tabla corrupta |
 | DuckDB para Gold | Motor analitico sin servidor; suficiente para consultas de consumo | PostgreSQL: un servicio mas sin beneficio a esta escala |
 | Validacion declarativa con motor generico y cuarentena | Una regla nueva es una linea de YAML; las filas invalidas se aislan sin detener el pipeline | Validaciones escritas a mano por entidad |
+| Registro historico de calidad separado de la cuarentena | La cuarentena muestra el estado actual; el registro permite ver tendencias entre entregas sin guardar valores (sin PII) | Conservar cuarentenas viejas, que duplicarian la PII protegida |
+| `try_cast` en el tipado de Silver | Spark 4 activa el modo ANSI: un cast invalido lanza error y detenia todo Silver por un solo valor corrupto | `cast` normal, o desactivar ANSI (ocultaria los errores en vez de registrarlos) |
 | Sesiones reproducibles ancladas a una fecha de referencia | Los mismos parametros producen los mismos datos cualquier dia y en cualquier maquina | Fechas relativas al reloj del sistema (los datos cambiaban cada dia) |
 | Landing zone inmutable + Bronze incremental con registro de control | Historico de lo recibido; reingerir no duplica; Bronze se reconstruye desde la landing zone | Sobrescribir Bronze completo en cada corrida |
 | Validacion de CURP/RFC y HMAC como expresiones nativas de Spark | Spark las evalua dentro de la JVM y las optimiza con el resto del plan | UDFs de Python: serializan cada fila hacia otro proceso |
@@ -96,3 +99,5 @@ codigo:
 | Silver no contiene PII en claro | `transform_silver.py` se detiene si un campo sensible llega a la escritura; CI lo vuelve a revisar |
 | CURP/RFC se validan igual en Spark que en Python | `tests/test_pii.py`, 150 casos validos y alterados |
 | No hay secretos ni datos en el repo | Escaneo de secretos y de archivos de datos en cada PR |
+| Un valor corrupto no detiene el pipeline | `tests/test_calidad.py`: fechas imposibles, montos mal formados y valores fuera de catalogo van a cuarentena |
+| Ninguna fila desaparece en la validacion | Toda violacion se normaliza a verdadero/falso; validas + cuarentena = filas de entrada |

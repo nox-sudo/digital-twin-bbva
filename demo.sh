@@ -16,6 +16,7 @@
 #   bash demo.sh bajar        detiene los contenedores (conserva datos)
 #   bash demo.sh nueva-entrega  simula que llega el siguiente mes de datos y lo procesa
 #                             (requiere haber corrido levantar antes)
+#   bash demo.sh calidad      reporte de calidad: rechazos por regla, nulos y tendencia
 #   bash demo.sh sesiones     lista las sesiones de datos guardadas en data/sesiones/
 #   bash demo.sh limpiar      borra capas, modelo y volumenes; conserva las sesiones
 #   bash demo.sh limpiar todo igual, pero borra tambien las sesiones
@@ -213,6 +214,11 @@ cmd_nueva_entrega() {
     echo "La entrega trae solo el mes nuevo; Bronze lo agrega a lo que ya tenia."
 }
 
+cmd_calidad() {
+    preparar_entorno
+    docker compose run --rm worker quality_report.py
+}
+
 cmd_sesiones() {
     if [ ! -d data/sesiones ] || [ -z "$(ls -A data/sesiones 2>/dev/null)" ]; then
         echo "No hay sesiones guardadas todavia."
@@ -252,8 +258,9 @@ case "${1:-levantar}" in
     estado) cmd_estado ;;
     bajar) cmd_bajar ;;
     nueva-entrega) cmd_nueva_entrega ;;
+    calidad) cmd_calidad ;;
     sesiones) cmd_sesiones ;;
     limpiar) cmd_limpiar "${2:-}" ;;
-    -h | --help | ayuda) sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//' ;;
+    -h | --help | ayuda) sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//' ;;
     *) error "Comando desconocido: $1 (usa: bash demo.sh ayuda)" ;;
 esac

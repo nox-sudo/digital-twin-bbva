@@ -73,6 +73,7 @@ print(con.sql('SELECT kpi_id, COUNT(*) AS clientes FROM gold_kpis GROUP BY 1 ORD
 | `bash demo.sh estado` | Lista las corridas del DAG |
 | `bash demo.sh bajar` | Detiene los contenedores, conserva datos |
 | `bash demo.sh nueva-entrega` | Simula que llega el siguiente mes: genera la entrega, la publica en MinIO y Bronze ingiere solo lo nuevo |
+| `bash demo.sh calidad` | Reporte de calidad: filas rechazadas por regla y columna, nulos por columna y tendencia entre corridas |
 | `bash demo.sh sesiones` | Lista las sesiones de datos guardadas |
 | `bash demo.sh limpiar` | Borra capas, modelo y volumenes; conserva las sesiones (pide confirmacion) |
 | `bash demo.sh limpiar todo` | Igual, pero borra tambien las sesiones |

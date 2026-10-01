@@ -3,7 +3,7 @@ main.py
 
 CLI unico del proyecto: expone cada paso del pipeline como subcomando,
 delegando al script real (que sigue siendo ejecutable por separado, sin
-cambios). Reemplaza tener que recordar el nombre exacto de 9 archivos
+cambios). Reemplaza tener que recordar el nombre exacto de 10 archivos
 distintos por un solo punto de entrada.
 
 Uso:
@@ -19,6 +19,7 @@ Pasos disponibles:
     labels         generate_labels.py               (etiquetas de riesgo)
     train-model    train_model.py                   (entrena XGBoost)
     predict-risk   predict_risk.py                  (predice y escribe a Gold)
+    calidad        quality_report.py                (reporte del registro de calidad)
 
 Cada paso reenvia sus opciones tal cual al argparse del script real, por
 ejemplo:
@@ -45,6 +46,7 @@ PASOS = {
     "labels": "generate_labels",
     "train-model": "train_model",
     "predict-risk": "predict_risk",
+    "calidad": "quality_report",
 }
 
 

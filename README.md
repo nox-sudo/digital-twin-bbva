@@ -103,6 +103,8 @@ digital-twin-bbva/
 │   │   ├── identificadores_spark.py  # Validación de CURP/RFC nativa en Spark
 │   │   ├── pii.py                # Hash con sal (HMAC), enmascarado y descarte de PII
 │   │   └── typing_rules.py       # Tipado específico por entidad
+│   ├── calidad/
+│   │   └── registro.py           # Registro histórico: incidencias, perfil de nulos, errores de tipo
 │   └── gold/
 │       ├── kpi_definitions.py    # Lógica de cálculo de cada KPI
 │       └── risk_features.py      # Feature store: construir, persistir y leer features
@@ -116,6 +118,7 @@ digital-twin-bbva/
 │   ├── test_sesiones.py          # Reproducibilidad y reuso de sesiones de datos
 │   ├── test_pii.py               # Identificadores, HMAC Spark == Python, política de PII
 │   ├── test_landing.py           # Landing zone (S3 simulado) e ingesta incremental
+│   ├── test_calidad.py           # Registro de calidad y valores corruptos sin detener el pipeline
 │   └── test_main_cli.py          # Pruebas de enrutamiento del CLI (main.py)
 ├── docs/
 │   ├── arquitectura.md           # Flujo, zonas, DAG y decisiones de diseño
@@ -135,6 +138,7 @@ digital-twin-bbva/
 ├── generate_labels.py
 ├── train_model.py
 ├── predict_risk.py
+├── quality_report.py             # Reporte del registro histórico de calidad
 ├── pipeline_summary.py           # Reporte visual HTML de una corrida
 ├── Dockerfile                    # Imagen del worker (PySpark + Delta)
 ├── docker-compose.yml            # Airflow, Postgres, MinIO, worker
@@ -247,6 +251,7 @@ Catálogo de 12 KPIs en 5 categorías (ingresos, gastos, ahorro y liquidez, ries
 - [x] PII sintética (CURP, RFC, teléfono, domicilio) validada y protegida en Silver con hash y enmascarado
 - [x] Seguridad base: secretos por máquina fuera del repo, puertos locales, escaneo de secretos en CI
 - [x] Sesiones de datos reproducibles, con manifest, checksums y reuso
+- [x] Registro histórico de calidad: incidencias por regla, nulos por columna y errores de tipo, sin PII
 - [x] Landing zone en MinIO con entregas inmutables e ingesta incremental en Bronze
 - [x] Arranque reproducible con un comando en cualquier máquina con Docker (`demo.sh`)
 - [ ] Simulador de escenarios Monte Carlo
