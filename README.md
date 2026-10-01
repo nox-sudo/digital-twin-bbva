@@ -36,7 +36,9 @@ flowchart LR
     A[Fuentes sintéticas] --> B[Bronze<br/>Delta Lake, crudo]
     B --> C[Silver<br/>Delta Lake, validado]
     C --> D[Gold<br/>DuckDB, KPIs]
-    D --> E[Modelo de riesgo<br/>XGBoost + SHAP]
+    D --> FS[Feature store<br/>gold_features_cliente]
+    C --> FS
+    FS --> E[Modelo de riesgo<br/>XGBoost + SHAP]
     E -->|probabilidad_impago| D
     D --> F[Asistente RAG<br/>pendiente]
     D --> G[Dashboards<br/>pendiente]
@@ -53,7 +55,7 @@ Cada capa tiene una responsabilidad distinta:
 |---|---|
 | **Bronze** | Captura y preserva datos crudos tal como llegan. Sin limpieza ni lógica de negocio. Trazabilidad completa (timestamp de ingesta, archivo de origen). |
 | **Silver** | Tipado correcto, deduplicación, y validación contra reglas de negocio declaradas en `config/business_rules.yaml`. Motor genérico basado en configuración — agregar una regla no requiere código nuevo. Registros inválidos se aíslan en cuarentena, sin detener el pipeline. |
-| **Gold** | KPIs calculados a partir de Silver, en formato normalizado en DuckDB. Catálogo declarado en `config/kpi_catalog.yaml`. |
+| **Gold** | KPIs calculados a partir de Silver, en formato normalizado en DuckDB. Catálogo declarado en `config/kpi_catalog.yaml`. Incluye `gold_features_cliente`, el feature store: una fila por cliente que consumen el modelo, el dashboard, el simulador y el asistente. |
 
 Diagramas formales (arquitectura de infraestructura y flujo de datos completo) disponibles en Lucid — ver [Documentación adicional](#documentación-adicional).
 
@@ -95,13 +97,14 @@ digital-twin-bbva/
 │   │   └── typing_rules.py       # Tipado específico por entidad
 │   └── gold/
 │       ├── kpi_definitions.py    # Lógica de cálculo de cada KPI
-│       └── risk_features.py      # Matriz de features del modelo de riesgo
+│       └── risk_features.py      # Feature store: construir, persistir y leer features
 ├── dags/
 │   └── gemelo_pipeline_dag.py    # DAG de Airflow (DockerOperator)
 ├── tests/
 │   ├── conftest.py
 │   ├── test_validation.py        # Pruebas del motor de Silver
 │   ├── test_model.py             # Contrato de carga y predicción del modelo
+│   ├── test_features.py          # Persistencia y preparación del feature store
 │   └── test_main_cli.py          # Pruebas de enrutamiento del CLI (main.py)
 ├── docs/
 │   ├── ejecucion-local.md        # Guía para correr el proyecto en otra máquina
@@ -113,6 +116,7 @@ digital-twin-bbva/
 ├── ingest_bronze.py
 ├── transform_silver.py
 ├── transform_gold.py
+├── build_features.py             # Feature store en Gold (gold_features_cliente)
 ├── generate_labels.py
 ├── train_model.py
 ├── predict_risk.py
@@ -153,14 +157,15 @@ uv run python transform_silver.py --bronze data/bronze --silver data/silver \
     --quarantine data/silver_quarantine --rules config/business_rules.yaml
 uv run python transform_gold.py --silver data/silver --out data/gold/kpis.duckdb \
     --catalog config/kpi_catalog.yaml
+uv run python build_features.py
 uv run python generate_labels.py --silver data/silver
 uv run python train_model.py
 uv run python predict_risk.py
 ```
 
 También existe `main.py` como punto de entrada único: expone cada paso como
-subcomando (`generate`, `bronze`, `silver`, `gold`, `labels`, `train-model`,
-`predict-risk`), reenviando las mismas opciones al script real. Por ejemplo,
+subcomando (`generate`, `bronze`, `silver`, `gold`, `features`, `labels`,
+`train-model`, `predict-risk`), reenviando las mismas opciones al script real. Por ejemplo,
 las primeras dos líneas de arriba son equivalentes a:
 
 ```bash
@@ -192,7 +197,7 @@ El workflow de GitHub Actions (`.github/workflows/ci.yml`) corre en cada Pull Re
 | `lint` | flake8 y black |
 | `docker-compose-validate` | Sintaxis de `docker-compose.yml` con un `.env` generado por `setup.sh`, y shellcheck de `setup.sh`/`demo.sh` |
 | `unit-tests` | Motor de validación de Silver (pytest) |
-| `pipeline-smoke-test` | Pipeline completo Bronze → Silver → Gold → modelo de riesgo con volumen reducido (100 clientes, 2 meses), parametrizable vía `workflow_dispatch`; verifica los 12 KPIs y que `probabilidad_impago` tenga valor en [0, 1] para todos los clientes |
+| `pipeline-smoke-test` | Pipeline completo Bronze → Silver → Gold → modelo de riesgo con volumen reducido (100 clientes, 2 meses), parametrizable vía `workflow_dispatch`; verifica los 12 KPIs, el feature store, y que `probabilidad_impago` tenga valor en [0, 1] para todos los clientes |
 
 ---
 
@@ -203,6 +208,8 @@ El workflow de GitHub Actions (`.github/workflows/ci.yml`) corre en cada Pull Re
 El esquema completo, con tipo de dato y regla de calidad por columna, está documentado en el diccionario de datos — ver [Documentación adicional](#documentación-adicional).
 
 Catálogo de 12 KPIs en 5 categorías (ingresos, gastos, ahorro y liquidez, riesgo y endeudamiento, comportamiento transaccional), calculados en Gold y almacenados en formato normalizado en DuckDB. El KPI `probabilidad_impago` se calcula en Gold como `NULL` y el modelo de riesgo (XGBoost) lo completa en el último paso del pipeline (`predict_risk.py`).
+
+`gold_features_cliente` (misma base DuckDB) es el feature store del proyecto: una fila por cliente con los 11 KPIs restantes en columnas, más variables de perfil calculadas desde Silver (edad, antigüedad, número de productos, proporción de retiros). Se persiste en vez de recalcularse en cada consumidor por dos razones: el modelo se entrena y predice sobre exactamente la misma tabla (sin desalineación entre entrenamiento e inferencia), y el dashboard, el simulador y el asistente RAG leen el perfil del cliente sin levantar Spark. Se guarda en forma legible (la categoría de gasto como texto); la codificación one-hot que necesita XGBoost se aplica al entrenar o predecir.
 
 ---
 
@@ -218,11 +225,11 @@ Catálogo de 12 KPIs en 5 categorías (ingresos, gastos, ahorro y liquidez, ries
 - [x] Capa Gold — catálogo de 12 KPIs en DuckDB
 - [x] Diccionario de datos formal
 - [x] Modelo predictivo de riesgo crediticio (XGBoost + SHAP), entrenado dentro del DAG
+- [x] Feature store ligero en Gold (`gold_features_cliente`), fuente única de features
 - [x] Arranque reproducible con un comando en cualquier máquina con Docker (`demo.sh`)
 - [ ] Simulador de escenarios Monte Carlo
 - [ ] Asistente conversacional RAG local (Ollama + Llama 3 + LangChain)
 - [ ] Dashboards (Streamlit — decisión documentada, construcción pendiente)
-- [ ] Feature Store (diferido hasta construir el modelo de riesgo)
 
 ---
 

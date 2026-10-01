@@ -137,6 +137,11 @@ jobs:
       # la etiqueta de riesgo sale positiva en ~15% de los clientes, y con
       # 20 clientes el split estratificado 80/20 puede dejar el conjunto
       # de prueba sin positivos, lo que hace fallar el calculo de AUC-ROC.
+      - name: Feature store (gold_features_cliente)
+        run: |
+          uv run python build_features.py \
+            --silver data/silver --gold data/gold/kpis.duckdb
+
       - name: Etiquetas de riesgo
         run: |
           uv run python generate_labels.py \
@@ -145,7 +150,7 @@ jobs:
       - name: Entrenamiento del modelo
         run: |
           uv run python train_model.py \
-            --silver data/silver --gold data/gold/kpis.duckdb \
+            --gold data/gold/kpis.duckdb \
             --labels data/labels/risk_labels.parquet \
             --model-out models/risk_model.joblib \
             --shap-out models/shap_importancia.png
@@ -153,7 +158,7 @@ jobs:
       - name: Prediccion de riesgo
         run: |
           uv run python predict_risk.py \
-            --silver data/silver --gold data/gold/kpis.duckdb \
+            --gold data/gold/kpis.duckdb \
             --model models/risk_model.joblib
 
       - name: Verificar probabilidad_impago en Gold
@@ -177,6 +182,13 @@ jobs:
               sys.exit(1)
           if fuera_rango:
               print(f'ERROR: {fuera_rango} probabilidades fuera de [0, 1]')
+              sys.exit(1)
+
+          n_features = con.execute(
+              'SELECT COUNT(*) FROM gold_features_cliente'
+          ).fetchone()[0]
+          if n_features != total:
+              print(f'ERROR: gold_features_cliente con {n_features} filas, se esperaban {total}')
               sys.exit(1)
 
           print(f'Modelo verificado: probabilidad_impago en {con_valor}/{total} clientes')

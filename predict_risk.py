@@ -8,12 +8,13 @@ reemplazando las filas de probabilidad_impago en la tabla gold_kpis
 de DuckDB, que hasta ahora tenian valor NULL a proposito (ver
 src/gold/kpi_definitions.py, funcion kpi_probabilidad_impago).
 
-Usa exactamente las mismas features que train_model.py
-(src/gold/risk_features.py), para que no haya desalineacion entre lo
-que el modelo aprendio y lo que recibe en inferencia.
+Lee las mismas features que train_model.py (tabla gold_features_cliente)
+y las alinea a las columnas exactas con las que se entreno el modelo
+(feature_names_in_), para que no haya desalineacion entre lo que el
+modelo aprendio y lo que recibe en inferencia. No necesita Spark.
 
 Uso:
-    python predict_risk.py --silver data/silver --gold data/gold/kpis.duckdb \
+    python predict_risk.py --gold data/gold/kpis.duckdb \
         --model models/risk_model.joblib --out data/gold/predicciones
 """
 
@@ -29,8 +30,10 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from src.common.spark_session import get_spark_session  # noqa: E402
-from src.gold.risk_features import construir_features  # noqa: E402
+from src.gold.risk_features import (  # noqa: E402
+    cargar_features,
+    preparar_para_modelo,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -85,7 +88,6 @@ def main():
     parser = argparse.ArgumentParser(
         description="Predice probabilidad de impago por cliente"
     )
-    parser.add_argument("--silver", default="data/silver")
     parser.add_argument("--gold", default="data/gold/kpis.duckdb")
     parser.add_argument("--model", default="models/risk_model.joblib")
     parser.add_argument("--out", default="data/gold/predicciones")
@@ -94,9 +96,10 @@ def main():
     modelo = joblib.load(args.model)
     logger.info("Modelo cargado desde %s", args.model)
 
-    spark = get_spark_session("predecir_riesgo")
     try:
-        features = construir_features(spark, args.silver, args.gold)
+        features = preparar_para_modelo(
+            cargar_features(args.gold), columnas_modelo=modelo.feature_names_in_
+        )
         predicciones = predecir(modelo, features)
 
         out_dir = Path(args.out)
@@ -118,8 +121,6 @@ def main():
     except Exception:
         logger.exception("Fallo la prediccion de riesgo")
         raise
-    finally:
-        spark.stop()
 
 
 if __name__ == "__main__":

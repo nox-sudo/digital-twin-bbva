@@ -46,6 +46,7 @@ los siguientes reutilizan el cache de Docker.
 |---|---|
 | DAG, grafo de tareas y logs de cada una | http://localhost:8080 (admin / admin) |
 | KPIs de Gold (12 KPIs, formato largo) | `data/gold/kpis.duckdb`, tabla `gold_kpis` |
+| Features por cliente (una fila por cliente) | `data/gold/kpis.duckdb`, tabla `gold_features_cliente` |
 | Modelo de riesgo y grafico SHAP | `models/risk_model.joblib`, `models/shap_importancia.png` |
 | Filas rechazadas por validaciones de Silver | `data/silver_quarantine/` (vacio con datos limpios) |
 | Logs de cada corrida | `data/logs/` |
@@ -66,7 +67,7 @@ print(con.sql('SELECT kpi_id, COUNT(*) AS clientes FROM gold_kpis GROUP BY 1 ORD
 | Comando | Uso |
 |---|---|
 | `bash demo.sh` | Levanta todo y corre el pipeline (igual a `levantar`) |
-| `bash demo.sh pipeline` | Corre los 7 pasos directo en el worker, sin Airflow. Mas rapido; util si solo interesa ver el procesamiento de datos |
+| `bash demo.sh pipeline` | Corre los 8 pasos directo en el worker, sin Airflow. Mas rapido; util si solo interesa ver el procesamiento de datos |
 | `bash demo.sh reporte` | Genera el reporte HTML de conteos y tiempos |
 | `bash demo.sh estado` | Lista las corridas del DAG |
 | `bash demo.sh bajar` | Detiene los contenedores, conserva datos |

@@ -3,7 +3,7 @@ main.py
 
 CLI unico del proyecto: expone cada paso del pipeline como subcomando,
 delegando al script real (que sigue siendo ejecutable por separado, sin
-cambios). Reemplaza tener que recordar el nombre exacto de 7 archivos
+cambios). Reemplaza tener que recordar el nombre exacto de 8 archivos
 distintos por un solo punto de entrada.
 
 Uso:
@@ -14,6 +14,7 @@ Pasos disponibles:
     bronze         ingest_bronze.py                (ingesta Bronze)
     silver         transform_silver.py             (Bronze -> Silver)
     gold           transform_gold.py               (Silver -> Gold/KPIs)
+    features       build_features.py                (feature store en Gold)
     labels         generate_labels.py               (etiquetas de riesgo)
     train-model    train_model.py                   (entrena XGBoost)
     predict-risk   predict_risk.py                  (predice y escribe a Gold)
@@ -38,6 +39,7 @@ PASOS = {
     "bronze": "ingest_bronze",
     "silver": "transform_silver",
     "gold": "transform_gold",
+    "features": "build_features",
     "labels": "generate_labels",
     "train-model": "train_model",
     "predict-risk": "predict_risk",

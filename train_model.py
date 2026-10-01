@@ -4,14 +4,14 @@ train_model.py
 Entrena el modelo de clasificacion de riesgo crediticio (probabilidad
 de impago), el ultimo KPI pendiente del catalogo de Gold.
 
-Combina los 11 KPIs de Gold (todos menos probabilidad_impago, que es
-el objetivo) con variables de comportamiento de Silver
-(src/gold/risk_features.py, compartido con predict_risk.py para que
-entrenamiento e inferencia nunca usen features distintas), y las
-etiquetas sinteticas generadas por generate_labels.py.
+Lee las features de la tabla gold_features_cliente (construida por
+build_features.py; la misma que lee predict_risk.py, para que
+entrenamiento e inferencia nunca usen features distintas) y las
+etiquetas sinteticas generadas por generate_labels.py. No necesita
+Spark: todo lo que consume ya esta en Gold.
 
 Uso:
-    python train_model.py --silver data/silver --gold data/gold/kpis.duckdb \
+    python train_model.py --gold data/gold/kpis.duckdb \
         --labels data/labels/risk_labels.parquet \
         --model-out models/risk_model.joblib
 """
@@ -38,8 +38,10 @@ from xgboost import XGBClassifier  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from src.common.spark_session import get_spark_session  # noqa: E402
-from src.gold.risk_features import construir_features  # noqa: E402
+from src.gold.risk_features import (  # noqa: E402
+    cargar_features,
+    preparar_para_modelo,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -132,16 +134,14 @@ def main():
     parser = argparse.ArgumentParser(
         description="Entrena el modelo de riesgo crediticio"
     )
-    parser.add_argument("--silver", default="data/silver")
     parser.add_argument("--gold", default="data/gold/kpis.duckdb")
     parser.add_argument("--labels", default="data/labels/risk_labels.parquet")
     parser.add_argument("--model-out", default="models/risk_model.joblib")
     parser.add_argument("--shap-out", default="models/shap_importancia.png")
     args = parser.parse_args()
 
-    spark = get_spark_session("entrenar_modelo_riesgo")
     try:
-        features = construir_features(spark, args.silver, args.gold)
+        features = preparar_para_modelo(cargar_features(args.gold))
         etiquetas = pd.read_parquet(args.labels)
         metricas = entrenar(
             features, etiquetas, Path(args.model_out), Path(args.shap_out)
@@ -149,8 +149,6 @@ def main():
     except Exception:
         logger.exception("Fallo el entrenamiento del modelo")
         raise
-    finally:
-        spark.stop()
 
     print("\n=== Metricas del modelo de riesgo crediticio ===")
     print(f"AUC-ROC: {metricas['auc_roc']:.4f}")
