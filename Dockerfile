@@ -46,6 +46,24 @@ WORKDIR /opt/lakehouse
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev
 
+# A partir de aqui, "uv run" usa el entorno tal como quedo, sin volver a
+# sincronizar. Sin esto, uv run instala el grupo dev (pytest, flake8,
+# black) en cada ejecucion, y como cada tarea del DAG arranca un
+# contenedor nuevo, esa descarga desde PyPI se repetia en cada tarea.
+ENV UV_NO_SYNC=1
+
+# Descarga los JARs de Delta Lake una sola vez, al construir la imagen.
+# configure_spark_with_delta_pip los resuelve desde Maven Central la
+# primera vez que se crea una SparkSession; sin este paso, CADA tarea
+# del DAG (contenedor nuevo, borrado al terminar) los volvia a bajar.
+# Eso hacia cada corrida dependiente de tener salida a Maven: en una red
+# corporativa que lo bloquee, la ingesta fallaba. Con el cache de Ivy
+# horneado en la imagen, el worker corre sin red hacia Maven.
+RUN uv run python -c "\
+from delta import configure_spark_with_delta_pip; \
+from pyspark.sql import SparkSession; \
+configure_spark_with_delta_pip(SparkSession.builder.master('local[1]')).getOrCreate().stop()"
+
 # Ahora si, el resto del codigo.
 COPY . .
 

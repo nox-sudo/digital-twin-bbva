@@ -161,10 +161,10 @@ def kpi_uso_linea_credito(ctx):
 
 def kpi_probabilidad_impago(ctx):
     """
-    Pendiente: requiere el modelo de clasificacion de riesgo, aun no
-    construido. Devuelve la lista de clientes con valor NULL, para que
-    el catalogo de KPIs este completo en estructura aunque el valor
-    todavia no se pueda calcular.
+    Se escribe con valor NULL para todos los clientes: el valor real lo
+    calcula el modelo de riesgo despues de Gold (predict_risk.py
+    reemplaza estas filas). Asi gold_kpis tiene el catalogo completo en
+    estructura aun antes de que corra el modelo.
     """
     clientes = ctx["clientes"]
     resultado = clientes.select("cliente_id").withColumn(

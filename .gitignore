@@ -35,8 +35,23 @@ reporte_pipeline.html
 # Zip temporal de descarga
 gfd:silver.zip
 
-# Config local de Docker (UID y ruta absoluta, especifico por maquina)
+# Config local y secretos (generados por setup.sh, especificos por maquina).
+# .env.example si se versiona: documenta las variables sin valores.
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Cache de pytest
+.pytest_cache/
+
+# Artefactos de datos fuera de data/ (defensa extra: nunca deben
+# versionarse, contengan o no PII)
+*.duckdb
+*.duckdb.wal
+*.parquet
+*.csv
 
 # Artefactos de ejecucion del modelo de riesgo (se regeneran con
 # train_model.py: el .joblib y el grafico SHAP no son codigo fuente)

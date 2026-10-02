@@ -3,11 +3,12 @@ __pycache__
 *.pyc
 .git
 .cursor
-data/bronze
-data/silver
-data/raw_sources
-data/logs
+data/
+models/*.joblib
+models/*.png
 *.log
 .env
+.env.*
+.pytest_cache
 credentials.json
 token.json

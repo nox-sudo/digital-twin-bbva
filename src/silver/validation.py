@@ -72,6 +72,11 @@ def _required_columns_from_rules(rules: dict) -> set[str]:
         columnas.add(regla["column"])
         columnas.add(regla["when_column"])
 
+    columnas.update(rules.get("patterns", {}).keys())
+    for col, regla in rules.get("identificadores", {}).items():
+        columnas.add(col)
+        columnas.add(regla["fecha_column"])
+
     return columnas
 
 
@@ -138,8 +143,15 @@ def _check_unique(df: DataFrame, columns: list[str]) -> DataFrame:
 
 
 def _check_allowed_values(df: DataFrame, rules: dict) -> DataFrame:
+    """Se compara como texto: con el modo ANSI de Spark 4, comparar una
+    columna de texto contra numeros (plazo_dias contra [28, 91, ...])
+    obliga a convertir cada valor, y un valor corrupto ("abc") lanzaba
+    un error que detenia todo Silver."""
     for col, allowed in rules.items():
-        df = df.withColumn(f"_viol_allowed_{col}", ~F.col(col).isin(allowed))
+        permitidos = [str(v) for v in allowed]
+        df = df.withColumn(
+            f"_viol_allowed_{col}", ~F.col(col).cast("string").isin(permitidos)
+        )
     return df
 
 
@@ -170,13 +182,57 @@ def _check_date_not_future(df: DataFrame, columns: list[str]) -> DataFrame:
 
 
 def _check_conditional_not_null(df: DataFrame, rules: list[dict]) -> DataFrame:
+    """La columna es obligatoria cuando otra columna tiene cierto valor
+    (when_equals) o alguno de varios valores (when_in)."""
     for i, rule in enumerate(rules):
         col = rule["column"]
         when_col = rule["when_column"]
-        when_val = rule["when_equals"]
+        if "when_in" in rule:
+            aplica = F.col(when_col).isin(rule["when_in"])
+        else:
+            aplica = F.col(when_col) == rule["when_equals"]
         df = df.withColumn(
             f"_viol_condnull_{col}_{i}",
-            (F.col(when_col) == when_val) & F.col(col).isNull(),
+            F.coalesce(aplica, F.lit(False)) & F.col(col).isNull(),
+        )
+    return df
+
+
+def _check_patterns(df: DataFrame, rules: dict) -> DataFrame:
+    """Formato por expresion regular. Un NULL no viola esta regla: la
+    presencia se declara aparte con not_null, para que cada regla tenga
+    un solo motivo y el reporte de cuarentena sea claro."""
+    for col, patron in rules.items():
+        df = df.withColumn(
+            f"_viol_pattern_{col}",
+            F.col(col).isNotNull() & ~F.col(col).rlike(patron),
+        )
+    return df
+
+
+def _check_identificadores(df: DataFrame, rules: dict) -> DataFrame:
+    """Identificadores oficiales (CURP, RFC): formato, digito verificador
+    y coherencia con la fecha de nacimiento de la misma fila. Como en
+    patterns, un NULL no es violacion de esta regla.
+
+    El coalesce a False es importante: si fecha_nacimiento fuera NULL, la
+    comparacion daria NULL, y una violacion NULL hace que la fila
+    desaparezca de valido y de cuarentena a la vez (filter() descarta
+    tanto False como NULL; mismo problema documentado en _check_unique).
+    """
+    from src.silver.identificadores_spark import VALIDADORES
+
+    for col, regla in rules.items():
+        tipo = regla["tipo"]
+        if tipo not in VALIDADORES:
+            raise ValueError(
+                f"Identificador '{tipo}' no soportado para '{col}'. "
+                f"Disponibles: {sorted(VALIDADORES)}"
+            )
+        es_valido = VALIDADORES[tipo](col, regla["fecha_column"])
+        df = df.withColumn(
+            f"_viol_ident_{col}",
+            F.col(col).isNotNull() & ~F.coalesce(es_valido, F.lit(False)),
         )
     return df
 
@@ -245,10 +301,22 @@ def validate_entity(
         df = _check_date_not_future(df, rules["date_not_future"])
     if "conditional_not_null" in rules:
         df = _check_conditional_not_null(df, rules["conditional_not_null"])
+    if "patterns" in rules:
+        df = _check_patterns(df, rules["patterns"])
+    if "identificadores" in rules:
+        df = _check_identificadores(df, rules["identificadores"])
     if "foreign_keys" in rules:
         df = _check_foreign_keys(df, rules["foreign_keys"], silver_context)
 
     viol_cols = [c for c in df.columns if c.startswith("_viol_")]
+
+    # Toda violacion queda en True/False, nunca NULL. Una regla evaluada
+    # sobre un valor nulo puede dar NULL (isin, comparaciones), y una fila
+    # con violacion NULL desaparecia de validos Y de cuarentena a la vez:
+    # filter() descarta tanto False como NULL. Se corrige aqui, una vez,
+    # para todas las reglas presentes y futuras.
+    for c in viol_cols:
+        df = df.withColumn(c, F.coalesce(F.col(c), F.lit(False)))
 
     violaciones_por_regla = {}
     if viol_cols:
@@ -273,21 +341,48 @@ def validate_entity(
             for c in viol_cols
         ]
         df = df.withColumn("_motivo_cuarentena", F.concat(*motivo_partes))
+
+        # Lo mismo que _motivo_cuarentena, pero estructurado: lista de
+        # (regla, columna) violadas. Es lo que lee el registro historico
+        # de calidad (src/calidad/registro.py), sin tener que interpretar
+        # texto.
+        from src.calidad.registro import descomponer_violacion
+
+        violaciones = []
+        for c in viol_cols:
+            regla, columna = descomponer_violacion(c)
+            violaciones.append(
+                F.when(
+                    F.col(c),
+                    F.struct(
+                        F.lit(regla).alias("regla"), F.lit(columna).alias("columna")
+                    ),
+                )
+            )
+        df = df.withColumn(
+            "_violaciones", F.filter(F.array(*violaciones), lambda v: v.isNotNull())
+        )
     else:
         df = df.withColumn("_es_invalido", F.lit(False))
         df = df.withColumn("_motivo_cuarentena", F.lit(""))
+        df = df.withColumn(
+            "_violaciones",
+            F.array().cast("array<struct<regla:string,columna:string>>"),
+        )
 
     df_valido = df.filter(~F.col("_es_invalido")).drop(
-        "_row_id_tmp", "_es_invalido", "_motivo_cuarentena", *viol_cols
+        "_row_id_tmp", "_es_invalido", "_motivo_cuarentena", "_violaciones", *viol_cols
     )
     df_cuarentena = df.filter(F.col("_es_invalido")).select(
         "_row_id_tmp",
         "_motivo_cuarentena",
+        "_violaciones",
         *[
             c
             for c in df.columns
             if not c.startswith("_viol_")
-            and c not in ("_row_id_tmp", "_es_invalido", "_motivo_cuarentena")
+            and c
+            not in ("_row_id_tmp", "_es_invalido", "_motivo_cuarentena", "_violaciones")
         ],
     )
 
