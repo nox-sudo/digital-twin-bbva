@@ -1,8 +1,8 @@
 """
 train_model.py
 
-Entrena el modelo de clasificacion de riesgo crediticio (probabilidad
-de impago), el ultimo KPI pendiente del catalogo de Gold.
+Entrena el modelo de clasificacion de riesgo crediticio, que calcula el
+KPI probabilidad_impago del catalogo de Gold.
 
 Lee las features de la tabla gold_features_cliente (construida por
 build_features.py; la misma que lee predict_risk.py, para que

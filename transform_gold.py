@@ -101,7 +101,6 @@ def main():
             df_kpi = calcular_kpi(kpi_id, metadata, silver_context)
             resultados.append(df_kpi)
 
-            pendiente = metadata.get("pendiente", False)
             logger.end_entity(
                 kpi_id,
                 filas=len(df_kpi),
@@ -109,7 +108,7 @@ def main():
                     df_kpi["valor_numerico"].notna().sum()
                     + df_kpi["valor_texto"].notna().sum()
                 ),
-                pendiente=pendiente,
+                calculado_por=metadata.get("calculado_por", "transform_gold.py"),
             )
 
         # DuckDB referencia esta variable por nombre dentro del SQL de abajo
