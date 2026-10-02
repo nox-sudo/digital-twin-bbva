@@ -11,7 +11,12 @@ directo en el navegador.
 
 Uso:
     python pipeline_summary.py --bronze data/bronze --silver data/silver \
-        --quarantine data/silver_quarantine --logs data/logs --out reporte_pipeline.html
+        --quarantine data/silver_quarantine --logs data/logs \
+        --out data/reporte_pipeline.html
+
+No confundir con quality_report.py: este es la foto visual de volumen
+por capa; quality_report.py es el historico de calidad (que se rechazo,
+por que regla, y como cambia entre corridas).
 """
 
 import argparse
@@ -204,7 +209,7 @@ def main():
     parser.add_argument("--silver", default="data/silver")
     parser.add_argument("--quarantine", default="data/silver_quarantine")
     parser.add_argument("--logs", default="data/logs")
-    parser.add_argument("--out", default="reporte_pipeline.html")
+    parser.add_argument("--out", default="data/reporte_pipeline.html")
     parser.add_argument(
         "--no-abrir", action="store_true", help="No abrir el navegador automaticamente"
     )

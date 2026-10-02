@@ -67,8 +67,9 @@ probabilidad_impago:
   nombre: Probabilidad de impago
   unidad: probabilidad
   tipo_valor: numerico
-  pendiente: true
-  nota_pendiente: "Requiere el modelo de clasificacion de riesgo (aun no construido). Valor NULL hasta entonces."
+  # transform_gold.py la escribe en NULL; el modelo de riesgo
+  # (predict_risk.py) reemplaza esas filas con la probabilidad real.
+  calculado_por: predict_risk.py
 
 frecuencia_transacciones:
   categoria: comportamiento_transaccional
