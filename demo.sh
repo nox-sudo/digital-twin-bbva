@@ -33,6 +33,7 @@ AIRFLOW_URL="http://localhost:8080"
 MEMORIA_MINIMA_GB=6
 TIMEOUT_AIRFLOW_SEG=600   # el primer arranque instala el provider de Docker
 TIMEOUT_PIPELINE_SEG=1800
+MAX_FALLOS_SONDEO=3      # consultas seguidas a Airflow que pueden fallar antes de abortar
 
 info() { printf '\n==> %s\n' "$*"; }
 error() {
@@ -100,6 +101,26 @@ esperar_airflow() {
     echo "Airflow listo."
 }
 
+# Estado del run ("queued", "running", "success", "failed") o vacio si
+# Airflow aun no lo lista. Devuelve 1 si la consulta misma fallo, para que
+# correr_dag decida cuantos fallos seguidos tolera: dentro de una
+# sustitucion de comando, un fallo del pipeline mataria el script (set -e
+# con pipefail) sin ningun mensaje. Se usa una here-string en vez de una
+# tuberia para evitar tambien el SIGPIPE.
+estado_del_run() {
+    local salida
+    salida="$(airflow_cli dags list-runs -d "${DAG_ID}" -o plain)" || return 1
+    awk -v id="$1" '$2 == id {print $3}' <<< "${salida}"
+}
+
+# Primera tarea en estado "running" del run, o vacio si no hay ninguna.
+# Mismo contrato de retorno que estado_del_run.
+tarea_en_curso() {
+    local salida
+    salida="$(airflow_cli tasks states-for-dag-run "${DAG_ID}" "$1" -o plain)" || return 1
+    awk '$4 == "running" {print $3; exit}' <<< "${salida}"
+}
+
 correr_dag() {
     # No usar "${1:-{\}}": en el bash 3.2 de macOS conserva la barra y
     # produce "{\}", que no es JSON valido y hace fallar el trigger.
@@ -113,16 +134,26 @@ correr_dag() {
     airflow_cli_o_error dags unpause "${DAG_ID}"
     airflow_cli_o_error dags trigger "${DAG_ID}" --run-id "${run_id}" --conf "${conf}"
 
-    local inicio=$SECONDS estado="queued" ultima_linea=""
+    local inicio=$SECONDS estado="queued" ultima_linea="" fallos_seguidos=0
     while [ "${estado}" != "success" ] && [ "${estado}" != "failed" ]; do
         [ $((SECONDS - inicio)) -gt ${TIMEOUT_PIPELINE_SEG} ] \
             && error "El pipeline sigue corriendo tras ${TIMEOUT_PIPELINE_SEG}s. Revisa la UI: ${AIRFLOW_URL}"
         sleep 10
-        estado="$(airflow_cli dags list-runs -d "${DAG_ID}" -o plain \
-            | awk -v id="${run_id}" '$2 == id {print $3}')"
-        local en_curso
-        en_curso="$(airflow_cli tasks states-for-dag-run "${DAG_ID}" "${run_id}" -o plain \
-            | awk '$4 == "running" {print $3}' | head -1)"
+        local nuevo_estado en_curso
+        # Un fallo puntual de "docker compose exec" no debe tumbar una
+        # corrida que sigue avanzando en Airflow: se reintenta, y solo se
+        # aborta (con mensaje) si la consulta falla varias veces seguidas.
+        if nuevo_estado="$(estado_del_run "${run_id}")" \
+            && en_curso="$(tarea_en_curso "${run_id}")"; then
+            fallos_seguidos=0
+            estado="${nuevo_estado}"
+        else
+            fallos_seguidos=$((fallos_seguidos + 1))
+            if [ "${fallos_seguidos}" -ge "${MAX_FALLOS_SONDEO}" ]; then
+                error "No se pudo consultar el estado del DAG (${fallos_seguidos} intentos seguidos). El run ${run_id} puede seguir corriendo en Airflow. Revisa: docker compose ps, docker compose logs airflow-scheduler, ${AIRFLOW_URL}"
+            fi
+            continue
+        fi
         local linea="estado: ${estado:-queued}${en_curso:+ | tarea en curso: ${en_curso}}"
         if [ "${linea}" != "${ultima_linea}" ]; then
             printf '  [%4ss] %s\n' $((SECONDS - inicio)) "${linea}"
@@ -131,8 +162,10 @@ correr_dag() {
     done
 
     if [ "${estado}" = "failed" ]; then
+        # El detalle por tarea es informativo: si no se puede obtener, el
+        # mensaje de error de abajo debe salir igual.
         airflow_cli tasks states-for-dag-run "${DAG_ID}" "${run_id}" -o plain \
-            | awk 'NR > 1 {printf "  %-28s %s\n", $3, $4}'
+            | awk 'NR > 1 {printf "  %-28s %s\n", $3, $4}' || true
         error "El pipeline fallo. Detalle por tarea en ${AIRFLOW_URL} (DAG ${DAG_ID})."
     fi
 }
