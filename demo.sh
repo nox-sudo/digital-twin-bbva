@@ -46,6 +46,17 @@ airflow_cli() {
     docker compose exec -T airflow-scheduler airflow "$@" 2>/dev/null
 }
 
+# Para comandos que cambian estado (unpause, trigger): si fallan, muestra
+# el error de Airflow en vez de dejar que "set -e" termine el script sin
+# explicacion. Se siguen filtrando las advertencias de configuracion.
+airflow_cli_o_error() {
+    local salida
+    if ! salida="$(docker compose exec -T airflow-scheduler airflow "$@" 2>&1)"; then
+        printf '%s\n' "${salida}" | grep -v FutureWarning | tail -n 15 >&2 || true
+        error "Fallo el comando: airflow $*"
+    fi
+}
+
 verificar_requisitos() {
     command -v docker >/dev/null 2>&1 \
         || error "Docker no esta instalado. Instala Docker Desktop (Mac/Windows) o Docker Engine (Linux)."
@@ -90,14 +101,17 @@ esperar_airflow() {
 }
 
 correr_dag() {
-    local conf="${1:-{\}}"
+    # No usar "${1:-{\}}": en el bash 3.2 de macOS conserva la barra y
+    # produce "{\}", que no es JSON valido y hace fallar el trigger.
+    local conf="${1:-}"
+    [ -n "${conf}" ] || conf='{}'
     local run_id
     run_id="demo_$(date +%Y%m%d_%H%M%S)"
 
     info "Disparando el DAG ${DAG_ID} (run_id: ${run_id})"
     # El DAG nace pausado por default; sin unpause, el trigger queda en cola.
-    airflow_cli dags unpause "${DAG_ID}" >/dev/null
-    airflow_cli dags trigger "${DAG_ID}" --run-id "${run_id}" --conf "${conf}" >/dev/null
+    airflow_cli_o_error dags unpause "${DAG_ID}"
+    airflow_cli_o_error dags trigger "${DAG_ID}" --run-id "${run_id}" --conf "${conf}"
 
     local inicio=$SECONDS estado="queued" ultima_linea=""
     while [ "${estado}" != "success" ] && [ "${estado}" != "failed" ]; do
