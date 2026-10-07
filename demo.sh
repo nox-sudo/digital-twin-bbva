@@ -64,10 +64,10 @@ verificar_requisitos() {
 }
 
 preparar_entorno() {
-    if [ ! -f .env ]; then
-        info "Generando .env para esta maquina"
-        bash setup.sh
-    fi
+    # Siempre, no solo si falta .env: setup.sh conserva los secretos que
+    # ya existen y agrega los que falten. Un .env de una version anterior
+    # (sin secretos) haria que docker compose se negara a arrancar.
+    bash setup.sh >/dev/null
 }
 
 esperar_airflow() {

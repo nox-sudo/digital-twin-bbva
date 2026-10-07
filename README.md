@@ -139,7 +139,7 @@ digital-twin-bbva/
 ├── train_model.py
 ├── predict_risk.py
 ├── quality_report.py             # Reporte del registro histórico de calidad
-├── pipeline_summary.py           # Reporte visual HTML de una corrida
+├── pipeline_summary.py           # Reporte visual HTML: volumen por capa en la última corrida
 ├── Dockerfile                    # Imagen del worker (PySpark + Delta)
 ├── docker-compose.yml            # Airflow, Postgres, MinIO, worker
 ├── demo.sh                       # Arranque de un comando: levanta todo y corre el DAG
@@ -182,22 +182,25 @@ uv run python predict_risk.py
 ```
 
 También existe `main.py` como punto de entrada único: expone cada paso como
-subcomando (`generate`, `bronze`, `silver`, `gold`, `features`, `labels`,
-`train-model`, `predict-risk`), reenviando las mismas opciones al script real. Por ejemplo,
+subcomando (`generate`, `landing`, `bronze`, `silver`, `gold`, `features`, `labels`,
+`train-model`, `predict-risk`, `calidad`), reenviando las mismas opciones al script real. Por ejemplo,
 las primeras dos líneas de arriba son equivalentes a:
 
 ```bash
-uv run python main.py generate --clientes 500 --meses 12
+uv run python main.py generate
 uv run python main.py bronze --source data/raw_sources --out data/bronze
 ```
 
+`transform_silver.py` necesita el secreto `PII_HASH_SALT`: lo lee de `.env`, así que corre `bash setup.sh` una vez antes.
+
 Ver las opciones de un paso puntual: `uv run python main.py <paso> --help`.
 
-Corre de extremo a extremo en menos de 2 minutos. Para ver un resumen visual del resultado:
+Corre de extremo a extremo en menos de 2 minutos. Dos reportes, para preguntas distintas:
 
-```bash
-uv run python pipeline_summary.py
-```
+| Reporte | Responde | Comando |
+|---|---|---|
+| `pipeline_summary.py` | ¿Cuántas filas hay en cada capa en la última corrida? (HTML) | `uv run python pipeline_summary.py` |
+| `quality_report.py` | ¿Qué se rechazó, por qué regla, y cómo cambia entre corridas? | `uv run python main.py calidad` |
 
 
 ---
@@ -214,7 +217,7 @@ El workflow de GitHub Actions (`.github/workflows/ci.yml`) corre en cada Pull Re
 |---|---|
 | `lint` | flake8 y black |
 | `docker-compose-validate` | Sintaxis de `docker-compose.yml` con un `.env` generado por `setup.sh`, y shellcheck de `setup.sh`/`demo.sh` |
-| `unit-tests` | Motor de validación de Silver (pytest) |
+| `unit-tests` | 70 pruebas (pytest): motor de validación, CURP/RFC y PII, sesiones, landing zone, registro de calidad, feature store, modelo y CLI |
 | `pipeline-smoke-test` | Pipeline completo Bronze → Silver → Gold → modelo de riesgo con volumen reducido (100 clientes, 2 meses), parametrizable vía `workflow_dispatch`; verifica los 12 KPIs, el feature store, y que `probabilidad_impago` tenga valor en [0, 1] para todos los clientes |
 
 ---

@@ -18,6 +18,13 @@ data/
 # Logs de corridas locales
 logs/
 
+# Configuracion local de Claude Code
+.claude/
+
+# Herramientas personales (no son parte del repo; viven fuera del
+# proyecto, en ~/herramientas-reporte/). Se mantienen ignoradas por si
+# una copia vuelve a quedar aqui por error.
+scripts/
 # Herramienta personal de automatizacion de documentos (no es parte del repo)
 docs_editor.py
 cleanup_preguntas.py

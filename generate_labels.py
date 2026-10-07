@@ -13,11 +13,13 @@ percentil 75/25 de la poblacion de la corrida actual:
   - uso_linea_credito en el cuartil superior (usa casi todo su limite)
 
 Nota de diseno: la regla pedida originalmente exigia las 3 condiciones
-a la vez (AND estricto). Se probo contra los datos reales y esa regla
-deja solo 6 clientes de riesgo sobre 500 (1.2 por ciento), insuficiente
-para un split 80/20 confiable (el conjunto de prueba quedaria con 0 o 1
-positivo). Se ajusto a "al menos 2 de 3", que da 44 positivos (8.8 por
-ciento): suficiente para entrenar y evaluar con un desbalance manejable.
+a la vez (AND estricto). Probada contra los datos de la sesion de
+referencia (500 clientes), esa regla dejaba alrededor de 1 por ciento de
+clientes de riesgo, insuficiente para un split 80/20 confiable (el
+conjunto de prueba quedaba con 0 o 1 positivo). "Al menos 2 de 3" da
+alrededor de 9 por ciento: suficiente para entrenar y evaluar con un
+desbalance manejable. Las cifras exactas cambian con la semilla; el
+log de cada corrida las reporta.
 
 Como ratio_endeudamiento y uso_linea_credito no existen para clientes
 sin ese producto (sin tarjeta de credito o prestamo), su ausencia se
