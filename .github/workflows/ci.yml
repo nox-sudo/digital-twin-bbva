@@ -1,0 +1,331 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop, main]
+  workflow_dispatch:
+    inputs:
+      smoke_test_clientes:
+        description: "Numero de clientes para el smoke test (default 100, escalar para prueba de carga manual)"
+        default: "100"
+      smoke_test_meses:
+        description: "Numero de meses para el smoke test"
+        default: "2"
+
+jobs:
+
+  # Job rapido, sin Java/PySpark: corre en segundos, siempre primero.
+  lint:
+    name: Lint (flake8 + black) y escaneo de secretos
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv python install 3.11
+      - run: uv sync --frozen
+      - run: uv run flake8 . --max-line-length=100 --exclude=.venv
+      - run: uv run black --check . --exclude=.venv
+
+      # Ningun secreto ni archivo de datos versionado. detect-secrets
+      # busca credenciales por patron (llaves de nube, contrasenas en
+      # texto) y por entropia (cadenas aleatorias largas). Solo revisa
+      # archivos versionados; uv.lock se excluye porque sus hashes de
+      # paquetes son cadenas de alta entropia legitimas.
+      - name: Escaneo de secretos y archivos de datos
+        run: |
+          git ls-files -z | grep -zv '^uv.lock$' \
+            | xargs -0 uvx detect-secrets==1.5.0 scan > /tmp/secretos.json
+          uv run python -c "
+          import json, sys
+          hallazgos = json.load(open('/tmp/secretos.json'))['results']
+          for archivo, items in hallazgos.items():
+              for item in items:
+                  print(f'{archivo}:{item[\"line_number\"]} {item[\"type\"]}')
+          sys.exit(1 if hallazgos else 0)
+          "
+          if git ls-files | grep -E '\.(csv|parquet|duckdb|joblib)$|(^|/)\.env$'; then
+            echo "ERROR: hay archivos de datos o .env versionados"
+            exit 1
+          fi
+          echo "Sin secretos ni archivos de datos versionados"
+
+  # Job de validacion sintactica de Docker Compose, sin build de imagenes.
+  # No requiere Docker Desktop completo, solo el CLI - rapido.
+  docker-compose-validate:
+    name: Validar docker-compose.yml
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # shellcheck viene preinstalado en ubuntu-latest.
+      - name: Lint de scripts de arranque
+        run: shellcheck setup.sh demo.sh
+      # Se usa el mismo setup.sh que corre un usuario nuevo, en vez de un
+      # .env escrito a mano: si setup.sh deja de generar una variable que
+      # docker-compose.yml espera, este job lo detecta.
+      - name: Generar .env con setup.sh
+        run: bash setup.sh
+      - run: docker compose config --quiet
+
+  # Pruebas unitarias del motor de validacion. Corre en paralelo a lint
+  # y docker-compose-validate porque no depende de ninguno de los dos.
+  unit-tests:
+    name: Pruebas unitarias (motor de validacion)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: astral-sh/setup-uv@v3
+      - run: uv python install 3.11
+      - run: uv sync --frozen
+      - run: uv run pytest tests/ -v
+
+  # Smoke test del pipeline completo con volumen pequeno, para que sea
+  # rapido en cada PR. El volumen es parametrizable via
+  # workflow_dispatch para correr una prueba de carga mas grande
+  # manualmente sin tocar el trigger automatico de PR.
+  pipeline-smoke-test:
+    name: Pipeline Bronze -> Silver -> Gold (smoke test)
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    env:
+      # Valor de prueba, publico a proposito: en CI no hay datos reales
+      # que proteger. En cada maquina, setup.sh genera uno aleatorio.
+      PII_HASH_SALT: valor-de-prueba-solo-ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: astral-sh/setup-uv@v3
+      - run: uv python install 3.11
+      - run: uv sync --frozen
+
+      - name: Generar fuentes sinteticas (volumen reducido)
+        run: |
+          uv run python generate_synthetic_sources.py \
+            --clientes ${{ github.event.inputs.smoke_test_clientes || '100' }} \
+            --meses ${{ github.event.inputs.smoke_test_meses || '2' }} \
+            --out data/raw_sources
+
+      # Misma sesion, dos comprobaciones: (1) una segunda corrida con los
+      # mismos parametros reutiliza la sesion en vez de regenerarla, y
+      # (2) regenerarla desde cero en otra carpeta produce archivos
+      # identicos byte por byte (mismos checksums en el manifest).
+      - name: Verificar reproducibilidad de la sesion de datos
+        run: |
+          ARGS="--clientes ${{ github.event.inputs.smoke_test_clientes || '100' }} \
+            --meses ${{ github.event.inputs.smoke_test_meses || '2' }}"
+          uv run python generate_synthetic_sources.py $ARGS --out data/raw_sources \
+            | tee /tmp/segunda_corrida.log
+          grep -q "se reutiliza" /tmp/segunda_corrida.log
+
+          uv run python generate_synthetic_sources.py $ARGS \
+            --sesiones-dir /tmp/sesiones_copia --out /tmp/activa_copia
+          uv run python -c "
+          import json, sys
+          a = json.load(open('data/raw_sources/manifest.json'))
+          b = json.load(open('/tmp/activa_copia/manifest.json'))
+          if a['archivos'] != b['archivos']:
+              print('ERROR: la misma sesion generada dos veces produjo archivos distintos')
+              sys.exit(1)
+          print(f'Sesion {a[\"sesion_id\"]} reproducible: {len(a[\"archivos\"])} archivos identicos')
+          "
+
+      - name: Ingesta Bronze
+        run: uv run python ingest_bronze.py --source data/raw_sources --out data/bronze
+
+      # Ingesta incremental con Delta real: (1) reingerir la misma sesion
+      # no agrega nada; (2) una entrega con un mes adicional agrega solo
+      # ese mes, sin duplicar clientes ni meses anteriores.
+      - name: Verificar ingesta incremental de Bronze
+        run: |
+          uv run python ingest_bronze.py --source data/raw_sources --out data/bronze \
+            | tee /tmp/reingesta.log
+          grep -q "No hay archivos nuevos" /tmp/reingesta.log
+
+          uv run python generate_synthetic_sources.py \
+            --clientes ${{ github.event.inputs.smoke_test_clientes || '100' }} \
+            --meses ${{ github.event.inputs.smoke_test_meses || '2' }} \
+            --meses-adicionales 1 --out data/raw_sources
+          uv run python ingest_bronze.py --source data/raw_sources --out data/bronze
+
+          uv run python -c "
+          import json, sys
+          from src.common.spark_session import get_spark_session
+
+          esperado = json.load(open('data/raw_sources/manifest.json'))['conteos']
+          spark = get_spark_session('verificar_incremental')
+          tx = spark.read.format('delta').load('data/bronze/transacciones').count()
+          cl = spark.read.format('delta').load('data/bronze/clientes').count()
+          spark.stop()
+          if tx != esperado['transacciones'] or cl != esperado['clientes']:
+              print(f'ERROR: Bronze tx={tx} clientes={cl}, esperado {esperado}')
+              sys.exit(1)
+          print(f'Incremental OK: {tx} transacciones y {cl} clientes, sin duplicados')
+          "
+
+      - name: Transformacion Silver
+        run: |
+          uv run python transform_silver.py \
+            --bronze data/bronze --silver data/silver \
+            --quarantine data/silver_quarantine \
+            --rules config/business_rules.yaml
+
+      - name: Verificar que Silver se genero sin cuarentena inesperada
+        run: |
+          if [ -d "data/silver_quarantine" ]; then
+            echo "Se genero cuarentena en el smoke test - revisar antes de continuar"
+            find data/silver_quarantine -type f
+            exit 1
+          fi
+          echo "Smoke test completado sin cuarentena, como se espera con datos limpios"
+
+      # Ningun campo sensible de config/politica_pii.yaml puede existir en
+      # claro en Silver ni en su cuarentena.
+      - name: Verificar que Silver no contiene PII en claro
+        run: |
+          uv run python -c "
+          import sys, yaml
+          from src.common.spark_session import get_spark_session
+
+          politica = yaml.safe_load(open('config/politica_pii.yaml'))
+          spark = get_spark_session('verificar_pii')
+          errores = []
+          for entidad, reglas in politica.items():
+              sensibles = set(reglas.get('hash_y_mascara', {}))
+              sensibles |= set(reglas.get('solo_hash', []))
+              sensibles |= set(reglas.get('descartar', []))
+              columnas = set(spark.read.format('delta').load(f'data/silver/{entidad}').columns)
+              if sensibles & columnas:
+                  errores.append(f'{entidad}: {sorted(sensibles & columnas)}')
+          spark.stop()
+          if errores:
+              print('ERROR: PII en claro en Silver:', errores)
+              sys.exit(1)
+          print('Silver sin PII en claro:', sorted(politica))
+          "
+
+      # El registro historico de calidad existe desde la primera corrida
+      # (aunque no haya rechazos) y tiene perfil para las 4 entidades.
+      - name: Verificar registro de calidad
+        run: |
+          uv run python -c "
+          import sys
+          from src.common.spark_session import get_spark_session
+
+          spark = get_spark_session('verificar_calidad')
+          perfil = spark.read.format('delta').load('data/calidad/perfil_columnas')
+          incid = spark.read.format('delta').load('data/calidad/incidencias')
+          entidades = {f.entidad for f in perfil.select('entidad').distinct().collect()}
+          n_incid = incid.count()
+          spark.stop()
+          esperadas = {'clientes', 'cuentas', 'cetes_inversiones', 'transacciones'}
+          if entidades != esperadas:
+              print(f'ERROR: perfil de calidad para {entidades}, se esperaban {esperadas}')
+              sys.exit(1)
+          print(f'Registro de calidad OK: perfil de {len(entidades)} entidades, {n_incid} incidencias')
+          "
+          uv run python quality_report.py
+
+      - name: Transformacion Gold
+        run: |
+          uv run python transform_gold.py \
+            --silver data/silver --out data/gold/kpis.duckdb \
+            --catalog config/kpi_catalog.yaml
+
+      - name: Verificar catalogo completo de KPIs en Gold
+        run: |
+          uv run python -c "
+          import duckdb
+          import sys
+
+          con = duckdb.connect('data/gold/kpis.duckdb')
+          n_kpis = con.execute('SELECT COUNT(DISTINCT kpi_id) FROM gold_kpis').fetchone()[0]
+
+          if n_kpis != 12:
+              print(f'ERROR: se esperaban 12 KPIs distintos, se encontraron {n_kpis}')
+              sys.exit(1)
+
+          n_filas = con.execute('SELECT COUNT(*) FROM gold_kpis').fetchone()[0]
+          if n_filas == 0:
+              print('ERROR: la tabla gold_kpis esta vacia')
+              sys.exit(1)
+
+          print(f'Gold verificado: {n_kpis} KPIs distintos, {n_filas} filas totales')
+          "
+
+      # Pipeline del modelo de riesgo, con el mismo volumen reducido.
+      # El default del smoke test es 100 clientes (no 20) por este bloque:
+      # la etiqueta de riesgo sale positiva en ~15% de los clientes, y con
+      # 20 clientes el split estratificado 80/20 puede dejar el conjunto
+      # de prueba sin positivos, lo que hace fallar el calculo de AUC-ROC.
+      - name: Feature store (gold_features_cliente)
+        run: |
+          uv run python build_features.py \
+            --silver data/silver --gold data/gold/kpis.duckdb
+
+      - name: Etiquetas de riesgo
+        run: |
+          uv run python generate_labels.py \
+            --silver data/silver --out data/labels/risk_labels.parquet
+
+      - name: Entrenamiento del modelo
+        run: |
+          uv run python train_model.py \
+            --gold data/gold/kpis.duckdb \
+            --labels data/labels/risk_labels.parquet \
+            --model-out models/risk_model.joblib \
+            --shap-out models/shap_importancia.png
+
+      - name: Prediccion de riesgo
+        run: |
+          uv run python predict_risk.py \
+            --gold data/gold/kpis.duckdb \
+            --model models/risk_model.joblib
+
+      - name: Verificar probabilidad_impago en Gold
+        run: |
+          uv run python -c "
+          import duckdb
+          import sys
+
+          con = duckdb.connect('data/gold/kpis.duckdb')
+          total, con_valor, fuera_rango = con.execute('''
+              SELECT
+                  COUNT(*),
+                  COUNT(valor_numerico),
+                  COUNT(*) FILTER (WHERE valor_numerico < 0 OR valor_numerico > 1)
+              FROM gold_kpis
+              WHERE kpi_id = 'probabilidad_impago'
+          ''').fetchone()
+
+          if total == 0 or con_valor != total:
+              print(f'ERROR: probabilidad_impago con valor en {con_valor} de {total} filas')
+              sys.exit(1)
+          if fuera_rango:
+              print(f'ERROR: {fuera_rango} probabilidades fuera de [0, 1]')
+              sys.exit(1)
+
+          n_features = con.execute(
+              'SELECT COUNT(*) FROM gold_features_cliente'
+          ).fetchone()[0]
+          if n_features != total:
+              print(f'ERROR: gold_features_cliente con {n_features} filas, se esperaban {total}')
+              sys.exit(1)
+
+          print(f'Modelo verificado: probabilidad_impago en {con_valor}/{total} clientes')
+          "
+
+      - name: Subir logs como artefacto
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-logs
+          path: data/logs/
+          retention-days: 7

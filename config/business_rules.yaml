@@ -1,0 +1,138 @@
+# config/business_rules.yaml
+#
+# Reglas de negocio de la capa Silver, declaradas como datos.
+# Agregar una regla nueva NO requiere tocar codigo Python: se declara aqui
+# y el motor generico en src/silver/validation.py la aplica automaticamente.
+#
+# Orden de procesamiento: respeta las dependencias de foreign_keys.
+# clientes -> cuentas -> cetes_inversiones, transacciones
+
+clientes:
+  primary_key: cliente_id
+  not_null:
+    - cliente_id
+    - fecha_nacimiento
+    - ingreso_mensual_declarado
+    - ciudad
+    - fecha_alta
+    - nombre
+    - apellido_paterno
+    - sexo
+    - curp
+    - telefono
+    - codigo_postal
+  unique:
+    - cliente_id
+    - curp
+    - rfc
+  numeric_ranges:
+    ingreso_mensual_declarado:
+      min: 0.01
+  date_not_future:
+    - fecha_alta
+    - fecha_nacimiento
+  allowed_values:
+    sexo:
+      - H
+      - M
+  # Formato por expresion regular (un NULL no cuenta como violacion;
+  # la obligatoriedad se declara en not_null).
+  patterns:
+    # 10 digitos; ningun numero en Mexico empieza con 0 o 1.
+    telefono: "^[2-9][0-9]{9}$"
+    codigo_postal: "^[0-9]{5}$"
+    email: "^[^@ ]+@[^@ ]+\\.[a-z]{2,}$"
+  # Identificadores oficiales: formato, digito verificador, y coherencia
+  # con la fecha de nacimiento del propio cliente.
+  identificadores:
+    curp:
+      tipo: curp
+      fecha_column: fecha_nacimiento
+    rfc:
+      tipo: rfc
+      fecha_column: fecha_nacimiento
+  conditional_not_null:
+    # El RFC es obligatorio para quien percibe ingresos propios.
+    - column: rfc
+      when_column: ocupacion
+      when_in:
+        - Empleado
+        - Independiente
+        - Empresario
+        - Jubilado
+        - Profesionista
+        - Comerciante
+
+cuentas:
+  primary_key: cuenta_id
+  not_null:
+    - cuenta_id
+    - cliente_id
+    - tipo_cuenta
+    - saldo_actual
+    - fecha_apertura
+  unique:
+    - cuenta_id
+  allowed_values:
+    tipo_cuenta:
+      - cuenta_digital
+      - tarjeta_credito
+      - prestamo_personal
+      - cetes
+  foreign_keys:
+    cliente_id:
+      references_entity: clientes
+      references_column: cliente_id
+  conditional_not_null:
+    - column: limite_credito
+      when_column: tipo_cuenta
+      when_equals: tarjeta_credito
+    - column: monto_original
+      when_column: tipo_cuenta
+      when_equals: prestamo_personal
+
+cetes_inversiones:
+  not_null:
+    - cuenta_id
+    - monto_invertido
+    - plazo_dias
+    - fecha_inicio
+    - fecha_vencimiento
+  numeric_ranges:
+    monto_invertido:
+      min: 0.01
+  allowed_values:
+    plazo_dias:
+      - 28
+      - 91
+      - 182
+      - 364
+  foreign_keys:
+    cuenta_id:
+      references_entity: cuentas
+      references_column: cuenta_id
+
+transacciones:
+  primary_key: transaccion_id
+  not_null:
+    - transaccion_id
+    - cuenta_id
+    - fecha
+    - tipo_transaccion
+    - monto
+  unique:
+    - transaccion_id
+  allowed_values:
+    tipo_transaccion:
+      - compra
+      - p2p_enviado
+      - p2p_recibido
+      - pago_recurrente
+      - nomina
+      - retiro
+  numeric_not_zero:
+    - monto
+  foreign_keys:
+    cuenta_id:
+      references_entity: cuentas
+      references_column: cuenta_id

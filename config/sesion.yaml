@@ -1,0 +1,24 @@
+# config/sesion.yaml
+#
+# Parametros de la sesion de datos que genera el pipeline por default.
+# Con los mismos valores, generate_synthetic_sources.py produce
+# exactamente los mismos archivos, y si la sesion ya existe en
+# data/sesiones/ la reutiliza en vez de regenerarla.
+#
+# Para cambiar de sesion basta con cambiar un valor aqui (o pasar el
+# flag equivalente al generador). Las sesiones anteriores se quedan en
+# disco y se puede volver a ellas restaurando los valores.
+
+# Semilla de todos los generadores aleatorios (Faker, random, NumPy).
+semilla: 42
+
+# Fecha "de hoy" para los datos: todas las fechas se calculan contra
+# esta, nunca contra el reloj del sistema. Se generan los meses
+# completos que terminan en ella (si no es fin de mes, el mes en curso
+# se excluye, para no producir transacciones futuras).
+fecha_referencia: "2026-09-30"
+
+# Volumen. Niveles de referencia para pruebas de carga: 500 (base),
+# 5000 (~1.2 M transacciones) y 50000 (~11.5 M transacciones).
+clientes: 500
+meses: 12

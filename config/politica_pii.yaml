@@ -1,0 +1,39 @@
+# config/politica_pii.yaml
+#
+# Que datos personales se protegen al escribir Silver, y como. La
+# validacion de calidad (config/business_rules.yaml) corre ANTES, sobre
+# los valores reales: para verificar el digito de una CURP hay que verla
+# completa. Despues, esta politica se aplica tanto a las filas validas
+# como a las de cuarentena. Desde Silver en adelante no existe PII en
+# claro. Detalle y ejemplos en docs/seguridad.md.
+#
+# Tratamientos:
+#   hash_y_mascara  columna -> <columna>_hash + <columna>_mascara
+#                   (tipos de mascara: identificador, telefono, email)
+#   solo_hash       columna -> <columna>_hash
+#   descartar       la columna no llega a Silver
+
+clientes:
+  hash_y_mascara:
+    curp: identificador
+    rfc: identificador
+    telefono: telefono
+    email: email
+  solo_hash:
+    - nombre
+    - apellido_paterno
+    - apellido_materno
+  # Domicilio generalizado: se conservan codigo_postal, municipio y
+  # estado (utiles para analisis por region); calle, numero y colonia
+  # identifican un hogar y no aportan al analisis.
+  descartar:
+    - calle
+    - numero_exterior
+    - colonia
+
+transacciones:
+  # Nombre de la otra persona en transferencias P2P (no es cliente del
+  # banco). Se conserva el hash para analizar con quien se transfiere
+  # sin saber quien es.
+  solo_hash:
+    - contraparte_persona
