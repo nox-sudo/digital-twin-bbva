@@ -88,6 +88,7 @@ codigo:
 | Feature store persistido en Gold | Entrenamiento e inferencia leen la misma tabla; dashboard y asistente no necesitan Spark | Recalcular features en cada consumidor |
 | Worker separado de Airflow (DockerOperator) | El orquestador no necesita Java ni Spark; el computo escala aparte | Correr Spark dentro del contenedor de Airflow |
 | Secretos generados por maquina, fuera del repo | Ninguna credencial compartida ni versionada | Contrasenas fijas en `docker-compose.yml` |
+| Streamlit para el dashboard (y, despues, el simulador y el asistente) | Una sola app de Python cubre los tres consumidores del feature store; lee `gold_kpis` y `gold_features_cliente` de DuckDB en solo lectura, sin Spark y sin un servicio mas en Docker Compose. Todo sigue corriendo local, con un comando | Looker Studio: es un servicio en la nube que no lee un DuckDB local, asi que exigiria exportar Gold y dar credenciales de Google al pipeline, el tablero no se reproduciria con `demo.sh` y no puede alojar el simulador ni el asistente (local, Ollama). Superset o Metabase: anaden servicios al Compose y solo resuelven el dashboard. Plotly Dash: mas codigo para el mismo resultado |
 
 ## Como se verifica
 
