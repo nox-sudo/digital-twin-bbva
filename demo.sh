@@ -20,6 +20,12 @@
 #   bash demo.sh sesiones     lista las sesiones de datos guardadas en data/sesiones/
 #   bash demo.sh limpiar      borra capas, modelo y volumenes; conserva las sesiones
 #   bash demo.sh limpiar todo igual, pero borra tambien las sesiones
+#   bash demo.sh respaldar [destino]
+#                             copia sesiones, landing zone (MinIO) e historico de
+#                             calidad fuera del repo, con manifiesto SHA-256
+#   bash demo.sh restaurar <respaldo>
+#                             verifica el respaldo y lo restaura en data/; luego
+#                             bash demo.sh reconstruye Bronze/Silver/Gold desde ahi
 #
 # Guia completa: docs/ejecucion-local.md
 
@@ -34,6 +40,11 @@ MEMORIA_MINIMA_GB=6
 TIMEOUT_AIRFLOW_SEG=600   # el primer arranque instala el provider de Docker
 TIMEOUT_PIPELINE_SEG=1800
 MAX_FALLOS_SONDEO=3      # consultas seguidas a Airflow que pueden fallar antes de abortar
+# Lo que no se puede regenerar y por eso forma parte del respaldo.
+# Bronze, Silver, Gold y el modelo se reconstruyen desde la landing zone
+# (data/minio) con "bash demo.sh". data/calidad se incluye porque guarda el
+# historico entre corridas (tendencia de incidencias) y no se recalcula.
+DIRS_RESPALDO=(sesiones minio calidad)
 
 info() { printf '\n==> %s\n' "$*"; }
 error() {
@@ -277,6 +288,143 @@ cmd_sesiones() {
     echo "Parametros de la sesion por default: config/sesion.yaml"
 }
 
+# SHA-256 de cada archivo bajo los directorios dados (rutas relativas a $1),
+# ordenado por ruta. shasum viene con macOS; sha256sum con Linux.
+manifiesto_de() {
+    local base="$1"
+    shift
+    local hash=(shasum -a 256)
+    command -v shasum >/dev/null 2>&1 || hash=(sha256sum)
+    (cd "${base}" && find "$@" -type f -print0 | LC_ALL=C sort -z | xargs -0 "${hash[@]}")
+}
+
+# Verdadero si hay un Docker usable y estamos en un proyecto con compose.
+compose_disponible() {
+    [ -f docker-compose.yml ] && command -v docker >/dev/null 2>&1 \
+        && docker info >/dev/null 2>&1
+}
+
+minio_corriendo() {
+    compose_disponible \
+        && [ -n "$(docker compose ps --status running -q minio 2>/dev/null)" ]
+}
+
+# MinIO escribe en data/minio mientras corre: copiarlo en caliente puede
+# dar una landing zone inconsistente. respaldar lo detiene y lo reinicia
+# al terminar, incluso si la copia falla (trap EXIT).
+MINIO_DETENIDO=0
+reiniciar_minio() {
+    if [ "${MINIO_DETENIDO}" = 1 ]; then
+        MINIO_DETENIDO=0
+        docker compose start minio >/dev/null 2>&1 || true
+    fi
+}
+
+# Subconjunto de DIRS_RESPALDO que existe en data/ (o en $1 si se indica).
+dirs_presentes() {
+    local base="${1:-data}" d
+    for d in "${DIRS_RESPALDO[@]}"; do
+        if [ -d "${base}/${d}" ]; then
+            echo "${d}"
+        fi
+    done
+}
+
+cmd_respaldar() {
+    local destino="${1:-${HOME}/respaldos-gemelo/$(date +%Y-%m-%d_%H%M%S)}"
+    local presentes=() d
+    while IFS= read -r d; do
+        [ -n "${d}" ] && presentes+=("${d}")
+    done < <(dirs_presentes data)
+    [ "${#presentes[@]}" -gt 0 ] \
+        || error "No hay nada que respaldar: no existe ninguno de data/{${DIRS_RESPALDO[*]}}."
+    [ -n "$(cd data && find "${presentes[@]}" -type f | head -n 1)" ] \
+        || error "Los directorios a respaldar no tienen archivos (${presentes[*]})."
+
+    mkdir -p "$(dirname "${destino}")"
+    destino="$(cd "$(dirname "${destino}")" && pwd)/$(basename "${destino}")"
+    case "${destino}/" in
+        "${PROJECT_DIR}/"*)
+            error "El destino no debe estar dentro del repo (${PROJECT_DIR}): un respaldo ahi se versionaria o lo borraria limpiar." ;;
+    esac
+    [ ! -e "${destino}" ] \
+        || error "${destino} ya existe; elige otro destino para no mezclar respaldos."
+
+    trap reiniciar_minio EXIT
+    if minio_corriendo; then
+        info "Deteniendo MinIO mientras se copia (para que la landing zone quede consistente)"
+        docker compose stop minio >/dev/null
+        MINIO_DETENIDO=1
+    fi
+
+    info "Copiando ${presentes[*]} a ${destino}"
+    local manifiesto_origen manifiesto_copia
+    manifiesto_origen="$(manifiesto_de data "${presentes[@]}")"
+    mkdir -p "${destino}"
+    chmod 700 "${destino}"
+    for d in "${presentes[@]}"; do
+        cp -Rp "data/${d}" "${destino}/${d}"
+    done
+    reiniciar_minio
+
+    manifiesto_copia="$(manifiesto_de "${destino}" "${presentes[@]}")"
+    [ "${manifiesto_origen}" = "${manifiesto_copia}" ] \
+        || error "La copia no coincide con el original (SHA-256). Revisa ${destino}."
+    printf '%s\n' "${manifiesto_origen}" > "${destino}/MANIFIESTO.sha256"
+
+    echo "Respaldo listo: $(printf '%s\n' "${manifiesto_origen}" | wc -l | tr -d ' ') archivos, $(du -sh "${destino}" | cut -f1 | tr -d ' '), en ${destino}"
+    echo "Verificado contra el original con SHA-256 (MANIFIESTO.sha256)."
+    echo "No incluye .env. Guarda aparte PII_HASH_SALT: con otra sal, los hashes de PII"
+    echo "reconstruidos no coinciden con los de antes."
+}
+
+cmd_restaurar() {
+    local origen="${1:-}"
+    [ -n "${origen}" ] || error "Uso: bash demo.sh restaurar <carpeta-del-respaldo>"
+    [ -f "${origen}/MANIFIESTO.sha256" ] \
+        || error "${origen} no parece un respaldo de demo.sh (falta MANIFIESTO.sha256)."
+    origen="$(cd "${origen}" && pwd)"
+
+    local presentes=() d
+    while IFS= read -r d; do
+        [ -n "${d}" ] && presentes+=("${d}")
+    done < <(dirs_presentes "${origen}")
+    [ "${#presentes[@]}" -gt 0 ] \
+        || error "El respaldo no contiene ninguno de ${DIRS_RESPALDO[*]}."
+
+    info "Verificando la integridad del respaldo"
+    [ "$(manifiesto_de "${origen}" "${presentes[@]}")" = "$(cat "${origen}/MANIFIESTO.sha256")" ] \
+        || error "El respaldo no coincide con su manifiesto (archivos alterados, faltantes o de mas). No se restaura nada."
+
+    for d in "${presentes[@]}"; do
+        if [ -n "$(ls -A "data/${d}" 2>/dev/null)" ]; then
+            error "data/${d} ya tiene contenido; restaurar no sobrescribe. Corre antes: bash demo.sh limpiar todo"
+        fi
+    done
+
+    if [ -f .env ] && compose_disponible; then
+        info "Deteniendo el stack (restaurar no se hace con MinIO escribiendo)"
+        docker compose down >/dev/null 2>&1 || true
+    fi
+
+    info "Restaurando ${presentes[*]} en data/"
+    mkdir -p data
+    for d in "${presentes[@]}"; do
+        # Un directorio vacio hace que cp copie ADENTRO en vez de reemplazarlo.
+        [ -d "data/${d}" ] && rmdir "data/${d}"
+        cp -Rp "${origen}/${d}" "data/${d}"
+    done
+    [ "$(manifiesto_de data "${presentes[@]}")" = "$(cat "${origen}/MANIFIESTO.sha256")" ] \
+        || error "Lo restaurado no coincide con el manifiesto. Revisa data/."
+
+    echo "Restaurado y verificado con SHA-256."
+    echo "Siguiente paso: bash demo.sh  (reconstruye Bronze, Silver, Gold y el modelo desde la landing zone)"
+    if [ ! -f .env ]; then
+        echo "Aviso: no hay .env. demo.sh generara uno NUEVO con otra PII_HASH_SALT; para que los"
+        echo "hashes de PII coincidan con los de antes, copia tu .env original antes de correr demo.sh."
+    fi
+}
+
 cmd_limpiar() {
     local alcance="${1:-}" que_se_borra="capas Bronze/Silver/Gold, modelo y volumenes (se conservan las sesiones y el historico de MinIO)"
     local filtro="! -name sesiones ! -name minio"
@@ -308,6 +456,8 @@ case "${1:-levantar}" in
     calidad) cmd_calidad ;;
     sesiones) cmd_sesiones ;;
     limpiar) cmd_limpiar "${2:-}" ;;
-    -h | --help | ayuda) sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//' ;;
+    respaldar) cmd_respaldar "${2:-}" ;;
+    restaurar) cmd_restaurar "${2:-}" ;;
+    -h | --help | ayuda) sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//' ;;
     *) error "Comando desconocido: $1 (usa: bash demo.sh ayuda)" ;;
 esac

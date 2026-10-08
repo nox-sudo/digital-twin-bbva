@@ -119,6 +119,7 @@ digital-twin-bbva/
 │   ├── test_pii.py               # Identificadores, HMAC Spark == Python, política de PII
 │   ├── test_landing.py           # Landing zone (S3 simulado) e ingesta incremental
 │   ├── test_calidad.py           # Registro de calidad y valores corruptos sin detener el pipeline
+│   ├── test_demo_respaldo.py     # demo.sh respaldar/restaurar: copia idéntica, rechazo de respaldos alterados
 │   └── test_main_cli.py          # Pruebas de enrutamiento del CLI (main.py)
 ├── docs/
 │   ├── arquitectura.md           # Flujo, zonas, DAG y decisiones de diseño
