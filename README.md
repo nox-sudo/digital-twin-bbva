@@ -75,7 +75,7 @@ Detalle completo de zonas, tareas del DAG y decisiones de diseño en [docs/arqui
 | Modelado de riesgo | XGBoost, SHAP | Estándar de la industria para clasificación tabular; SHAP hace interpretable cada predicción |
 | Orquestación | Apache Airflow (LocalExecutor) | Suficiente para esta escala, sin la complejidad de Celery/Redis |
 | Infraestructura | Docker Compose | Ambiente reproducible con un comando |
-| Almacenamiento objeto | MinIO | S3-compatible, preparado para migración futura |
+| Almacenamiento objeto | MinIO | S3-compatible; es la landing zone: guarda las entregas inmutables y de ahí se reconstruye Bronze |
 | Control de versiones | Git, GitHub, GitFlow | `main` / `develop` / `feature/*` |
 
 Decisiones descartadas y por qué: Scala (PySpark cubre lo mismo sin costo de aprendizaje adicional), PyTorch (innecesario para clasificación de riesgo crediticio, XGBoost es el estándar real), Control-M (complejidad innecesaria para un proyecto individual, Airflow cubre los requisitos), CeleryExecutor (requiere Redis y workers distribuidos, sobre-ingeniería a esta escala).
@@ -98,6 +98,8 @@ digital-twin-bbva/
 │   │   ├── identificadores.py    # CURP y RFC: construcción y validación (RENAPO/SAT)
 │   │   ├── secretos.py           # Lectura de secretos desde entorno o .env
 │   │   └── logging_utils.py      # Logging estructurado por entidad
+│   ├── bronze/
+│   │   └── control.py            # Registro de control de la ingesta incremental (archivo + SHA-256)
 │   ├── silver/
 │   │   ├── validation.py         # Motor genérico de validación
 │   │   ├── identificadores_spark.py  # Validación de CURP/RFC nativa en Spark
@@ -144,7 +146,8 @@ digital-twin-bbva/
 ├── Dockerfile                    # Imagen del worker (PySpark + Delta)
 ├── docker-compose.yml            # Airflow, Postgres, MinIO, worker
 ├── demo.sh                       # Arranque de un comando: levanta todo y corre el DAG
-└── setup.sh                      # Genera .env automáticamente (lo invoca demo.sh)
+├── setup.sh                      # Genera .env automáticamente (lo invoca demo.sh)
+└── .env.example                  # Documenta cada variable del .env, sin valores
 ```
 
 ---
@@ -159,9 +162,11 @@ Solo requiere Docker; no hace falta Python, Java ni Spark en la máquina.
 bash demo.sh
 ```
 
-Genera `.env`, construye el worker, levanta Airflow, Postgres y MinIO, dispara el DAG y muestra el avance tarea por tarea hasta terminar. Requisitos, comandos adicionales (`pipeline`, `reporte`, `limpiar`), instrucciones para Windows y problemas comunes: [docs/ejecucion-local.md](docs/ejecucion-local.md).
+Genera `.env`, construye el worker, levanta Airflow, Postgres y MinIO, dispara el DAG y muestra el avance tarea por tarea hasta terminar. Requisitos, comandos adicionales (`pipeline`, `reporte`, `calidad`, `nueva-entrega`, `sesiones`, `limpiar`, `respaldar`, `restaurar`), instrucciones para Windows y problemas comunes: [docs/ejecucion-local.md](docs/ejecucion-local.md).
 
 - Airflow: `http://localhost:8080` y consola de MinIO: `http://localhost:9001`. Las credenciales se generan al azar por máquina en `.env` (nunca en el repo) y `demo.sh` las muestra al terminar. Detalle en [docs/seguridad.md](docs/seguridad.md).
+
+**Respaldo y restauración.** `bash demo.sh respaldar` copia fuera del repo lo que no se puede regenerar (sesiones, landing zone en MinIO e histórico de calidad) y deja un manifiesto SHA-256. `bash demo.sh restaurar <respaldo>` verifica el respaldo y lo devuelve a `data/`; después `bash demo.sh` reconstruye Bronze, Silver, Gold y el modelo desde la landing zone. El `.env` no se respalda: guarda aparte `PII_HASH_SALT`, o los hashes de PII reconstruidos no coincidirán con los anteriores. Detalle en [docs/ejecucion-local.md](docs/ejecucion-local.md#respaldo-y-restauracion).
 
 ### Opción B — pipeline directo, sin Docker (desarrollo)
 
@@ -212,14 +217,14 @@ Corre de extremo a extremo en menos de 2 minutos. Dos reportes, para preguntas d
 uv run pytest tests/ -v
 ```
 
-El workflow de GitHub Actions (`.github/workflows/ci.yml`) corre en cada Pull Request hacia `develop` o `main`, con 4 jobs — los primeros 3 en paralelo:
+El workflow de GitHub Actions (`.github/workflows/ci.yml`) corre en cada Pull Request hacia `develop` o `main`, en cada push a esas ramas y bajo demanda (`workflow_dispatch`), con 4 jobs — los primeros 3 en paralelo:
 
 | Job | Qué valida |
 |---|---|
-| `lint` | flake8 y black |
+| `lint` | flake8, black y escaneo de secretos y de archivos de datos versionados (`detect-secrets`) |
 | `docker-compose-validate` | Sintaxis de `docker-compose.yml` con un `.env` generado por `setup.sh`, y shellcheck de `setup.sh`/`demo.sh` |
-| `unit-tests` | 70 pruebas (pytest): motor de validación, CURP/RFC y PII, sesiones, landing zone, registro de calidad, feature store, modelo y CLI |
-| `pipeline-smoke-test` | Pipeline completo Bronze → Silver → Gold → modelo de riesgo con volumen reducido (100 clientes, 2 meses), parametrizable vía `workflow_dispatch`; verifica los 12 KPIs, el feature store, y que `probabilidad_impago` tenga valor en [0, 1] para todos los clientes |
+| `unit-tests` | 80 pruebas (pytest): motor de validación, CURP/RFC y PII, sesiones, landing zone, registro de calidad, feature store, modelo, CLI y respaldo/restauración de `demo.sh` |
+| `pipeline-smoke-test` | Pipeline completo Bronze → Silver → Gold → modelo de riesgo con volumen reducido (100 clientes, 2 meses), parametrizable vía `workflow_dispatch`; verifica la reproducibilidad de la sesión, la ingesta incremental de Bronze, Silver sin cuarentena inesperada ni PII en claro, el registro de calidad, los 12 KPIs, el feature store, y que `probabilidad_impago` tenga valor en [0, 1] para todos los clientes |
 
 ---
 
@@ -227,7 +232,7 @@ El workflow de GitHub Actions (`.github/workflows/ci.yml`) corre en cada Pull Re
 
 5 entidades sintéticas (Faker + NumPy): `clientes`, `cuentas`, `catalogo_productos`, `cetes_inversiones`, `transacciones` (6 tipos de movimiento). Volumen de referencia: 500 clientes, 979 cuentas, 117,081 transacciones.
 
-**Sesiones de datos reproducibles.** Cada conjunto generado es una sesión identificada por sus parámetros (`config/sesion.yaml`: semilla, fecha de referencia, clientes, meses), por ejemplo `s42_20260930_500c_12m`. Todas las fechas se calculan contra la fecha de referencia, nunca contra el reloj del sistema, así que los mismos parámetros producen exactamente los mismos archivos cualquier día y en cualquier máquina; el CI lo verifica comparando checksums. La sesión se guarda en `data/sesiones/<id>/` con un `manifest.json` (parámetros, conteos, SHA-256 de cada archivo); si ya existe y está íntegra, el pipeline la reutiliza en vez de regenerarla, y si algún archivo fue alterado, lo detecta y la regenera. `data/raw_sources/` apunta a la sesión activa mediante hard links, y cada fila de Bronze guarda su `_sesion_id`. Las sesiones viven en disco, fuera de los contenedores: sobreviven a `docker compose down` y a `demo.sh limpiar`.
+**Sesiones de datos reproducibles.** Cada conjunto generado es una sesión identificada por sus parámetros (`config/sesion.yaml`: semilla, fecha de referencia, clientes, meses), por ejemplo `s42_20260930_500c_12m`. Todas las fechas se calculan contra la fecha de referencia, nunca contra el reloj del sistema, así que los mismos parámetros producen exactamente los mismos archivos cualquier día y en cualquier máquina; el CI lo verifica comparando checksums. La sesión se guarda en `data/sesiones/<id>/` con un `manifest.json` (parámetros, conteos, SHA-256 de cada archivo); si ya existe y está íntegra, el pipeline la reutiliza en vez de regenerarla, y si algún archivo fue alterado, lo detecta y la regenera. `data/raw_sources/` apunta a la sesión activa mediante hard links, y cada fila de Bronze guarda su `_sesion_id`. Las sesiones viven en disco, fuera de los contenedores: sobreviven a `docker compose down` y a `demo.sh limpiar`, pero no a `demo.sh limpiar todo`: para eso existe `demo.sh respaldar`.
 
 **Landing zone e ingesta incremental.** Cada sesión se publica en MinIO como una *entrega* inmutable (`landing/entregas/<id>/`, con SHA-256 por objeto y un manifest escrito al final). Una entrega solo sube lo que no llegó idéntico antes: `bash demo.sh nueva-entrega` simula que llega el mes siguiente, y su entrega trae solo ese mes de transacciones (las sesiones son extensibles: cada mes tiene su propia semilla, así que agregar uno no altera los anteriores). Bronze ya no se sobrescribe: ingiere solo los archivos que no tiene, según un registro de control por archivo y checksum (`data/bronze/_control_ingesta.jsonl`), y acumula las versiones de cada snapshot; Silver se queda con la más reciente por llave. Si Bronze se pierde, se reconstruye completo desde la landing zone.
 
@@ -235,7 +240,7 @@ El esquema completo, con tipo de dato, regla de calidad y tratamiento de PII por
 
 Catálogo de 12 KPIs en 5 categorías (ingresos, gastos, ahorro y liquidez, riesgo y endeudamiento, comportamiento transaccional), calculados en Gold y almacenados en formato normalizado en DuckDB. El KPI `probabilidad_impago` se calcula en Gold como `NULL` y el modelo de riesgo (XGBoost) lo completa en el último paso del pipeline (`predict_risk.py`).
 
-`gold_features_cliente` (misma base DuckDB) es el feature store del proyecto: una fila por cliente con los 11 KPIs restantes en columnas, más variables de perfil calculadas desde Silver (edad, antigüedad, número de productos, proporción de retiros). Se persiste en vez de recalcularse en cada consumidor por dos razones: el modelo se entrena y predice sobre exactamente la misma tabla (sin desalineación entre entrenamiento e inferencia), y el dashboard, el simulador y el asistente RAG leen el perfil del cliente sin levantar Spark. Se guarda en forma legible (la categoría de gasto como texto); la codificación one-hot que necesita XGBoost se aplica al entrenar o predecir.
+`gold_features_cliente` (misma base DuckDB) es el feature store del proyecto: una fila por cliente con los 11 KPIs restantes en columnas, más variables de perfil calculadas desde Silver (edad, antigüedad, ingreso declarado, número de productos, si tiene tarjeta de crédito, si tiene préstamo personal, proporción de retiros). Se persiste en vez de recalcularse en cada consumidor por dos razones: el modelo se entrena y predice sobre exactamente la misma tabla (sin desalineación entre entrenamiento e inferencia), y el dashboard, el simulador y el asistente RAG leen el perfil del cliente sin levantar Spark. Se guarda en forma legible (la categoría de gasto como texto); la codificación one-hot que necesita XGBoost se aplica al entrenar o predecir.
 
 ---
 
@@ -257,6 +262,7 @@ Catálogo de 12 KPIs en 5 categorías (ingresos, gastos, ahorro y liquidez, ries
 - [x] Sesiones de datos reproducibles, con manifest, checksums y reuso
 - [x] Registro histórico de calidad: incidencias por regla, nulos por columna y errores de tipo, sin PII
 - [x] Landing zone en MinIO con entregas inmutables e ingesta incremental en Bronze
+- [x] Respaldo y restauración (`demo.sh respaldar` / `restaurar`) con verificación SHA-256, incluido el histórico de calidad
 - [x] Arranque reproducible con un comando en cualquier máquina con Docker (`demo.sh`)
 - [ ] Simulador de escenarios Monte Carlo
 - [ ] Asistente conversacional RAG local (Ollama + Llama 3 + LangChain)
