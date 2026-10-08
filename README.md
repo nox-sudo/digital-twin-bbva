@@ -78,7 +78,7 @@ Detalle completo de zonas, tareas del DAG y decisiones de diseño en [docs/arqui
 | Almacenamiento objeto | MinIO | S3-compatible; es la landing zone: guarda las entregas inmutables y de ahí se reconstruye Bronze |
 | Control de versiones | Git, GitHub, GitFlow | `main` / `develop` / `feature/*` |
 
-Decisiones descartadas y por qué: Scala (PySpark cubre lo mismo sin costo de aprendizaje adicional), PyTorch (innecesario para clasificación de riesgo crediticio, XGBoost es el estándar real), Control-M (complejidad innecesaria para un proyecto individual, Airflow cubre los requisitos), CeleryExecutor (requiere Redis y workers distribuidos, sobre-ingeniería a esta escala).
+Decisiones descartadas y por qué: Scala (PySpark cubre lo mismo sin costo de aprendizaje adicional), PyTorch (innecesario para clasificación de riesgo crediticio, XGBoost es el estándar real), Control-M (complejidad innecesaria para un proyecto individual, Airflow cubre los requisitos), CeleryExecutor (requiere Redis y workers distribuidos, sobre-ingeniería a esta escala), y para el dashboard, Looker Studio, Superset, Metabase y Dash (el porqué está en [docs/arquitectura.md](docs/arquitectura.md#decisiones-de-diseno)).
 
 ---
 
@@ -266,7 +266,7 @@ Catálogo de 12 KPIs en 5 categorías (ingresos, gastos, ahorro y liquidez, ries
 - [x] Arranque reproducible con un comando en cualquier máquina con Docker (`demo.sh`)
 - [ ] Simulador de escenarios Monte Carlo
 - [ ] Asistente conversacional RAG local (Ollama + Llama 3 + LangChain)
-- [ ] Dashboards (Streamlit — decisión documentada, construcción pendiente)
+- [ ] Dashboards (Streamlit; decisión en [docs/arquitectura.md](docs/arquitectura.md#decisiones-de-diseno), construcción pendiente)
 
 ---
 
