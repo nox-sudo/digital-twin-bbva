@@ -45,6 +45,11 @@ real:
 | Cuarentena de Silver | Protegida, igual que Silver | Ingenieria de datos (diagnostico) |
 | Silver | Hash + enmascarado + generalizada | Analistas, ciencia de datos |
 | Gold, feature store, modelo | Sin PII | Negocio, dashboards, asistente |
+| Respaldos (`demo.sh respaldar`) | En claro (hereda la de la capa mas sensible que contiene) | Restringido, igual que las fuentes: no se versionan ni se comparten |
+
+Un respaldo copia `data/sesiones/`, `data/minio/` y `data/calidad/`, es decir la
+zona de fuentes y la landing zone, que van en claro. No incluye `.env`, asi que
+tampoco la sal (`PII_HASH_SALT`), que se guarda aparte.
 
 Como se protege cada campo en Silver:
 

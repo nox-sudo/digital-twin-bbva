@@ -128,7 +128,10 @@ digital-twin-bbva/
 │   ├── diccionario-datos.md      # Columnas, tipos, reglas y tratamiento de PII
 │   ├── ejecucion-local.md        # Guía para correr el proyecto en otra máquina
 │   ├── seguridad.md              # Secretos, clasificación de datos por capa, auditoría
+│   ├── pruebas-robustez.md       # Las 5 brechas de robustez: qué se probó, resultado y cobertura
 │   └── technical-debt.md         # Deuda técnica conocida
+├── experimentos/
+│   └── auc_circularidad.py       # Mide cuánto del AUC del modelo es circularidad de las etiquetas
 ├── models/                       # Modelo entrenado y gráfico SHAP (se regeneran)
 ├── .github/workflows/ci.yml      # Lint, tests, smoke test Bronze→Silver→Gold→modelo
 ├── main.py                       # CLI unico: python main.py <paso> [opciones]
@@ -162,7 +165,7 @@ Solo requiere Docker; no hace falta Python, Java ni Spark en la máquina.
 bash demo.sh
 ```
 
-Genera `.env`, construye el worker, levanta Airflow, Postgres y MinIO, dispara el DAG y muestra el avance tarea por tarea hasta terminar. Requisitos, comandos adicionales (`pipeline`, `reporte`, `calidad`, `nueva-entrega`, `sesiones`, `limpiar`, `respaldar`, `restaurar`), instrucciones para Windows y problemas comunes: [docs/ejecucion-local.md](docs/ejecucion-local.md).
+Genera `.env`, construye el worker, levanta Airflow, Postgres y MinIO, dispara el DAG y muestra el avance tarea por tarea hasta terminar. Medido en esta máquina: unos 1:30 con la imagen ya construida y unos 2 minutos si Airflow y Postgres se recrean; la primera vez, construir la imagen suma unos 3 minutos antes de lanzar el DAG. Requisitos, comandos adicionales (`pipeline`, `reporte`, `calidad`, `nueva-entrega`, `sesiones`, `limpiar`, `respaldar`, `restaurar`), instrucciones para Windows y problemas comunes: [docs/ejecucion-local.md](docs/ejecucion-local.md).
 
 - Airflow: `http://localhost:8080` y consola de MinIO: `http://localhost:9001`. Las credenciales se generan al azar por máquina en `.env` (nunca en el repo) y `demo.sh` las muestra al terminar. Detalle en [docs/seguridad.md](docs/seguridad.md).
 
@@ -201,7 +204,7 @@ uv run python main.py bronze --source data/raw_sources --out data/bronze
 
 Ver las opciones de un paso puntual: `uv run python main.py <paso> --help`.
 
-Corre de extremo a extremo en menos de 2 minutos. Dos reportes, para preguntas distintas:
+Dos reportes, para preguntas distintas:
 
 | Reporte | Responde | Comando |
 |---|---|---|
@@ -216,6 +219,8 @@ Corre de extremo a extremo en menos de 2 minutos. Dos reportes, para preguntas d
 ```bash
 uv run pytest tests/ -v
 ```
+
+En macOS, `tests/test_model.py` necesita la librería `libomp` para cargar XGBoost (Homebrew: `brew install libomp`); en Linux, donde corre el CI, no hace falta nada más. Ver [docs/technical-debt.md](docs/technical-debt.md).
 
 El workflow de GitHub Actions (`.github/workflows/ci.yml`) corre en cada Pull Request hacia `develop` o `main`, en cada push a esas ramas y bajo demanda (`workflow_dispatch`), con 4 jobs — los primeros 3 en paralelo:
 
@@ -252,7 +257,7 @@ Catálogo de 12 KPIs en 5 categorías (ingresos, gastos, ahorro y liquidez, ries
 - [x] Infraestructura Docker Compose — Airflow, Postgres, MinIO, worker
 - [x] DAG de Airflow corriendo end-to-end de forma automatizada
 - [x] CI/CD — 4 jobs, lint + tests + validación de infraestructura + smoke test
-- [x] Pruebas de robustez con inyección deliberada de datos sucios (5 escenarios)
+- [x] Pruebas de robustez con inyección deliberada de datos sucios: 5 brechas, 3 con cambios de código; solo 2 casos tienen prueba automatizada directa (detalle en [docs/pruebas-robustez.md](docs/pruebas-robustez.md))
 - [x] Capa Gold — catálogo de 12 KPIs en DuckDB
 - [x] Diccionario de datos formal
 - [x] Modelo predictivo de riesgo crediticio (XGBoost + SHAP), entrenado dentro del DAG
@@ -280,7 +285,8 @@ La documentación técnica vive en el repositorio y se actualiza en el mismo PR 
 | [docs/diccionario-datos.md](docs/diccionario-datos.md) | Columnas por entidad y capa: tipos, reglas de calidad, tratamiento de PII, KPIs y feature store |
 | [docs/seguridad.md](docs/seguridad.md) | Secretos, clasificación de datos por capa, protección de PII, auditoría del repositorio y riesgos aceptados |
 | [docs/ejecucion-local.md](docs/ejecucion-local.md) | Cómo correr el proyecto en otra máquina, comandos de `demo.sh` y problemas comunes |
-| [docs/technical-debt.md](docs/technical-debt.md) | Deuda técnica conocida, con fecha de última verificación |
+| [docs/pruebas-robustez.md](docs/pruebas-robustez.md) | Las 5 brechas de robustez probadas con datos sucios, su resultado y qué parte tiene prueba automatizada |
+| [docs/technical-debt.md](docs/technical-debt.md) | Deuda técnica conocida (incluye que las etiquetas del modelo de riesgo son circulares), con fecha de última verificación |
 
 Documentos académicos del programa, fuera del repositorio: reporte técnico, bitácora de incidentes y diagramas en Lucid (infraestructura y flujo de datos).
 
