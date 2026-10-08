@@ -77,6 +77,48 @@ print(con.sql('SELECT kpi_id, COUNT(*) AS clientes FROM gold_kpis GROUP BY 1 ORD
 | `bash demo.sh sesiones` | Lista las sesiones de datos guardadas |
 | `bash demo.sh limpiar` | Borra capas, modelo y volumenes; conserva las sesiones (pide confirmacion) |
 | `bash demo.sh limpiar todo` | Igual, pero borra tambien las sesiones |
+| `bash demo.sh respaldar [destino]` | Copia sesiones, landing zone (MinIO) e historico de calidad fuera del repo, con manifiesto SHA-256 (ver [Respaldo y restauracion](#respaldo-y-restauracion)) |
+| `bash demo.sh restaurar <respaldo>` | Verifica el respaldo y lo restaura en `data/`; despues `bash demo.sh` reconstruye todo lo demas |
+
+## Respaldo y restauracion
+
+Bronze, Silver, Gold y el modelo se pueden reconstruir; lo que no se
+puede regenerar es lo siguiente, y por eso es lo unico que se respalda:
+
+| Carpeta | Que guarda |
+|---|---|
+| `data/sesiones/` | Las sesiones de datos, con manifest y checksums |
+| `data/minio/` | La landing zone: el historico inmutable de entregas |
+| `data/calidad/` | El historico de calidad entre corridas (la tendencia no se recalcula) |
+
+```bash
+bash demo.sh respaldar                       # a ~/respaldos-gemelo/<fecha_hora>/
+bash demo.sh respaldar /ruta/de/mi/respaldo  # o a un destino a eleccion
+```
+
+El destino debe estar fuera del repo y no existir todavia. Si MinIO esta
+corriendo, `respaldar` lo detiene mientras copia (una landing zone copiada en
+caliente puede quedar inconsistente) y lo reinicia al terminar. Al final
+compara la copia contra el original con SHA-256 y deja `MANIFIESTO.sha256`.
+
+Para recuperar una instancia a partir de un respaldo:
+
+```bash
+bash demo.sh limpiar todo             # solo si data/ ya tiene contenido
+bash demo.sh restaurar /ruta/del/respaldo
+bash demo.sh                          # Bronze se reconstruye desde la landing zone
+```
+
+`restaurar` verifica el respaldo contra su manifiesto antes de tocar nada y
+se niega a restaurar uno alterado o a sobrescribir datos existentes.
+
+**El `.env` no se respalda**, porque contiene secretos. Guarda aparte al menos
+`PII_HASH_SALT`: con otra sal, los hashes de PII que se reconstruyan no
+coinciden con los de las corridas anteriores. Si restauras en una maquina sin
+`.env`, copia primero el original; si no, `demo.sh` generara uno nuevo.
+
+Lo que **no** se restaura, por ser derivado: las capas Bronze, Silver y Gold,
+el modelo y el historial de corridas y logs de Airflow.
 
 ## Sesiones de datos
 
