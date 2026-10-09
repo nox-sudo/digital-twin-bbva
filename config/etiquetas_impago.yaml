@@ -1,0 +1,48 @@
+# config/etiquetas_impago.yaml
+#
+# Parametros del modelo latente que genera la etiqueta de impago
+# (src/gold/etiquetas_impago.py). Ningun parametro vive en el codigo.
+#
+#   logit(p) = b0 + b1*ratio_endeudamiento + b2*uso_linea_credito
+#                 - b3*capacidad_ahorro + b4*z + b5*choque
+#
+# Las 3 variables observadas van winsorizadas en p1/p99 y estandarizadas sobre
+# todos los clientes. z ~ N(0,1) es un rasgo oculto por cliente; choque vale 1
+# si ocurrio al menos un choque mensual (probabilidad q) en el horizonte. Ni z
+# ni choque estan en el feature store: el modelo de riesgo no los ve.
+# b0 NO se configura: se calibra por biseccion para que la probabilidad media
+# sea exactamente tasa_objetivo.
+#
+# PRE-REGISTRO. Estos valores se fijaron el 2026-10-09, ANTES de generar una
+# sola etiqueta con este modelo ni de ver ningun AUC. Si hay que cambiarlos
+# despues de ver resultados, se hace en una iteracion aparte, documentada, y
+# no se presentan como si hubieran sido el diseno original.
+#
+# La magnitud de cada coeficiente es "plausible", no ajustada: ratio de
+# endeudamiento > capacidad de ahorro > uso de linea entre las observadas, con
+# un rasgo oculto y un choque que el modelo no puede ver.
+
+semilla: 42
+
+# Meses posteriores a fecha_observacion en los que se simula el evento.
+horizonte_meses: 6
+
+# Tasa media de impago en el horizonte. Se eligio 0.15 para tener mas positivos
+# con los que evaluar (con 500 clientes, unos 75), no para parecerse a la tasa
+# de las etiquetas anteriores: esa venia inflada por el XOR de ruido.
+tasa_objetivo: 0.15
+
+coeficientes:
+  ratio_endeudamiento: 0.8   # b1  (+)
+  uso_linea_credito: 0.5     # b2  (+)
+  capacidad_ahorro: 0.7      # b3  (se resta: mas ahorro, menos riesgo)
+  rasgo_oculto: 0.8          # b4  (z, no observable)
+  choque: 1.0                # b5  (no observable)
+
+# Probabilidad mensual de un choque de ingreso (perdida de empleo, gasto
+# medico...). La del horizonte es 1 - (1 - q)^horizonte_meses (~11.4 % a 6 meses).
+q_choque_mensual: 0.02
+
+# Percentiles para winsorizar cada variable observada antes de estandarizar.
+winsor_inferior: 0.01
+winsor_superior: 0.99
