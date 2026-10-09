@@ -227,8 +227,8 @@ cmd_pipeline() {
         "silver --bronze data/bronze --silver data/silver --quarantine data/silver_quarantine --rules config/business_rules.yaml"
         "gold --silver data/silver --out data/gold/kpis.duckdb --catalog config/kpi_catalog.yaml"
         "features --silver data/silver --gold data/gold/kpis.duckdb"
-        "labels --silver data/silver --out data/labels/risk_labels.parquet"
-        "train-model --gold data/gold/kpis.duckdb --labels data/labels/risk_labels.parquet --model-out models/risk_model.joblib --shap-out models/shap_importancia.png"
+        "labels --gold data/gold/kpis.duckdb --config config/etiquetas_impago.yaml --auditoria-out data/auditoria/etiquetas_latentes.parquet"
+        "train-model --gold data/gold/kpis.duckdb --model-out models/risk_model.joblib --shap-out models/shap_importancia.png"
         "predict-risk --gold data/gold/kpis.duckdb --model models/risk_model.joblib"
     )
     local paso

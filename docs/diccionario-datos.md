@@ -201,7 +201,27 @@ Sin PII.
 | `numero_productos` | Silver | Tipos de cuenta distintos |
 | `tiene_tarjeta_credito`, `tiene_prestamo_personal` | Silver | 1 / 0 |
 | `proporcion_retiros` | Silver | Retiros entre total de movimientos |
+| `fecha_corte` | Silver | Fecha de la ultima transaccion con la que se construyeron las features. Es la fecha de observacion de las etiquetas de impago. Metadata; se excluye al entrenar |
 | `fecha_calculo` | | Metadata; se excluye al entrenar |
+
+## Gold: gold_etiquetas_impago
+
+Etiqueta de impago por cliente, generada por `generate_labels.py` como un evento posterior a las
+features con un modelo latente (`src/gold/etiquetas_impago.py`, parametros en
+`config/etiquetas_impago.yaml`). No existen etiquetas reales: son sinteticas. Sin PII. La lee
+`train_model.py`; el feature store y el modelo no ven nada del proceso que la genero.
+
+| Columna | Descripcion |
+|---|---|
+| `cliente_id` | |
+| `impago_posterior` | 1 si el cliente cae en impago en los `horizonte_meses` posteriores a `fecha_observacion`, 0 si no |
+| `fecha_observacion` | Fecha de corte de las features (`fecha_corte` de `gold_features_cliente`). Avanza con cada `nueva-entrega`, y las etiquetas se regeneran |
+| `horizonte_meses` | Meses posteriores en los que se simula el evento (6) |
+
+`z` (rasgo oculto), `choque`, `logit` y `p` NO estan en ninguna tabla de Gold: se guardan para
+auditoria en `data/auditoria/etiquetas_latentes.parquet`, fuera de las sesiones, de la landing y del
+respaldo, porque se regeneran con la semilla y las features. El CI verifica sobre el DuckDB real
+que ninguna tabla de Gold tenga esas columnas.
 
 ## Modelo de riesgo
 
@@ -210,4 +230,4 @@ Sin PII.
 | `models/risk_model.joblib` | Clasificador XGBoost entrenado sobre `gold_features_cliente` |
 | `models/shap_importancia.png` | Importancia media de cada feature (SHAP) |
 | `data/gold/predicciones/probabilidad_impago.parquet` | `cliente_id`, `valor_numerico` |
-| `data/labels/risk_labels.parquet` | Etiquetas sinteticas de entrenamiento (`generate_labels.py`) |
+| `data/auditoria/etiquetas_latentes.parquet` | `z`, `choque`, `logit` y `p` por cliente, solo para auditar las etiquetas; no es parte de Gold ni del respaldo |

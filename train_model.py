@@ -7,12 +7,16 @@ KPI probabilidad_impago del catalogo de Gold.
 Lee las features de la tabla gold_features_cliente (construida por
 build_features.py; la misma que lee predict_risk.py, para que
 entrenamiento e inferencia nunca usen features distintas) y las
-etiquetas sinteticas generadas por generate_labels.py. No necesita
-Spark: todo lo que consume ya esta en Gold.
+etiquetas de la tabla gold_etiquetas_impago (generate_labels.py: impago
+como evento posterior, con un modelo latente). No necesita Spark: todo lo
+que consume ya esta en Gold.
+
+El AUC que imprime sale de UN solo split 80/20; con pocos positivos en
+prueba oscila mucho (ver docs/technical-debt.md y experimentos/), asi que
+no debe citarse sin su intervalo.
 
 Uso:
     python train_model.py --gold data/gold/kpis.duckdb \
-        --labels data/labels/risk_labels.parquet \
         --model-out models/risk_model.joblib
 """
 
@@ -38,6 +42,8 @@ from xgboost import XGBClassifier  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from src.gold.etiquetas_gold import cargar_etiquetas  # noqa: E402
+from src.gold.etiquetas_impago import verificar_sin_latentes  # noqa: E402
 from src.gold.risk_features import (  # noqa: E402
     cargar_features,
     preparar_para_modelo,
@@ -53,13 +59,19 @@ def entrenar(
     """Entrena XGBoost, evalua contra el conjunto de prueba, genera
     el grafico SHAP, y guarda el modelo. Retorna las metricas para el
     reporte final."""
-    dataset = features.join(etiquetas.set_index("cliente_id")["label"], how="inner")
+    dataset = features.join(
+        etiquetas.set_index("cliente_id")["impago_posterior"].rename("label"),
+        how="inner",
+    )
     logger.info(
         "Dataset de entrenamiento: %d clientes con features y etiqueta", len(dataset)
     )
 
     x = dataset.drop(columns=["label"])
     y = dataset["label"]
+    # Barrera contra la fuga: si z, choque o p llegaran aqui, el AUC dejaria
+    # de medir nada.
+    verificar_sin_latentes(x.columns, "la matriz de entrenamiento")
 
     x_train, x_test, y_train, y_test = train_test_split(
         x, y, test_size=0.2, stratify=y, random_state=42
@@ -124,6 +136,8 @@ def entrenar(
 
     return {
         "auc_roc": auc_roc,
+        "n_test": len(y_test),
+        "positivos_test": int(y_test.sum()),
         "matriz_confusion": matriz_confusion,
         "reporte_clasificacion": reporte_clasificacion,
         "importancia_shap": importancia_shap,
@@ -135,14 +149,13 @@ def main():
         description="Entrena el modelo de riesgo crediticio"
     )
     parser.add_argument("--gold", default="data/gold/kpis.duckdb")
-    parser.add_argument("--labels", default="data/labels/risk_labels.parquet")
     parser.add_argument("--model-out", default="models/risk_model.joblib")
     parser.add_argument("--shap-out", default="models/shap_importancia.png")
     args = parser.parse_args()
 
     try:
         features = preparar_para_modelo(cargar_features(args.gold))
-        etiquetas = pd.read_parquet(args.labels)
+        etiquetas = cargar_etiquetas(args.gold)
         metricas = entrenar(
             features, etiquetas, Path(args.model_out), Path(args.shap_out)
         )
@@ -152,6 +165,11 @@ def main():
 
     print("\n=== Metricas del modelo de riesgo crediticio ===")
     print(f"AUC-ROC: {metricas['auc_roc']:.4f}")
+    print(
+        f"  (un solo split: {metricas['n_test']} clientes de prueba, "
+        f"{metricas['positivos_test']} positivos; con tan pocos positivos oscila "
+        "mucho entre corridas, no citarlo sin intervalo)"
+    )
     print("\nMatriz de confusion (filas=real, columnas=prediccion):")
     print(metricas["matriz_confusion"])
     print("\nPrecision/Recall por clase:")

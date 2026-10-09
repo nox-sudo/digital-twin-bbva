@@ -44,7 +44,8 @@ real:
 | Bronze | En claro | Restringido: ingenieria de datos, auditoria |
 | Cuarentena de Silver | Protegida, igual que Silver | Ingenieria de datos (diagnostico) |
 | Silver | Hash + enmascarado + generalizada | Analistas, ciencia de datos |
-| Gold, feature store, modelo | Sin PII | Negocio, dashboards, asistente |
+| Gold, feature store, etiquetas de impago, modelo | Sin PII | Negocio, dashboards, asistente |
+| Auditoria de etiquetas (`data/auditoria/`) | Sin PII (`z`, `choque`, `logit` y `p` por cliente) | Ingenieria de datos; no se respalda, se regenera con la semilla |
 | Respaldos (`demo.sh respaldar`) | En claro (hereda la de la capa mas sensible que contiene) | Restringido, igual que las fuentes: no se versionan ni se comparten |
 
 Un respaldo copia `data/sesiones/`, `data/minio/` y `data/calidad/`, es decir la

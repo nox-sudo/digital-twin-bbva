@@ -92,7 +92,8 @@ digital-twin-bbva/
 │   ├── sesion.yaml               # Parámetros de la sesión de datos (semilla, fecha, volumen)
 │   ├── business_rules.yaml       # Reglas de calidad de Silver, declarativas
 │   ├── politica_pii.yaml         # Qué datos personales se protegen en Silver, y cómo
-│   └── kpi_catalog.yaml          # Metadata de los 12 KPIs de Gold
+│   ├── kpi_catalog.yaml          # Metadata de los 12 KPIs de Gold
+│   └── etiquetas_impago.yaml     # Parámetros del modelo latente de la etiqueta de impago (pre-registrados)
 ├── src/
 │   ├── common/
 │   │   ├── spark_session.py      # SparkSession compartido, Docker-ready
@@ -111,7 +112,9 @@ digital-twin-bbva/
 │   │   └── registro.py           # Registro histórico: incidencias, perfil de nulos, errores de tipo
 │   └── gold/
 │       ├── kpi_definitions.py    # Lógica de cálculo de cada KPI
-│       └── risk_features.py      # Feature store: construir, persistir y leer features
+│       ├── risk_features.py      # Feature store: construir, persistir y leer features
+│       ├── etiquetas_impago.py   # Modelo latente de la etiqueta de impago (módulo puro)
+│       └── etiquetas_gold.py     # Lectura/escritura de gold_etiquetas_impago y verificación del esquema
 ├── dags/
 │   └── gemelo_pipeline_dag.py    # DAG de Airflow (DockerOperator)
 ├── tests/
@@ -123,6 +126,8 @@ digital-twin-bbva/
 │   ├── test_pii.py               # Identificadores, HMAC Spark == Python, política de PII
 │   ├── test_landing.py           # Landing zone (S3 simulado) e ingesta incremental
 │   ├── test_calidad.py           # Registro de calidad y valores corruptos sin detener el pipeline
+│   ├── test_etiquetas_impago.py  # Modelo latente: determinismo, tasa, esquema, signos, oráculo, atenuación
+│   ├── test_etiquetas_gold.py    # Etiquetas en Gold, auditoría fuera de Gold, generate_labels de punta a punta
 │   ├── test_demo_respaldo.py     # demo.sh respaldar/restaurar: copia idéntica, rechazo de respaldos alterados
 │   └── test_main_cli.py          # Pruebas de enrutamiento del CLI (main.py)
 ├── docs/
@@ -133,7 +138,7 @@ digital-twin-bbva/
 │   ├── pruebas-robustez.md       # Las 5 brechas de robustez: qué se probó, resultado y cobertura
 │   └── technical-debt.md         # Deuda técnica conocida
 ├── experimentos/
-│   └── auc_circularidad.py       # Mide cuánto del AUC del modelo es circularidad de las etiquetas
+│   └── auc_evento_posterior.py   # Evalúa el modelo contra el evento posterior: CV, oráculo, signos y orden
 ├── models/                       # Modelo entrenado y gráfico SHAP (se regeneran)
 ├── .github/workflows/ci.yml      # Lint, tests, smoke test Bronze→Silver→Gold→modelo
 ├── main.py                       # CLI unico: python main.py <paso> [opciones]
@@ -143,7 +148,7 @@ digital-twin-bbva/
 ├── transform_silver.py
 ├── transform_gold.py
 ├── build_features.py             # Feature store en Gold (gold_features_cliente)
-├── generate_labels.py
+├── generate_labels.py            # Etiqueta de impago como evento posterior (gold_etiquetas_impago)
 ├── train_model.py
 ├── predict_risk.py
 ├── quality_report.py             # Reporte del registro histórico de calidad
@@ -187,7 +192,7 @@ uv run python transform_silver.py --bronze data/bronze --silver data/silver \
 uv run python transform_gold.py --silver data/silver --out data/gold/kpis.duckdb \
     --catalog config/kpi_catalog.yaml
 uv run python build_features.py
-uv run python generate_labels.py --silver data/silver
+uv run python generate_labels.py
 uv run python train_model.py
 uv run python predict_risk.py
 ```
@@ -230,7 +235,7 @@ El workflow de GitHub Actions (`.github/workflows/ci.yml`) corre en cada Pull Re
 |---|---|
 | `lint` | flake8, black y escaneo de secretos y de archivos de datos versionados (`detect-secrets`) |
 | `docker-compose-validate` | Sintaxis de `docker-compose.yml` con un `.env` generado por `setup.sh`, y shellcheck de `setup.sh`/`demo.sh` |
-| `unit-tests` | 80 pruebas (pytest): motor de validación, CURP/RFC y PII, sesiones, landing zone, registro de calidad, feature store, modelo, CLI y respaldo/restauración de `demo.sh` |
+| `unit-tests` | 123 pruebas (pytest): motor de validación, CURP/RFC y PII, sesiones, landing zone, registro de calidad, feature store, modelo, CLI y respaldo/restauración de `demo.sh` |
 | `pipeline-smoke-test` | Pipeline completo Bronze → Silver → Gold → modelo de riesgo con volumen reducido (100 clientes, 2 meses), parametrizable vía `workflow_dispatch`; verifica la reproducibilidad de la sesión, la ingesta incremental de Bronze, Silver sin cuarentena inesperada ni PII en claro, el registro de calidad, los 12 KPIs, el feature store, y que `probabilidad_impago` tenga valor en [0, 1] para todos los clientes |
 
 ---
@@ -246,6 +251,8 @@ El workflow de GitHub Actions (`.github/workflows/ci.yml`) corre en cada Pull Re
 El esquema completo, con tipo de dato, regla de calidad y tratamiento de PII por columna, está en [docs/diccionario-datos.md](docs/diccionario-datos.md).
 
 Catálogo de 12 KPIs en 5 categorías (ingresos, gastos, ahorro y liquidez, riesgo y endeudamiento, comportamiento transaccional), calculados en Gold y almacenados en formato normalizado en DuckDB. El KPI `probabilidad_impago` se calcula en Gold como `NULL` y el modelo de riesgo (XGBoost) lo completa en el último paso del pipeline (`predict_risk.py`).
+
+**Etiquetas de impago.** No existen etiquetas reales. El modelo se entrena con un impago simulado como un evento posterior a las features, generado con un modelo latente (`config/etiquetas_impago.yaml`, tabla `gold_etiquetas_impago`): depende de las tres variables de riesgo, de un rasgo oculto y de un choque que el modelo no ve, para que el AUC mida poder predictivo y no la regla con que se generó la etiqueta. Los parámetros se fijaron antes de ver resultados, y su evaluación está pendiente. Detalle y límites en [docs/technical-debt.md](docs/technical-debt.md).
 
 `gold_features_cliente` (misma base DuckDB) es el feature store del proyecto: una fila por cliente con los 11 KPIs restantes en columnas, más variables de perfil calculadas desde Silver (edad, antigüedad, ingreso declarado, número de productos, si tiene tarjeta de crédito, si tiene préstamo personal, proporción de retiros). Se persiste en vez de recalcularse en cada consumidor por dos razones: el modelo se entrena y predice sobre exactamente la misma tabla (sin desalineación entre entrenamiento e inferencia), y el dashboard, el simulador y el asistente RAG leen el perfil del cliente sin levantar Spark. Se guarda en forma legible (la categoría de gasto como texto); la codificación one-hot que necesita XGBoost se aplica al entrenar o predecir.
 
@@ -288,7 +295,7 @@ La documentación técnica vive en el repositorio y se actualiza en el mismo PR 
 | [docs/seguridad.md](docs/seguridad.md) | Secretos, clasificación de datos por capa, protección de PII, auditoría del repositorio y riesgos aceptados |
 | [docs/ejecucion-local.md](docs/ejecucion-local.md) | Cómo correr el proyecto en otra máquina, comandos de `demo.sh` y problemas comunes |
 | [docs/pruebas-robustez.md](docs/pruebas-robustez.md) | Las 5 brechas de robustez probadas con datos sucios, su resultado y qué parte tiene prueba automatizada |
-| [docs/technical-debt.md](docs/technical-debt.md) | Deuda técnica conocida (incluye que las etiquetas del modelo de riesgo son circulares), con fecha de última verificación |
+| [docs/technical-debt.md](docs/technical-debt.md) | Deuda técnica conocida (incluye la evaluación pendiente de las etiquetas de impago), con fecha de última verificación |
 
 Documentos académicos del programa, fuera del repositorio: reporte técnico, bitácora de incidentes y diagramas en Lucid (infraestructura y flujo de datos).
 
