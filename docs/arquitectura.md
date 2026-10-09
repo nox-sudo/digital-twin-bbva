@@ -52,8 +52,8 @@ hace el computo.
 | 4 | `transformacion_silver` | `transform_silver.py` | Tipado, deduplicacion, validacion por reglas, proteccion de PII, cuarentena |
 | 5 | `transformacion_gold` | `transform_gold.py` | Calcula los 12 KPIs del catalogo en DuckDB |
 | 6 | `construir_features` | `build_features.py` | Persiste `gold_features_cliente` |
-| 7 | `generar_etiquetas` | `generate_labels.py` | Etiquetas sinteticas de riesgo para entrenar |
-| 8 | `entrenar_modelo` | `train_model.py` | Entrena XGBoost y genera la importancia SHAP |
+| 7 | `generar_etiquetas` | `generate_labels.py` | Etiqueta de impago como evento posterior (modelo latente): escribe `gold_etiquetas_impago` y la auditoria fuera de Gold |
+| 8 | `entrenar_modelo` | `train_model.py` | Entrena XGBoost con `gold_etiquetas_impago` y genera la importancia SHAP |
 | 9 | `predict_risk` | `predict_risk.py` | Completa `probabilidad_impago` en Gold |
 
 Todos los pasos tambien se pueden correr sin Airflow con el CLI unico:
@@ -89,6 +89,7 @@ codigo:
 | Worker separado de Airflow (DockerOperator) | El orquestador no necesita Java ni Spark; el computo escala aparte | Correr Spark dentro del contenedor de Airflow |
 | Secretos generados por maquina, fuera del repo | Ninguna credencial compartida ni versionada | Contrasenas fijas en `docker-compose.yml` |
 | Streamlit para el dashboard (y, despues, el simulador y el asistente) | Una sola app de Python cubre los tres consumidores del feature store; lee `gold_kpis` y `gold_features_cliente` de DuckDB en solo lectura, sin Spark y sin un servicio mas en Docker Compose. Todo sigue corriendo local, con un comando | Looker Studio: es un servicio en la nube que no lee un DuckDB local, asi que exigiria exportar Gold y dar credenciales de Google al pipeline, el tablero no se reproduciria con `demo.sh` y no puede alojar el simulador ni el asistente (local, Ollama). Superset o Metabase: anaden servicios al Compose y solo resuelven el dashboard. Plotly Dash: mas codigo para el mismo resultado |
+| Etiqueta de impago como evento posterior, con un modelo latente | La etiqueta ya no es funcion de las variables con las que se entrena: depende de ellas, de un rasgo oculto y de un choque que el modelo no ve, asi que el AUC mide poder predictivo y tiene un oraculo con el que compararse. Los parametros viven en `config/etiquetas_impago.yaml` | Regla sobre 3 variables mas un XOR de ruido: el modelo reconstruia la regla y el AUC medido era el ruido (ver `docs/technical-debt.md`) |
 
 ## Como se verifica
 
