@@ -270,16 +270,81 @@ jobs:
           uv run python build_features.py \
             --silver data/silver --gold data/gold/kpis.duckdb
 
-      - name: Etiquetas de riesgo
+      - name: Etiquetas de impago (evento posterior)
         run: |
           uv run python generate_labels.py \
-            --silver data/silver --out data/labels/risk_labels.parquet
+            --gold data/gold/kpis.duckdb \
+            --config config/etiquetas_impago.yaml \
+            --auditoria-out data/auditoria/etiquetas_latentes.parquet
+
+      # Se verifica sobre el DuckDB real que produjo el pipeline, no sobre un
+      # esquema supuesto: la tabla de etiquetas tiene exactamente sus columnas,
+      # ninguna tabla de Gold trae columnas del proceso latente (z, choque,
+      # logit, p), y la auditoria, que si las trae, vive fuera de Gold.
+      - name: Verificar etiquetas y que Gold no contenga el proceso latente
+        run: |
+          uv run python -c "
+          import duckdb
+          import pandas as pd
+          import sys
+
+          from src.gold.etiquetas_gold import verificar_esquema_gold
+          from src.gold.etiquetas_impago import (
+              COLUMNAS_ETIQUETAS,
+              COLUMNAS_LATENTES,
+              cargar_config,
+          )
+
+          GOLD = 'data/gold/kpis.duckdb'
+          AUDITORIA = 'data/auditoria/etiquetas_latentes.parquet'
+          cfg = cargar_config('config/etiquetas_impago.yaml')
+
+          esquema = verificar_esquema_gold(GOLD)
+          if esquema['gold_etiquetas_impago'] != COLUMNAS_ETIQUETAS:
+              print('ERROR: columnas de gold_etiquetas_impago:', esquema['gold_etiquetas_impago'])
+              sys.exit(1)
+
+          con = duckdb.connect(GOLD, read_only=True)
+          n_features = con.execute('SELECT COUNT(*) FROM gold_features_cliente').fetchone()[0]
+          cortes = con.execute('SELECT DISTINCT fecha_corte FROM gold_features_cliente').fetchall()
+          etiquetas = con.execute('SELECT * FROM gold_etiquetas_impago').fetchdf()
+          con.close()
+
+          n = len(etiquetas)
+          positivos = int(etiquetas['impago_posterior'].sum())
+          if n != n_features:
+              print(f'ERROR: {n} etiquetas para {n_features} clientes')
+              sys.exit(1)
+          if not set(etiquetas['impago_posterior'].unique()) <= {0, 1} or not 0 < positivos < n:
+              print(f'ERROR: etiqueta invalida, {positivos} positivos de {n}')
+              sys.exit(1)
+          fechas = pd.to_datetime(etiquetas['fecha_observacion']).dt.date.unique()
+          if len(cortes) != 1 or len(fechas) != 1 or fechas[0] != pd.to_datetime(cortes[0][0]).date():
+              print('ERROR: fecha_observacion no coincide con la fecha de corte de las features')
+              sys.exit(1)
+          if set(etiquetas['horizonte_meses']) != {cfg.horizonte_meses}:
+              print('ERROR: horizonte_meses distinto del configurado')
+              sys.exit(1)
+
+          auditoria = pd.read_parquet(AUDITORIA)
+          if set(auditoria.columns) != {'cliente_id', *COLUMNAS_LATENTES}:
+              print('ERROR: columnas de la auditoria:', list(auditoria.columns))
+              sys.exit(1)
+          if set(auditoria['cliente_id']) != set(etiquetas['cliente_id']):
+              print('ERROR: la auditoria y las etiquetas no tienen los mismos clientes')
+              sys.exit(1)
+          if abs(auditoria['p'].mean() - cfg.tasa_objetivo) > 1e-6:
+              print('ERROR: la probabilidad media no es la tasa objetivo')
+              sys.exit(1)
+
+          print(f'Etiquetas verificadas: {positivos} de {n} con impago posterior; '
+                f'{len(esquema)} tablas de Gold sin columnas del proceso latente')
+          "
 
       - name: Entrenamiento del modelo
         run: |
           uv run python train_model.py \
             --gold data/gold/kpis.duckdb \
-            --labels data/labels/risk_labels.parquet \
             --model-out models/risk_model.joblib \
             --shap-out models/shap_importancia.png
 

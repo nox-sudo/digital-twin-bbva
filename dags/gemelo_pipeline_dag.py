@@ -153,13 +153,14 @@ with DAG(
 
     generar_etiquetas = tarea_worker(
         "generar_etiquetas",
-        "generate_labels.py --silver data/silver --out data/labels/risk_labels.parquet",
+        "generate_labels.py --gold data/gold/kpis.duckdb "
+        "--config config/etiquetas_impago.yaml "
+        "--auditoria-out data/auditoria/etiquetas_latentes.parquet",
     )
 
     entrenar_modelo = tarea_worker(
         "entrenar_modelo",
         "train_model.py --gold data/gold/kpis.duckdb "
-        "--labels data/labels/risk_labels.parquet "
         "--model-out models/risk_model.joblib --shap-out models/shap_importancia.png",
     )
 

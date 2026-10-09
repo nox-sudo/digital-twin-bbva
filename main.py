@@ -16,7 +16,7 @@ Pasos disponibles:
     silver         transform_silver.py             (Bronze -> Silver)
     gold           transform_gold.py               (Silver -> Gold/KPIs)
     features       build_features.py                (feature store en Gold)
-    labels         generate_labels.py               (etiquetas de riesgo)
+    labels         generate_labels.py               (etiqueta de impago como evento posterior)
     train-model    train_model.py                   (entrena XGBoost)
     predict-risk   predict_risk.py                  (predice y escribe a Gold)
     calidad        quality_report.py                (reporte del registro de calidad)
