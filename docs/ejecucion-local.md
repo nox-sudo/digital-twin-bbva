@@ -117,6 +117,13 @@ se niega a restaurar uno alterado o a sobrescribir datos existentes.
 coinciden con los de las corridas anteriores. Si restauras en una maquina sin
 `.env`, copia primero el original; si no, `demo.sh` generara uno nuevo.
 
+**Un respaldo contiene datos en claro.** Incluye la landing zone y las sesiones,
+donde la PII (sintetica: nombre, CURP, RFC, telefono y correo) todavia no esta
+protegida; esa proteccion empieza en Silver. Por eso un respaldo hereda la
+clasificacion de la capa mas sensible que contiene: no se versiona, no se
+comparte y se guarda con acceso restringido (`respaldar` crea la carpeta con
+permisos 700). Ver [docs/seguridad.md](seguridad.md#clasificacion-de-datos-por-capa).
+
 Lo que **no** se restaura, por ser derivado: las capas Bronze, Silver y Gold,
 el modelo y el historial de corridas y logs de Airflow.
 

@@ -8,8 +8,18 @@ de almacenamiento subyacente. Probarlo sin Delta hace los tests mas
 rapidos y evita depender de descargar JARs en el entorno de CI.
 """
 
+import os
+import sys
+
 import pytest
 from pyspark.sql import SparkSession
+
+# Los workers de Spark lanzan "python3" del PATH. Si pytest se corre sin el
+# venv activo (por ejemplo .venv/bin/python -m pytest), ese python3 es el del
+# sistema, no tiene pyspark y los tests de Spark fallan con "Error from python
+# worker". Con esto los workers usan el mismo interprete que corre pytest.
+os.environ.setdefault("PYSPARK_PYTHON", sys.executable)
+os.environ.setdefault("PYSPARK_DRIVER_PYTHON", sys.executable)
 
 
 @pytest.fixture(scope="session")

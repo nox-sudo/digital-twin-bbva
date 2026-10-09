@@ -33,7 +33,15 @@ la formula con la que se genero el label - un AUC-ROC de ~0.97-0.99 es
 circular por diseno, no evidencia de poder predictivo. Se aplica un XOR
 con probabilidad 0.08 (label_final = label_regla XOR ruido(8%)) para
 simular el error de medicion / factores no observados de un dataset real
-de impago, y bajar el AUC a un rango defendible (~0.75-0.85).
+de impago.
+
+Limite de esta medida: el ruido NO rompe la circularidad, solo le pone un
+techo al AUC. El modelo sigue aprendiendo la regla. Medido el 2026-10-08
+con 500 clientes: AUC de validacion cruzada 0.81, techo teorico con la
+regla exacta 0.82, y el modelo reconstruye la regla sin ruido con AUC
+0.97. Por eso ningun AUC de este proyecto debe presentarse como poder
+predictivo real; el detalle y el posible arreglo estan en
+docs/technical-debt.md.
 
 Uso:
     python generate_labels.py --silver data/silver \
