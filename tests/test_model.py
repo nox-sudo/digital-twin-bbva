@@ -8,10 +8,27 @@ igual que test_validation.py prueba el motor de Silver sin necesitar
 un Bronze real.
 """
 
+import sys
+
 import joblib
 import numpy as np
 import pandas as pd
-from xgboost import XGBClassifier
+import pytest
+
+try:
+    from xgboost import XGBClassifier
+except Exception as error:
+    # En macOS XGBoost necesita libomp, que no viene con el sistema: sin ella
+    # el import lanza XGBoostError y el modulo no se puede ni recolectar, asi
+    # que un skipif normal no sirve. Solo se omite ese caso; cualquier otro
+    # fallo de import (por ejemplo en el CI, en Linux) debe verse, no ocultarse.
+    if sys.platform == "darwin" and "libomp" in str(error):
+        pytest.skip(
+            "XGBoost no carga en macOS sin libomp: instalala con "
+            "`brew install libomp`. El CI (Linux) si corre esta prueba.",
+            allow_module_level=True,
+        )
+    raise
 
 
 def _modelo_de_prueba() -> XGBClassifier:

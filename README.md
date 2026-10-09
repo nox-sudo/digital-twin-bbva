@@ -12,6 +12,8 @@ Plataforma de Ingeniería de Datos que construye un gemelo digital financiero pe
 Path Data Engineering — BBVA | Universidad Tecmilenio
 Proyecto individual, Julio–Noviembre 2026 · Mentor: Oscar Daniel Florín Beltrán
 
+> La rama `main` está congelada hasta el release de diciembre de 2026 (tag `v0.3.0`). Todo el trabajo entra por `develop` mediante pull requests.
+
 ---
 
 ## Índice
@@ -220,7 +222,7 @@ Dos reportes, para preguntas distintas:
 uv run pytest tests/ -v
 ```
 
-En macOS, `tests/test_model.py` necesita la librería `libomp` para cargar XGBoost (Homebrew: `brew install libomp`); en Linux, donde corre el CI, no hace falta nada más. Ver [docs/technical-debt.md](docs/technical-debt.md).
+En macOS, `tests/test_model.py` necesita la librería `libomp` para cargar XGBoost (Homebrew: `brew install libomp`). Sin ella la prueba se omite con un aviso que lo indica, en vez de romper la recolección; en Linux, donde corre el CI, siempre corre y cualquier fallo de import se ve. Ver [docs/technical-debt.md](docs/technical-debt.md).
 
 El workflow de GitHub Actions (`.github/workflows/ci.yml`) corre en cada Pull Request hacia `develop` o `main`, en cada push a esas ramas y bajo demanda (`workflow_dispatch`), con 4 jobs — los primeros 3 en paralelo:
 
