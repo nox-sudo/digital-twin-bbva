@@ -34,7 +34,10 @@ from src.gold.etiquetas_impago import (  # noqa: E402
     VARIABLES_OBSERVADAS,
     calibrar_b0,
     cargar_config,
+    coeficientes_verdaderos,
+    comparar_signos_y_orden,
     estandarizar_variables,
+    factor_atenuacion,
     generar_etiquetas,
     simular_evento,
     verificar_sin_latentes,
@@ -295,3 +298,70 @@ def test_el_auc_del_modelo_queda_por_debajo_del_del_oraculo(
         f"AUC del modelo {auc_modelo:.3f} no queda {MARGEN_ORACULO} por debajo "
         f"del oraculo {auc_oraculo:.3f}"
     )
+
+
+# --- Atenuacion de los coeficientes (variable omitida en logistica) ----------
+
+
+def test_sin_variables_omitidas_no_hay_atenuacion(cfg):
+    sin_omitidas = replace(cfg, b_rasgo_oculto=0.0, b_choque=0.0)
+    assert factor_atenuacion(sin_omitidas) == pytest.approx(1.0)
+    assert 0.0 < factor_atenuacion(cfg) < 1.0
+
+
+def test_la_atenuacion_teorica_coincide_con_la_observada(cfg):
+    """Con muchos clientes, estimado / verdadero de una regresion logistica que
+    omite z y choque debe quedar cerca de factor_atenuacion(cfg), igual para las
+    3 variables. Es lo que justifica probar signos y orden, no magnitudes."""
+    features = _features_sinteticas(100_000)
+    estandarizadas = estandarizar_variables(
+        features, cfg.winsor_inferior, cfg.winsor_superior
+    )
+    simulacion = simular_evento(estandarizadas, cfg)
+    modelo = LogisticRegression(C=1e6, max_iter=2000).fit(
+        estandarizadas.loc[simulacion.proceso.index, VARIABLES_OBSERVADAS],
+        simulacion.proceso["impago"],
+    )
+    estimados = dict(zip(VARIABLES_OBSERVADAS, modelo.coef_[0]))
+    verdaderos = coeficientes_verdaderos(cfg)
+
+    esperado = factor_atenuacion(cfg)
+    for variable in VARIABLES_OBSERVADAS:
+        observado = estimados[variable] / verdaderos[variable]
+        assert observado == pytest.approx(esperado, abs=0.04), variable
+        assert observado < 1.0, "el estimado debe quedar mas chico que el verdadero"
+
+    comparacion = comparar_signos_y_orden(estimados, verdaderos)
+    assert comparacion.signos_coinciden and comparacion.orden_coincide
+
+
+def test_comparar_signos_y_orden_detecta_un_signo_invertido(cfg):
+    verdaderos = coeficientes_verdaderos(cfg)
+    estimados = {**verdaderos, "capacidad_ahorro": -verdaderos["capacidad_ahorro"]}
+    comparacion = comparar_signos_y_orden(estimados, verdaderos)
+    assert not comparacion.signos_coinciden
+
+
+def test_comparar_signos_y_orden_detecta_un_orden_distinto(cfg):
+    verdaderos = coeficientes_verdaderos(cfg)
+    estimados = {
+        "ratio_endeudamiento": 0.1,
+        "uso_linea_credito": 0.9,
+        "capacidad_ahorro": -0.5,
+    }
+    comparacion = comparar_signos_y_orden(estimados, verdaderos)
+    assert comparacion.signos_coinciden
+    assert not comparacion.orden_coincide
+    assert comparacion.orden_verdadero == [
+        "ratio_endeudamiento",
+        "capacidad_ahorro",
+        "uso_linea_credito",
+    ]
+
+
+def test_comparar_ignora_la_magnitud(cfg):
+    """Estimados a la mitad de los verdaderos conservan signo y orden."""
+    verdaderos = coeficientes_verdaderos(cfg)
+    estimados = {variable: valor * 0.5 for variable, valor in verdaderos.items()}
+    comparacion = comparar_signos_y_orden(estimados, verdaderos)
+    assert comparacion.signos_coinciden and comparacion.orden_coincide

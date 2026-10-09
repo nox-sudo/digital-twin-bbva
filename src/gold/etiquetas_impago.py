@@ -292,3 +292,61 @@ def generar_etiquetas(
     resultado = simular_evento(estandarizadas, cfg)
     tabla = construir_tabla_etiquetas(resultado, fecha_observacion, cfg.horizonte_meses)
     return tabla, construir_auditoria(resultado), resultado
+
+
+def coeficientes_verdaderos(cfg: ConfigEtiquetas) -> dict[str, float]:
+    """Los coeficientes con los que se genero la etiqueta, con el signo con que
+    entran al logit (capacidad_ahorro se resta)."""
+    return {
+        "ratio_endeudamiento": cfg.b_ratio_endeudamiento,
+        "uso_linea_credito": cfg.b_uso_linea_credito,
+        "capacidad_ahorro": -cfg.b_capacidad_ahorro,
+    }
+
+
+def factor_atenuacion(cfg: ConfigEtiquetas) -> float:
+    """Cuanto se encogen, aproximadamente, los coeficientes que estima una
+    regresion logistica sobre las 3 variables observadas respecto a los
+    verdaderos.
+
+    Una regresion logistica que omite predictores independientes de los
+    observados (aqui z y choque) no recupera los coeficientes del modelo
+    completo sino los del modelo marginal, que son MAS PEQUENOS en valor
+    absoluto: el enlace logistico no es colapsable. Aproximacion de Zeger, Liang
+    y Albert (1988): estimado / verdadero ~ 1 / sqrt(1 + c^2 * var_omitida), con
+    c = 16*sqrt(3) / (15*pi) y var_omitida la varianza de lo que se omite en el
+    logit: b4^2 + b5^2 * q_h * (1 - q_h). El encogimiento es casi el mismo para
+    todos los coeficientes, por eso sobreviven el signo y el orden, no la
+    magnitud.
+    """
+    q_horizonte = cfg.prob_choque_horizonte
+    var_omitida = cfg.b_rasgo_oculto**2 + cfg.b_choque**2 * q_horizonte * (
+        1 - q_horizonte
+    )
+    c = 16 * np.sqrt(3) / (15 * np.pi)
+    return float(1.0 / np.sqrt(1.0 + c**2 * var_omitida))
+
+
+@dataclass(frozen=True)
+class ComparacionCoeficientes:
+    signos_coinciden: bool
+    orden_coincide: bool
+    orden_verdadero: list[str]
+    orden_estimado: list[str]
+
+
+def comparar_signos_y_orden(
+    estimados: dict[str, float], verdaderos: dict[str, float]
+) -> ComparacionCoeficientes:
+    """Compara signo y orden de magnitud absoluta, no magnitudes: los estimados
+    salen atenuados (ver factor_atenuacion)."""
+    variables = list(verdaderos)
+    signos = all(np.sign(estimados[v]) == np.sign(verdaderos[v]) for v in variables)
+    orden_verdadero = sorted(variables, key=lambda v: -abs(verdaderos[v]))
+    orden_estimado = sorted(variables, key=lambda v: -abs(estimados[v]))
+    return ComparacionCoeficientes(
+        signos_coinciden=bool(signos),
+        orden_coincide=orden_verdadero == orden_estimado,
+        orden_verdadero=orden_verdadero,
+        orden_estimado=orden_estimado,
+    )

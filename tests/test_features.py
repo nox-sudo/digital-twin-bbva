@@ -7,6 +7,7 @@ la matriz para el modelo. La construccion desde Silver la cubre el
 smoke test de CI.
 """
 
+import datetime as dt
 import sys
 from pathlib import Path
 
@@ -86,6 +87,27 @@ def test_preparar_codifica_categoria_y_quita_metadata(tmp_path, features_legible
         "categoria_dominante_supermercado",
         "categoria_dominante_restaurantes",
     } <= set(matriz.columns)
+
+
+def test_la_fecha_de_corte_se_guarda_pero_no_entra_al_modelo(
+    tmp_path, features_legibles
+):
+    """fecha_corte (hasta donde llegan los datos de las features) viaja en
+    Gold porque es la fecha de observacion de las etiquetas, pero es
+    metadata: no puede llegar a la matriz del modelo, donde get_dummies la
+    convertiria en una variable sin sentido."""
+    features = features_legibles.assign(fecha_corte=dt.date(2026, 9, 30))
+    gold = str(tmp_path / "kpis.duckdb")
+    escribir_features(features, gold)
+
+    cargadas = cargar_features(gold)
+    matriz = preparar_para_modelo(cargadas)
+
+    assert pd.to_datetime(cargadas["fecha_corte"]).dt.date.unique().tolist() == [
+        dt.date(2026, 9, 30)
+    ]
+    assert "fecha_corte" not in matriz.columns
+    assert all(pd.api.types.is_numeric_dtype(tipo) for tipo in matriz.dtypes)
 
 
 def test_preparar_alinea_a_columnas_del_modelo(features_legibles):

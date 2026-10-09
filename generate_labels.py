@@ -1,182 +1,119 @@
 """
 generate_labels.py
 
-Genera etiquetas sinteticas de riesgo de impago por cliente, para
-entrenar el modelo de clasificacion. No existen etiquetas reales: es
-un proyecto con datos sinteticos, sin historial de impago observado.
+Genera la etiqueta de impago de cada cliente como un evento POSTERIOR a las
+features, con un modelo latente (src/gold/etiquetas_impago.py), y la guarda en
+gold_etiquetas_impago. No existen etiquetas reales: es un proyecto con datos
+sinteticos, sin historial de impago observado.
 
-Regla de negocio: un cliente se marca de riesgo alto (label=1) si
-cumple al menos 2 de estas 3 condiciones, evaluadas contra el
-percentil 75/25 de la poblacion de la corrida actual:
-  - ratio_endeudamiento en el cuartil superior (deuda alta vs ingreso)
-  - capacidad_ahorro en el cuartil inferior (ahorra poco o gasta de mas)
-  - uso_linea_credito en el cuartil superior (usa casi todo su limite)
+Lee gold_features_cliente (construida por build_features.py) y no necesita
+Spark. Escribe:
+  - gold_etiquetas_impago en el DuckDB de Gold: cliente_id, impago_posterior,
+    fecha_observacion y horizonte_meses. Nada del proceso latente.
+  - la auditoria (z, choque, logit, p) en un parquet fuera de Gold, por defecto
+    data/auditoria/etiquetas_latentes.parquet. No se respalda: se regenera con
+    la semilla y las features.
 
-Nota de diseno: la regla pedida originalmente exigia las 3 condiciones
-a la vez (AND estricto). Probada contra los datos de la sesion de
-referencia (500 clientes), esa regla dejaba alrededor de 1 por ciento de
-clientes de riesgo, insuficiente para un split 80/20 confiable (el
-conjunto de prueba quedaba con 0 o 1 positivo). "Al menos 2 de 3" da
-alrededor de 9 por ciento: suficiente para entrenar y evaluar con un
-desbalance manejable. Las cifras exactas cambian con la semilla; el
-log de cada corrida las reporta.
+Reemplaza a la regla "al menos 2 de 3 condiciones" mas el XOR de ruido de 8 %.
+Esa etiqueta era funcion de las mismas 3 variables con las que se entrena el
+modelo, que terminaba reconstruyendo la regla (ver docs/technical-debt.md).
 
-Como ratio_endeudamiento y uso_linea_credito no existen para clientes
-sin ese producto (sin tarjeta de credito o prestamo), su ausencia se
-interpreta como "no cumple la condicion", no como dato faltante.
-
-Ruido estocastico: la regla de arriba (>= 2 de 3 condiciones) usa
-exactamente las mismas 3 variables que train_model.py despues expone
-como top features via SHAP. Sin ruido, el label es una funcion
-determinista de esas variables y el modelo no predice riesgo, redescubre
-la formula con la que se genero el label - un AUC-ROC de ~0.97-0.99 es
-circular por diseno, no evidencia de poder predictivo. Se aplica un XOR
-con probabilidad 0.08 (label_final = label_regla XOR ruido(8%)) para
-simular el error de medicion / factores no observados de un dataset real
-de impago.
-
-Limite de esta medida: el ruido NO rompe la circularidad, solo le pone un
-techo al AUC. El modelo sigue aprendiendo la regla. Medido el 2026-10-08
-con 500 clientes: AUC de validacion cruzada 0.81, techo teorico con la
-regla exacta 0.82, y el modelo reconstruye la regla sin ruido con AUC
-0.97. Por eso ningun AUC de este proyecto debe presentarse como poder
-predictivo real; el detalle y el posible arreglo estan en
-docs/technical-debt.md.
+Ventana: fecha_observacion es la fecha de corte de las features (columna
+fecha_corte de gold_features_cliente); el impago se simula en los
+horizonte_meses siguientes. Cada nueva-entrega avanza esa fecha y regenera las
+etiquetas. Los meses que llegan despues no reflejan los choques simulados.
 
 Uso:
-    python generate_labels.py --silver data/silver \
-        --out data/labels/risk_labels.parquet
+    python generate_labels.py --gold data/gold/kpis.duckdb \
+        --config config/etiquetas_impago.yaml \
+        --auditoria-out data/auditoria/etiquetas_latentes.parquet
 """
 
 import argparse
+import datetime as dt
 import logging
 import sys
 from pathlib import Path
 
-import numpy as np
+import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from src.common.spark_session import get_spark_session  # noqa: E402
-from src.gold.kpi_definitions import (  # noqa: E402
-    kpi_capacidad_ahorro,
-    kpi_ratio_endeudamiento,
-    kpi_uso_linea_credito,
+from src.gold.etiquetas_gold import (  # noqa: E402
+    RUTA_AUDITORIA,
+    escribir_auditoria,
+    escribir_etiquetas,
+    verificar_esquema_gold,
 )
+from src.gold.etiquetas_impago import cargar_config, generar_etiquetas  # noqa: E402
+from src.gold.risk_features import cargar_features  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
-# Probabilidad de invertir el label de la regla determinista (ver nota
-# de diseno "Ruido estocastico" arriba). Semilla fija para que la
-# corrida sea reproducible, igual que generate_synthetic_sources.py.
-PROBABILIDAD_RUIDO = 0.08
-SEMILLA_RUIDO = 42
+
+def fecha_observacion_de(features: pd.DataFrame) -> dt.date:
+    """La fecha de corte con la que se construyeron las features. Debe ser una
+    sola para toda la tabla: las etiquetas se observan en una fecha, no varias."""
+    if "fecha_corte" not in features.columns:
+        raise RuntimeError(
+            "gold_features_cliente no tiene la columna fecha_corte: se escribio con "
+            "una version anterior de build_features.py. Reconstruyela con "
+            "'python main.py features' y vuelve a correr este paso."
+        )
+    fechas = pd.to_datetime(features["fecha_corte"]).dt.date.unique()
+    if len(fechas) != 1:
+        raise RuntimeError(
+            f"gold_features_cliente tiene {len(fechas)} fechas de corte distintas; "
+            "se esperaba una sola."
+        )
+    return fechas[0]
 
 
-def generar_etiquetas(spark, silver_path: str):
-    """Calcula los 3 KPIs de riesgo desde Silver y deriva la etiqueta
-    0/1 por cliente."""
-    entidades = ["clientes", "cuentas", "cetes_inversiones", "transacciones"]
-    ctx = {e: spark.read.format("delta").load(f"{silver_path}/{e}") for e in entidades}
+def generar_y_guardar(gold: str, config: str, auditoria_out: str):
+    cfg = cargar_config(config)
+    features = cargar_features(gold)
+    if features.empty:
+        raise RuntimeError(f"gold_features_cliente esta vacia en {gold}")
+    fecha_observacion = fecha_observacion_de(features)
 
-    ratio = kpi_ratio_endeudamiento(ctx).rename(
-        columns={"valor_numerico": "ratio_endeudamiento"}
-    )
-    ahorro = kpi_capacidad_ahorro(ctx).rename(
-        columns={"valor_numerico": "capacidad_ahorro"}
-    )
-    uso = kpi_uso_linea_credito(ctx).rename(
-        columns={"valor_numerico": "uso_linea_credito"}
-    )
+    tabla, auditoria, resultado = generar_etiquetas(features, cfg, fecha_observacion)
 
-    clientes_ids = ctx["clientes"].select("cliente_id").toPandas()
+    escribir_etiquetas(tabla, gold)
+    escribir_auditoria(auditoria, auditoria_out)
+    verificar_esquema_gold(gold)
 
-    etiquetas = (
-        clientes_ids.merge(ratio, on="cliente_id", how="left")
-        .merge(ahorro, on="cliente_id", how="left")
-        .merge(uso, on="cliente_id", how="left")
-    )
-
-    # Las columnas vienen de PySpark DecimalType via toPandas(), que las
-    # deja como objetos decimal.Decimal; quantile() no puede interpolar
-    # eso con floats, asi que se castea explicitamente antes de operar.
-    columnas_riesgo = ["ratio_endeudamiento", "capacidad_ahorro", "uso_linea_credito"]
-    etiquetas[columnas_riesgo] = etiquetas[columnas_riesgo].astype(float)
-
-    p75_ratio = etiquetas["ratio_endeudamiento"].quantile(0.75)
-    p25_ahorro = etiquetas["capacidad_ahorro"].quantile(0.25)
-    p75_uso = etiquetas["uso_linea_credito"].quantile(0.75)
-
+    n = len(tabla)
+    positivos = int(tabla["impago_posterior"].sum())
     logger.info(
-        "Umbrales calculados: ratio_endeudamiento > %.3f, capacidad_ahorro < %.2f, "
-        "uso_linea_credito > %.3f",
-        p75_ratio,
-        p25_ahorro,
-        p75_uso,
+        "Etiquetas: %d clientes, %d con impago en los %d meses posteriores a %s "
+        "(%.1f%%; tasa objetivo %.1f%%, semilla %d, b0 calibrado %.3f)",
+        n,
+        positivos,
+        cfg.horizonte_meses,
+        fecha_observacion,
+        100 * positivos / n,
+        100 * cfg.tasa_objetivo,
+        cfg.semilla,
+        resultado.b0,
     )
-
-    condiciones_cumplidas = (
-        (etiquetas["ratio_endeudamiento"] > p75_ratio).fillna(False).astype(int)
-        + (etiquetas["capacidad_ahorro"] < p25_ahorro).fillna(False).astype(int)
-        + (etiquetas["uso_linea_credito"] > p75_uso).fillna(False).astype(int)
-    )
-    label_regla = condiciones_cumplidas >= 2
-
-    rng = np.random.default_rng(SEMILLA_RUIDO)
-    ruido = rng.random(len(etiquetas)) < PROBABILIDAD_RUIDO
-    etiquetas["label"] = (label_regla ^ ruido).astype(int)
-
-    n_invertidos = int(ruido.sum())
-    logger.info(
-        "Ruido aplicado: %d de %d labels invertidos (%.1f%%, probabilidad configurada %.0f%%)",
-        n_invertidos,
-        len(etiquetas),
-        100 * n_invertidos / len(etiquetas),
-        100 * PROBABILIDAD_RUIDO,
-    )
-
-    return etiquetas[
-        [
-            "cliente_id",
-            "ratio_endeudamiento",
-            "capacidad_ahorro",
-            "uso_linea_credito",
-            "label",
-        ]
-    ]
+    return tabla, resultado
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Genera etiquetas sinteticas de riesgo de impago"
+        description="Genera la etiqueta de impago como evento posterior (modelo latente)"
     )
-    parser.add_argument("--silver", default="data/silver")
-    parser.add_argument("--out", default="data/labels/risk_labels.parquet")
+    parser.add_argument("--gold", default="data/gold/kpis.duckdb")
+    parser.add_argument("--config", default="config/etiquetas_impago.yaml")
+    parser.add_argument("--auditoria-out", default=RUTA_AUDITORIA)
     args = parser.parse_args()
 
-    out_path = Path(args.out)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-
-    spark = get_spark_session("generar_etiquetas_riesgo")
     try:
-        etiquetas = generar_etiquetas(spark, args.silver)
-        etiquetas.to_parquet(out_path, index=False)
-
-        n_total = len(etiquetas)
-        n_positivos = int(etiquetas["label"].sum())
-        logger.info(
-            "Etiquetas escritas en %s: %d clientes, %d de riesgo alto (%.1f%%)",
-            out_path,
-            n_total,
-            n_positivos,
-            100 * n_positivos / n_total,
-        )
+        generar_y_guardar(args.gold, args.config, args.auditoria_out)
     except Exception:
         logger.exception("Fallo la generacion de etiquetas")
         raise
-    finally:
-        spark.stop()
 
 
 if __name__ == "__main__":

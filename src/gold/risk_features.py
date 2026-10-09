@@ -37,8 +37,11 @@ logger = logging.getLogger(__name__)
 TABLA_FEATURES = "gold_features_cliente"
 
 # Columnas de la tabla que describen la fila, no al cliente: se excluyen
-# al preparar la matriz para el modelo.
-COLUMNAS_METADATA = ["fecha_calculo"]
+# al preparar la matriz para el modelo. fecha_corte es la fecha hasta la
+# que llegan los datos de las features (la ultima transaccion observada);
+# es la fecha de observacion de las etiquetas de impago
+# (src/gold/etiquetas_impago.py).
+COLUMNAS_METADATA = ["fecha_calculo", "fecha_corte"]
 
 KPIS_NUMERICOS = [
     "ingreso_mensual_promedio",
@@ -138,7 +141,9 @@ def _variables_comportamiento_silver(spark, silver_path: str) -> pd.DataFrame:
     resultado = demograficas.join(productos, on="cliente_id", how="left").join(
         comportamiento_tx, on="cliente_id", how="left"
     )
-    return resultado.toPandas().set_index("cliente_id")
+    comportamiento_pd = resultado.toPandas().set_index("cliente_id")
+    comportamiento_pd["fecha_corte"] = fecha_corte
+    return comportamiento_pd
 
 
 def construir_features(spark, silver_path: str, gold_duckdb_path: str) -> pd.DataFrame:
@@ -162,6 +167,10 @@ def construir_features(spark, silver_path: str, gold_duckdb_path: str) -> pd.Dat
         "proporcion_retiros",
     ]
     features[columnas_comportamiento] = features[columnas_comportamiento].fillna(0.0)
+    # Una sola fecha de corte para toda la tabla, tambien para un cliente que
+    # no tuviera fila de comportamiento.
+    if len(comportamiento):
+        features["fecha_corte"] = comportamiento["fecha_corte"].iloc[0]
 
     logger.info("Features listas: %d filas, %d columnas", *features.shape)
     return features
