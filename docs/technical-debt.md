@@ -49,11 +49,16 @@ el generador y en las sesiones de datos.
 ### test_model.py no corre en macOS sin libomp
 
 **Que pasa:** `tests/test_model.py` importa XGBoost, que en macOS necesita la
-libreria `libomp` (no viene con el sistema). En esta maquina no esta instalada, asi
-que esa prueba no corre en local; en CI (Linux) corre sin pasos extra.
+libreria `libomp` (no viene con el sistema). Sin ella el import lanza
+`XGBoostError`; en CI (Linux) corre sin pasos extra.
 
-**Posible fix:** instalar `libomp` (Homebrew: `brew install libomp`) o marcar la
-prueba para que se omita en macOS con un mensaje claro.
+**Mitigacion:** la prueba se omite a nivel de modulo, con un aviso que indica
+`brew install libomp`, solo en macOS y solo cuando el error menciona `libomp`.
+Cualquier otro fallo de import se sigue viendo (verificado con una mutacion de la
+condicion). Un `skipif` normal no sirve: el import falla antes de recolectar.
+
+**Fix completo:** instalar `libomp` (Homebrew: `brew install libomp`) para que la
+prueba corra tambien en local.
 
 ### Archivos del worker quedan con dueno root en Linux
 
