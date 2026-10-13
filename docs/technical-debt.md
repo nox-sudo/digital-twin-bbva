@@ -4,15 +4,18 @@ Registro de gaps conocidos que no bloquean el estado actual del pipeline,
 pero que un futuro colaborador (o evaluador) deberia poder encontrar aca,
 sin tener que preguntar directamente.
 
-Ultima verificacion: 2026-10-09 (rama feature/etiquetas-evento-posterior)
+Ultima verificacion: 2026-10-13 (rama docs/evaluacion-etiquetas-limites)
 
 ## Abiertos
 
-### Etiquetas de impago como evento posterior: evaluacion pendiente
+### Etiquetas de impago como evento posterior
 
-**Estado:** el diseno de las etiquetas cambio y esta implementado y probado, pero
-su evaluacion con XGBoost en 500 y en 5,000 clientes todavia no se corre (necesita
-`libomp` en macOS). Hasta entonces no se cita ningun AUC del diseno nuevo.
+**Estado:** el diseno de las etiquetas cambio, esta implementado y probado, y se
+evaluo con XGBoost en 500 y en 5,000 clientes (2026-10-13, resultados abajo). La
+evaluacion corrio en el worker Linux de Docker, no en macOS, porque `libomp` sigue
+sin instalarse en la maquina de desarrollo. Quedan abiertas las guardas de bordes
+descritas en la entrada "Etiquetas de impago: entradas y configuraciones sin
+guarda".
 
 **Por que cambio.** La etiqueta anterior (`generate_labels.py` con la regla "al
 menos 2 de 3 condiciones" mas un XOR de ruido de 8 %) era una funcion de 3
@@ -90,16 +93,126 @@ el encogimiento es casi igual para todos los coeficientes, sobreviven el signo y
 el orden (b1 > b3 > b2), y eso es lo que se prueba; las magnitudes no tienen por
 que coincidir.
 
-**Pendiente.** Correr `experimentos/auc_evento_posterior.py` con XGBoost en 500 y en
-5,000 clientes y publicar aqui: validacion cruzada 5x5, AUC del oraculo (la
-probabilidad verdadera), comparacion de signos y orden, y los 3 AUC del mismo
-entrenamiento repetido. Para 5,000 clientes se corre el pipeline con otra sesion y
-otro `DATA_ROOT`, sin tocar `data/` de la instancia.
+**Evaluacion (2026-10-13).** Los parametros de `config/etiquetas_impago.yaml` son
+los fijados el 2026-10-09: el archivo no cambia desde su commit de creacion
+(`2aef649`) y no se ajusto nada despues de ver estos numeros.
+
+Condiciones: codigo de `develop` en `3056b54`, imagen `gemelo-worker` construida de
+ahi (Linux, XGBoost 3.2.0), sesion con semilla 42, fecha de referencia 2026-09-30 y
+12 meses, `PII_HASH_SALT` de prueba, cada tamano en su propio volumen de datos (la
+instancia viva no se toco). XGBoost con los hiperparametros de `train_model.py`
+(200 arboles, profundidad 4, tasa de aprendizaje 0.05, `scale_pos_weight`, semilla 42).
+Comando: `experimentos/auc_evento_posterior.py`; validacion cruzada estratificada de
+5 pliegues repetida 5 veces.
+
+| Medida | 500 clientes (79 positivos, 15.8 %) | 5,000 clientes (768 positivos, 15.4 %) |
+|---|---|---|
+| AUC, validacion cruzada (por pliegue) | 0.728 +- 0.060 (0.594 a 0.839) | 0.776 +- 0.016 (0.743 a 0.807) |
+| AUC fuera de pliegue, media de 5 repeticiones | 0.725 (0.676 a 0.753) | 0.775 (0.772 a 0.778) |
+| AUC del oraculo (probabilidad verdadera `p`) | 0.860 | 0.845 |
+| Hueco oraculo - modelo | 0.135 | 0.069 |
+| Sin las 3 variables observadas (ablacion) | 0.657 (0.597 a 0.683) | 0.734 (0.726 a 0.739) |
+| 3 entrenamientos con la misma semilla y el mismo split | 0.781250 los tres | 0.739446 los tres |
+
+El modelo queda por debajo del oraculo en los dos tamanos, como debe: no ve `z` ni
+`choque`. El hueco se achica con mas clientes pero no se cierra a 5,000. Los tres
+entrenamientos repetidos dan el mismo AUC (determinismo), y ese AUC de un solo split
+(0.78 y 0.74) cae a ambos lados del de validacion cruzada (0.725 y 0.775): el split
+unico no es una medida confiable, la validacion cruzada si.
+
+Signos y orden contra los coeficientes verdaderos (regresion logistica sobre las 3
+variables estandarizadas; el factor teorico de atenuacion es 0.892):
+
+| Variable | Verdadero | 500: estimado (razon) | 5,000: estimado (razon) |
+|---|---|---|---|
+| `ratio_endeudamiento` | +0.80 | +0.82 (1.02) | +0.77 (0.96) |
+| `uso_linea_credito` | +0.50 | +0.57 (1.14) | +0.42 (0.84) |
+| `capacidad_ahorro` | -0.70 | -0.66 (0.94) | -0.61 (0.88) |
+
+Los signos coinciden en ambos tamanos y el orden verdadero (`ratio_endeudamiento` >
+`capacidad_ahorro` > `uso_linea_credito`) se recupera en ambos. Con 500 clientes las
+razones se dispersan alrededor de 1 (de 0.94 a 1.14), mas ruido que atenuacion; con
+5,000 quedan por debajo de 1, de 0.84 a 0.96, en el rango que predice la teoria. Es una
+metrica de recuperacion, no una prueba.
+
+La ablacion no mide "cuanta senal queda sin las 3 variables": quitarlas de la matriz
+no las quita de la informacion. `capacidad_ahorro` es exactamente
+`ingreso_mensual_promedio - gasto_mensual_total`, y `ratio_endeudamiento` es deuda
+entre `ingreso_mensual_promedio`; el ingreso y el gasto siguen en la matriz, asi que el
+modelo puede reconstruir esa senal. Por eso se agrego la ablacion estricta (E6, agregada
+despues de ver E5, no estaba en el diseno original), que quita tambien
+`ingreso_mensual_promedio`, `gasto_mensual_total` y `gasto_promedio_3_meses`:
+
+| Ablacion (AUC fuera de pliegue, media de 5 repeticiones) | 500 clientes | 5,000 clientes |
+|---|---|---|
+| Completo | 0.725 | 0.775 |
+| E5: sin las 3 variables | 0.657 | 0.734 |
+| E6: sin las 3, ingreso ni gasto | 0.614 (0.576 a 0.647) | 0.689 (0.685 a 0.694) |
+
+Cada ablacion baja el AUC, pero con 5,000 clientes todavia queda en 0.689. Las demas
+features (saldo liquido, estabilidad del ingreso, frecuencia de transacciones, edad,
+categoria de gasto) siguen correlacionadas con el nivel de ingreso y de endeudamiento,
+y el modelo las usa como sustitutos. No es una fuga: `z` y `choque` no estan en ninguna
+tabla de Gold (el CI lo verifica). Es una consecuencia de que las features sinteticas
+no son independientes entre si, que es lo normal.
+
+**AUC contra el tamano de la muestra.** `experimentos/limites_etiquetas.py --parte
+tamano` saca 20 submuestras al azar de las features y etiquetas de los 5,000 clientes y
+mide el AUC fuera de pliegue (5 pliegues) de cada una:
+
+| Clientes | Submuestras evaluables | Positivos | AUC del modelo (media, desv., min a max) | AUC del oraculo |
+|---|---|---|---|---|
+| 50 | 18 de 20 | 5 a 13 | 0.617, 0.151 (0.327 a 0.848) | 0.858 |
+| 100 | 20 de 20 | 9 a 21 | 0.694, 0.121 (0.497 a 0.926) | 0.852 |
+| 200 | 20 de 20 | 22 a 44 | 0.701, 0.106 (0.520 a 0.880) | 0.839 |
+| 500 | 20 de 20 | 68 a 90 | 0.723, 0.038 (0.647 a 0.807) | 0.847 |
+| 1,000 | 20 de 20 | 129 a 172 | 0.735, 0.031 (0.681 a 0.790) | 0.838 |
+| 2,500 | 20 de 20 | 354 a 407 | 0.756, 0.013 (0.734 a 0.783) | 0.844 |
+| 5,000 | 1 de 1 | 768 | 0.773 | 0.845 |
+
+Lectura: el AUC medio sube de 0.62 a 0.77 al pasar de 50 a 5,000 clientes y no se
+estabiliza ahi: el modelo sigue aprendiendo, y por eso el AUC de 500 clientes
+subestima lo que el diseno permite. La dispersion tambien baja, de 0.15 a 0.013. Con
+100 clientes (el volumen del smoke de CI) una sola medicion varia entre 0.50 y 0.93,
+por encima incluso del oraculo (0.85) en algunas submuestras; con 50 no siempre se
+puede evaluar (2 de 20 submuestras tuvieron menos de 5 positivos). Por eso el smoke
+de CI verifica que el pipeline corra y que las probabilidades esten en [0, 1], y no
+un umbral de AUC; para comparar modelos se necesitan al menos 500 clientes y
+validacion cruzada.
 
 **Como leer un AUC.** El que imprime `train_model.py` sale de un solo split 80/20
 (con 500 clientes, 100 de prueba y unos 15 positivos): tiene una desviacion de
 unos 0.06 y dio 0.73, 0.85 y 0.93 en tres corridas con datos distintos. Ninguno
 de esos numeros es informativo por si solo; no deben citarse sin intervalo.
+
+### Etiquetas de impago: entradas y configuraciones sin guarda
+
+Registrado el 2026-10-13 con `experimentos/limites_etiquetas.py --parte bordes`
+(configuracion del repo, entradas sinteticas con las formas de las features reales).
+Ninguno afecta al pipeline con datos normales; son casos en los que el modulo no
+falla con un mensaje claro o no avisa de una etiqueta inservible.
+
+| Caso | Que pasa hoy | Guarda propuesta |
+|---|---|---|
+| 0 clientes | `IndexError: index -1 is out of bounds` (el CLI lo evita al revisar `features.empty`, la funcion pura no) | `ValueError` explicito en `estandarizar_variables` |
+| Tasa objetivo muy baja con pocos clientes (`1e-6` o `0.001`, 500 clientes) | 0 positivos, sin aviso; `train_model.py` fallaria despues al estratificar | Que `generar_y_guardar` falle si no hay positivos ni negativos, o avise por debajo de un minimo |
+| Tasa objetivo casi 1 (`0.999999`) | 500 de 500 positivos, sin aviso | La misma guarda |
+| Coeficiente `NaN` o infinito en el YAML | `ValueError: no se pudo acotar b0`, mensaje que no senala el coeficiente | Validar que sean finitos en `cargar_config` |
+| Semilla negativa | `ValueError: expected non-negative integer` de NumPy | Validar `semilla >= 0` en `cargar_config` |
+| 5 % de infinitos en `capacidad_ahorro` | Mismo `no se pudo acotar b0` (con 1 solo infinito, la winsorizacion lo absorbe y el resultado es normal) | Rechazar valores no finitos antes de winsorizar |
+
+Lo que resistio sin cambios: 1, 2 y 10 clientes (generan, aunque sin sentido
+estadistico), columnas constantes y nadie con producto (quedan en 0, sin dividir
+entre 0), un ratio de `1e12`, `NaN` en `ratio_endeudamiento` (se trata como "sin
+prestamo", por diseno), ids repetidos y columnas faltantes (errores claros),
+coeficientes multiplicados por 50 (`b0` = -80, tasa exacta), todos los coeficientes en 0,
+sin choques y con choques casi seguros, horizontes de 1 y de 120 meses, winsorizar en
+(0, 1) y en (0.49, 0.51), y tasas objetivo de 0.05 a 0.95. En todas la probabilidad media
+coincide con la tasa objetivo (a 6 decimales). Escala: 50,000 clientes en 0.03 s y 500,000
+en 0.30 s, con un pico de 320 MB; la etiqueta no es el cuello de botella.
+
+**Posible fix:** las seis guardas de arriba, con una prueba cada una. No se aplicaron:
+cambian codigo del pipeline y quedan para aprobacion.
 
 ### test_model.py no corre en macOS sin libomp
 
