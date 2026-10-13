@@ -25,6 +25,9 @@ config/etiquetas_impago.yaml):
       magnitudes.
   E5  ablacion: el mismo CV sin las 3 variables observadas. Es una metrica de
       cuanta senal queda en las demas, no una prueba.
+  E6  ablacion estricta (agregada DESPUES de ver E5, no estaba en el diseno
+      original): ademas quita el ingreso y el gasto, de los que se derivan
+      capacidad_ahorro (ingreso - gasto) y ratio_endeudamiento (deuda / ingreso).
 
 Solo lee Gold y la auditoria; no escribe modelos ni capas. Requiere XGBoost: en
 macOS sin libomp (brew install libomp) no corre. Uso, tras correr el pipeline:
@@ -63,6 +66,11 @@ from src.gold.etiquetas_impago import (  # noqa: E402
 from src.gold.risk_features import cargar_features, preparar_para_modelo  # noqa: E402
 
 SEMILLA = 42
+DERIVADAS_DE_LAS_3 = [
+    "ingreso_mensual_promedio",
+    "gasto_mensual_total",
+    "gasto_promedio_3_meses",
+]
 
 
 def nuevo_modelo(y_entrenamiento: pd.Series) -> XGBClassifier:
@@ -136,7 +144,7 @@ def main():
         raise RuntimeError("faltan etiquetas o auditoria para algunos clientes")
 
     n, positivos = len(y), int(y.sum())
-    fecha = etiquetas["fecha_observacion"].iloc[0]
+    fecha = pd.Timestamp(etiquetas["fecha_observacion"].iloc[0]).date()
     print(
         f"RESULT configuracion: {n} clientes, {positivos} positivos ({positivos / n:.3f}), "
         f"tasa objetivo {cfg.tasa_objetivo}, semilla {cfg.semilla}, horizonte "
@@ -197,6 +205,16 @@ def main():
     informar_cv(
         "E5 ablacion sin las 3 variables",
         x[columnas_ablacion],
+        y,
+        args.pliegues,
+        args.repeticiones,
+    )
+
+    # E6. Ablacion estricta: tambien sin ingreso ni gasto
+    columnas_estricta = [c for c in columnas_ablacion if c not in DERIVADAS_DE_LAS_3]
+    informar_cv(
+        "E6 ablacion estricta (sin las 3, ingreso ni gasto)",
+        x[columnas_estricta],
         y,
         args.pliegues,
         args.repeticiones,
