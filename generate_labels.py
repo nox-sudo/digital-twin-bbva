@@ -45,7 +45,12 @@ from src.gold.etiquetas_gold import (  # noqa: E402
     escribir_etiquetas,
     verificar_esquema_gold,
 )
-from src.gold.etiquetas_impago import cargar_config, generar_etiquetas  # noqa: E402
+from src.gold.etiquetas_impago import (  # noqa: E402
+    MIN_POSITIVOS_AVISO,
+    cargar_config,
+    generar_etiquetas,
+    verificar_clases,
+)
 from src.gold.risk_features import cargar_features  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -79,12 +84,21 @@ def generar_y_guardar(gold: str, config: str, auditoria_out: str):
 
     tabla, auditoria, resultado = generar_etiquetas(features, cfg, fecha_observacion)
 
+    # Antes de escribir nada: una etiqueta de una sola clase no se deja en Gold.
+    positivos = int(tabla["impago_posterior"].sum())
+    verificar_clases(positivos, len(tabla))
+    if positivos < MIN_POSITIVOS_AVISO:
+        logger.warning(
+            "Solo %d positivos: se puede entrenar, pero el AUC con tan pocos casos "
+            "oscila demasiado para compararlo (ver docs/technical-debt.md).",
+            positivos,
+        )
+
     escribir_etiquetas(tabla, gold)
     escribir_auditoria(auditoria, auditoria_out)
     verificar_esquema_gold(gold)
 
     n = len(tabla)
-    positivos = int(tabla["impago_posterior"].sum())
     logger.info(
         "Etiquetas: %d clientes, %d con impago en los %d meses posteriores a %s "
         "(%.1f%%; tasa objetivo %.1f%%, semilla %d, b0 calibrado %.3f)",

@@ -48,6 +48,7 @@ feature store y la escritura de gold_etiquetas_impago estan en generate_labels.p
 from __future__ import annotations
 
 import datetime as dt
+import math
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -70,6 +71,13 @@ SIN_PRODUCTO_ES_CERO = ["ratio_endeudamiento", "uso_linea_credito"]
 # Columnas del proceso latente: no pueden aparecer en ninguna tabla de Gold ni en
 # la matriz con la que se entrena el modelo.
 COLUMNAS_LATENTES = ["z", "choque", "logit", "p"]
+
+# Una etiqueta con menos de MIN_POR_CLASE clientes en alguna clase no sirve para
+# entrenar ni evaluar (el split estratificado y la validacion cruzada la rechazan).
+# Por debajo de MIN_POSITIVOS_AVISO se puede entrenar, pero el AUC no significa
+# nada (ver docs/technical-debt.md, "AUC contra el tamano de la muestra").
+MIN_POR_CLASE = 2
+MIN_POSITIVOS_AVISO = 30
 
 
 @dataclass(frozen=True)
@@ -115,6 +123,20 @@ def cargar_config(ruta: str | Path = "config/etiquetas_impago.yaml") -> ConfigEt
     except KeyError as faltante:
         raise ValueError(f"{ruta}: falta la llave {faltante}") from None
 
+    if cfg.semilla < 0:
+        raise ValueError(f"{ruta}: semilla debe ser un entero >= 0")
+    coeficientes = {
+        "ratio_endeudamiento": cfg.b_ratio_endeudamiento,
+        "uso_linea_credito": cfg.b_uso_linea_credito,
+        "capacidad_ahorro": cfg.b_capacidad_ahorro,
+        "rasgo_oculto": cfg.b_rasgo_oculto,
+        "choque": cfg.b_choque,
+    }
+    for nombre, valor in coeficientes.items():
+        if not math.isfinite(valor):
+            raise ValueError(
+                f"{ruta}: el coeficiente {nombre} debe ser un numero finito, no {valor}"
+            )
     if cfg.horizonte_meses < 1:
         raise ValueError(f"{ruta}: horizonte_meses debe ser >= 1")
     if not 0.0 < cfg.tasa_objetivo < 1.0:
@@ -147,6 +169,8 @@ def estandarizar_variables(
     faltan = [c for c in VARIABLES_OBSERVADAS if c not in features.columns]
     if faltan:
         raise ValueError(f"el feature store no tiene las columnas {faltan}")
+    if features.empty:
+        raise ValueError("el feature store no tiene clientes")
 
     datos = features[VARIABLES_OBSERVADAS].astype(float).copy()
     for col in SIN_PRODUCTO_ES_CERO:
@@ -154,6 +178,11 @@ def estandarizar_variables(
     if datos.isna().any().any():
         malas = datos.columns[datos.isna().any()].tolist()
         raise ValueError(f"valores faltantes inesperados en {malas}")
+    # Antes de winsorizar: un infinito aislado lo absorberia el recorte y pasaria
+    # inadvertido, y varios romperian los percentiles con un error confuso.
+    infinitos = datos.columns[np.isinf(datos).any()].tolist()
+    if infinitos:
+        raise ValueError(f"valores infinitos en {infinitos}")
 
     for col in datos.columns:
         bajo, alto = np.percentile(
@@ -269,6 +298,20 @@ def construir_auditoria(resultado: ResultadoSimulacion) -> pd.DataFrame:
     """z, choque, logit y p por cliente, para auditar la simulacion. Va a
     data/auditoria/, nunca a Gold."""
     return resultado.proceso[COLUMNAS_LATENTES].reset_index()
+
+
+def verificar_clases(positivos: int, total: int) -> None:
+    """Falla si la etiqueta no tiene al menos MIN_POR_CLASE clientes de cada clase.
+    Una tasa objetivo muy baja con pocos clientes deja 0 positivos, y una casi 1
+    deja 0 negativos: ninguna de las dos sirve para entrenar, y detectarlo aqui
+    evita escribir en Gold una tabla inservible."""
+    negativos = total - positivos
+    if min(positivos, negativos) < MIN_POR_CLASE:
+        raise ValueError(
+            f"la etiqueta quedo con {positivos} positivos y {negativos} negativos de "
+            f"{total} clientes; hacen falta al menos {MIN_POR_CLASE} de cada clase. "
+            "Ajusta tasa_objetivo en config/etiquetas_impago.yaml o usa mas clientes."
+        )
 
 
 def verificar_sin_latentes(columnas, donde: str) -> None:

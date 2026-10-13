@@ -40,6 +40,7 @@ from src.gold.etiquetas_impago import (  # noqa: E402
     factor_atenuacion,
     generar_etiquetas,
     simular_evento,
+    verificar_clases,
     verificar_sin_latentes,
 )
 from src.gold.risk_features import (  # noqa: E402
@@ -124,6 +125,27 @@ def test_la_configuracion_rechaza_valores_fuera_de_rango(tmp_path, cambio, mensa
         cargar_config(ruta)
 
 
+def _config_con(tmp_path, original: str, nuevo: str):
+    texto = CONFIG_REPO.read_text(encoding="utf-8")
+    assert original in texto, f"el YAML del repo ya no contiene {original!r}"
+    ruta = tmp_path / "config.yaml"
+    ruta.write_text(texto.replace(original, nuevo, 1), encoding="utf-8")
+    return ruta
+
+
+def test_la_configuracion_rechaza_una_semilla_negativa(tmp_path):
+    ruta = _config_con(tmp_path, "semilla: 42", "semilla: -1")
+    with pytest.raises(ValueError, match="semilla"):
+        cargar_config(ruta)
+
+
+@pytest.mark.parametrize("valor", [".nan", ".inf", "-.inf"])
+def test_la_configuracion_rechaza_coeficientes_no_finitos(tmp_path, valor):
+    ruta = _config_con(tmp_path, "choque: 1.0", f"choque: {valor}")
+    with pytest.raises(ValueError, match="coeficiente choque.*finito"):
+        cargar_config(ruta)
+
+
 def test_la_configuracion_sin_una_llave_falla_con_su_nombre(tmp_path):
     texto = CONFIG_REPO.read_text(encoding="utf-8").replace(
         "tasa_objetivo", "otra_cosa"
@@ -179,6 +201,22 @@ def test_un_faltante_en_capacidad_de_ahorro_es_un_error(features_5k, cfg):
         estandarizar_variables(roto, cfg.winsor_inferior, cfg.winsor_superior)
 
 
+def test_sin_clientes_es_un_error_claro(features_5k, cfg):
+    with pytest.raises(ValueError, match="no tiene clientes"):
+        estandarizar_variables(
+            features_5k.iloc[0:0], cfg.winsor_inferior, cfg.winsor_superior
+        )
+
+
+@pytest.mark.parametrize("cuantos", [1, 250])
+def test_un_valor_infinito_es_un_error_aunque_sea_uno_solo(features_5k, cfg, cuantos):
+    # Con uno solo, la winsorizacion lo recortaria y pasaria inadvertido.
+    roto = features_5k.copy()
+    roto.iloc[:cuantos, roto.columns.get_loc("capacidad_ahorro")] = np.inf
+    with pytest.raises(ValueError, match="infinitos.*capacidad_ahorro"):
+        estandarizar_variables(roto, cfg.winsor_inferior, cfg.winsor_superior)
+
+
 # --- Calibracion y tasa ------------------------------------------------------
 
 
@@ -200,6 +238,19 @@ def test_la_tasa_realizada_cae_dentro_de_la_tolerancia(simulacion_5k, cfg):
 
 
 # --- Determinismo ------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "positivos, total", [(0, 500), (1, 500), (499, 500), (500, 500)]
+)
+def test_una_etiqueta_con_una_clase_casi_vacia_se_rechaza(positivos, total):
+    with pytest.raises(ValueError, match=f"{positivos} positivos"):
+        verificar_clases(positivos, total)
+
+
+@pytest.mark.parametrize("positivos, total", [(2, 500), (250, 500), (498, 500)])
+def test_una_etiqueta_con_dos_o_mas_de_cada_clase_se_acepta(positivos, total):
+    verificar_clases(positivos, total)
 
 
 def test_misma_semilla_produce_las_mismas_etiquetas(features_5k, cfg):
