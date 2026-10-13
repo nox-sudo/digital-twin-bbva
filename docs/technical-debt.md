@@ -4,7 +4,7 @@ Registro de gaps conocidos que no bloquean el estado actual del pipeline,
 pero que un futuro colaborador (o evaluador) deberia poder encontrar aca,
 sin tener que preguntar directamente.
 
-Ultima verificacion: 2026-10-13 (rama docs/evaluacion-etiquetas-limites)
+Ultima verificacion: 2026-10-13 (rama fix/guardas-etiquetas)
 
 ## Abiertos
 
@@ -13,9 +13,8 @@ Ultima verificacion: 2026-10-13 (rama docs/evaluacion-etiquetas-limites)
 **Estado:** el diseno de las etiquetas cambio, esta implementado y probado, y se
 evaluo con XGBoost en 500 y en 5,000 clientes (2026-10-13, resultados abajo). La
 evaluacion corrio en el worker Linux de Docker, no en macOS, porque `libomp` sigue
-sin instalarse en la maquina de desarrollo. Quedan abiertas las guardas de bordes
-descritas en la entrada "Etiquetas de impago: entradas y configuraciones sin
-guarda".
+sin instalarse en la maquina de desarrollo. Los bordes que encontraron las pruebas de
+limites ya tienen guarda (ver "Resueltos").
 
 **Por que cambio.** La etiqueta anterior (`generate_labels.py` con la regla "al
 menos 2 de 3 condiciones" mas un XOR de ruido de 8 %) era una funcion de 3
@@ -185,35 +184,6 @@ validacion cruzada.
 unos 0.06 y dio 0.73, 0.85 y 0.93 en tres corridas con datos distintos. Ninguno
 de esos numeros es informativo por si solo; no deben citarse sin intervalo.
 
-### Etiquetas de impago: entradas y configuraciones sin guarda
-
-Registrado el 2026-10-13 con `experimentos/limites_etiquetas.py --parte bordes`
-(configuracion del repo, entradas sinteticas con las formas de las features reales).
-Ninguno afecta al pipeline con datos normales; son casos en los que el modulo no
-falla con un mensaje claro o no avisa de una etiqueta inservible.
-
-| Caso | Que pasa hoy | Guarda propuesta |
-|---|---|---|
-| 0 clientes | `IndexError: index -1 is out of bounds` (el CLI lo evita al revisar `features.empty`, la funcion pura no) | `ValueError` explicito en `estandarizar_variables` |
-| Tasa objetivo muy baja con pocos clientes (`1e-6` o `0.001`, 500 clientes) | 0 positivos, sin aviso; `train_model.py` fallaria despues al estratificar | Que `generar_y_guardar` falle si no hay positivos ni negativos, o avise por debajo de un minimo |
-| Tasa objetivo casi 1 (`0.999999`) | 500 de 500 positivos, sin aviso | La misma guarda |
-| Coeficiente `NaN` o infinito en el YAML | `ValueError: no se pudo acotar b0`, mensaje que no senala el coeficiente | Validar que sean finitos en `cargar_config` |
-| Semilla negativa | `ValueError: expected non-negative integer` de NumPy | Validar `semilla >= 0` en `cargar_config` |
-| 5 % de infinitos en `capacidad_ahorro` | Mismo `no se pudo acotar b0` (con 1 solo infinito, la winsorizacion lo absorbe y el resultado es normal) | Rechazar valores no finitos antes de winsorizar |
-
-Lo que resistio sin cambios: 1, 2 y 10 clientes (generan, aunque sin sentido
-estadistico), columnas constantes y nadie con producto (quedan en 0, sin dividir
-entre 0), un ratio de `1e12`, `NaN` en `ratio_endeudamiento` (se trata como "sin
-prestamo", por diseno), ids repetidos y columnas faltantes (errores claros),
-coeficientes multiplicados por 50 (`b0` = -80, tasa exacta), todos los coeficientes en 0,
-sin choques y con choques casi seguros, horizontes de 1 y de 120 meses, winsorizar en
-(0, 1) y en (0.49, 0.51), y tasas objetivo de 0.05 a 0.95. En todas la probabilidad media
-coincide con la tasa objetivo (a 6 decimales). Escala: 50,000 clientes en 0.03 s y 500,000
-en 0.30 s, con un pico de 320 MB; la etiqueta no es el cuello de botella.
-
-**Posible fix:** las seis guardas de arriba, con una prueba cada una. No se aplicaron:
-cambian codigo del pipeline y quedan para aprobacion.
-
 ### test_model.py no corre en macOS sin libomp
 
 **Que pasa:** `tests/test_model.py` importa XGBoost, que en macOS necesita la
@@ -277,6 +247,36 @@ columnNameOfCorruptRecord, para conservar la linea original en
 _corrupt_record y registrarla como incidencia estructural.
 
 ## Resueltos
+
+### Etiquetas de impago: entradas y configuraciones sin guarda
+
+Registrado el 2026-10-13 con `experimentos/limites_etiquetas.py --parte bordes`
+(configuracion del repo, entradas sinteticas con las formas de las features reales).
+Ninguno afectaba al pipeline con datos normales; eran casos en los que el modulo no
+fallaba con un mensaje claro o no avisaba de una etiqueta inservible.
+
+Resuelto en `fix/guardas-etiquetas`, una guarda y al menos una prueba por caso:
+
+| Caso | Antes | Ahora |
+|---|---|---|
+| 0 clientes | `IndexError` crudo | `ValueError: el feature store no tiene clientes` |
+| Tasa objetivo extrema con pocos clientes (`1e-6`, `0.999999`) | 0 positivos, o todos, escritos en Gold sin aviso | `generate_labels.py` falla antes de escribir si alguna clase tiene menos de 2 clientes |
+| Menos de 30 positivos | sin aviso | Advertencia en el log: se puede entrenar, pero el AUC oscila demasiado |
+| Coeficiente `NaN` o infinito en el YAML | `no se pudo acotar b0`, sin senalar el coeficiente | `cargar_config` nombra el coeficiente y pide un numero finito |
+| Semilla negativa | error de NumPy | `cargar_config` pide una semilla >= 0 |
+| Infinitos en una feature | uno solo se absorbia en silencio; varios daban `no se pudo acotar b0` | `ValueError: valores infinitos en [...]`, antes de winsorizar |
+
+Verificado con mutaciones: al revertir cada guarda, falla la prueba correspondiente.
+
+Lo que ya resistia sin cambios: 1, 2 y 10 clientes (generan, aunque sin sentido
+estadistico), columnas constantes y nadie con producto (quedan en 0, sin dividir
+entre 0), un ratio de `1e12`, `NaN` en `ratio_endeudamiento` (se trata como "sin
+prestamo", por diseno), ids repetidos y columnas faltantes (errores claros),
+coeficientes multiplicados por 50 (`b0` = -80, tasa exacta), todos los coeficientes en 0,
+sin choques y con choques casi seguros, horizontes de 1 y de 120 meses, winsorizar en
+(0, 1) y en (0.49, 0.51), y tasas objetivo de 0.05 a 0.95. En todas la probabilidad media
+coincide con la tasa objetivo (a 6 decimales). Escala: 50,000 clientes en 0.03 s y 500,000
+en 0.30 s, con un pico de 320 MB; la etiqueta no es el cuello de botella.
 
 ### pytest fuera del venv fallaba en las pruebas de Spark
 
