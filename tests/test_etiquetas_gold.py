@@ -90,6 +90,32 @@ def _correr(gold, tmp_path, monkeypatch):
     return auditoria
 
 
+def _correr_con_tasa(gold, tmp_path, monkeypatch, tasa: float):
+    config = tmp_path / "config_tasa.yaml"
+    config.write_text(
+        CONFIG.read_text(encoding="utf-8").replace(
+            "tasa_objetivo: 0.15", f"tasa_objetivo: {tasa}", 1
+        ),
+        encoding="utf-8",
+    )
+    auditoria = tmp_path / "auditoria" / "etiquetas_latentes.parquet"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "generate_labels.py",
+            "--gold",
+            gold,
+            "--config",
+            str(config),
+            "--auditoria-out",
+            str(auditoria),
+        ],
+    )
+    generate_labels.main()
+    return auditoria
+
+
 def _tablas(gold):
     con = duckdb.connect(gold, read_only=True)
     try:
@@ -205,3 +231,31 @@ def test_escribir_auditoria_crea_la_carpeta(tmp_path):
 
     assert ruta.exists()
     pd.testing.assert_frame_equal(pd.read_parquet(ruta), auditoria)
+
+
+@pytest.mark.parametrize("tasa", [0.000001, 0.999999])
+def test_una_etiqueta_de_una_sola_clase_no_se_escribe_en_gold(
+    gold, tmp_path, monkeypatch, tasa
+):
+    with pytest.raises(ValueError, match="hacen falta al menos"):
+        _correr_con_tasa(gold, tmp_path, monkeypatch, tasa)
+
+    assert TABLA_ETIQUETAS not in _tablas(gold)
+    assert not (tmp_path / "auditoria").exists()
+
+
+def test_pocos_positivos_avisan_pero_escriben(gold, tmp_path, monkeypatch, caplog):
+    with caplog.at_level("WARNING"):
+        _correr_con_tasa(gold, tmp_path, monkeypatch, 0.02)
+
+    assert TABLA_ETIQUETAS in _tablas(gold)
+    assert any(
+        "positivos" in r.message and "oscila" in r.message for r in caplog.records
+    )
+
+
+def test_con_suficientes_positivos_no_avisa(gold, tmp_path, monkeypatch, caplog):
+    with caplog.at_level("WARNING"):
+        _correr(gold, tmp_path, monkeypatch)
+
+    assert not any("oscila" in r.message for r in caplog.records)
