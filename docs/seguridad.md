@@ -143,7 +143,11 @@ Se revisaron las 34 entradas del historial en todas las ramas, incluida
 | Cuasi-identificadores en Silver: fecha de nacimiento, sexo y codigo postal juntos pueden reidentificar a una persona aun sin nombre ni CURP | La edad y la region son variables del modelo de riesgo y del analisis | Gold (KPIs y feature store) expone la edad, no la fecha exacta, y no incluye sexo ni codigo postal; para publicar datos fuera del equipo, generalizar a rangos de edad |
 | El socket de Docker montado en Airflow equivale a control total del Docker del host | Es el mecanismo de DockerOperator para lanzar el worker | Uso local; puertos solo en 127.0.0.1 |
 | El worker corre como root dentro del contenedor | Ver `docs/technical-debt.md` | Contenedor efimero, sin puertos |
-| Imagenes `minio/minio:latest` y `minio/mc:latest` sin version fija | Pendiente de fijar | Registrado en `docs/technical-debt.md` |
+
+Las imagenes de MinIO (`minio/minio`, `minio/mc`) y la base del worker ya no
+son un riesgo aceptado: desde el 2026-10-16 estan fijadas por digest en
+`docker-compose.yml` y el `Dockerfile` (detalle en `docs/technical-debt.md`,
+"Imagenes sin version fija").
 
 ## Repositorio en GitHub
 
