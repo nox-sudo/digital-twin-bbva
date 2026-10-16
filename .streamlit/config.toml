@@ -1,0 +1,14 @@
+# Tema del dashboard (dashboard/app.py). Superficie clara y un solo color
+# de acento; los colores de las graficas viven en dashboard/comun.py.
+[theme]
+base = "light"
+primaryColor = "#1c5cab"
+backgroundColor = "#fcfcfb"
+secondaryBackgroundColor = "#f0efec"
+textColor = "#1f1f1d"
+
+[browser]
+gatherUsageStats = false
+
+[server]
+headless = true

@@ -44,7 +44,7 @@ flowchart LR
     FS --> E[Modelo de riesgo<br/>XGBoost + SHAP]
     E -->|probabilidad_impago| D
     D --> F[Asistente RAG<br/>pendiente]
-    D --> G[Dashboards<br/>pendiente]
+    D --> G[Dashboard<br/>Streamlit]
 
     H[Apache Airflow] -.orquesta.-> B
     H -.orquesta.-> C
@@ -93,6 +93,7 @@ digital-twin-bbva/
 │   ├── business_rules.yaml       # Reglas de calidad de Silver, declarativas
 │   ├── politica_pii.yaml         # Qué datos personales se protegen en Silver, y cómo
 │   ├── kpi_catalog.yaml          # Metadata de los 12 KPIs de Gold
+│   ├── dashboard.yaml            # Rutas de lectura y bandas de riesgo del dashboard
 │   └── etiquetas_impago.yaml     # Parámetros del modelo latente de la etiqueta de impago (pre-registrados)
 ├── src/
 │   ├── common/
@@ -113,10 +114,16 @@ digital-twin-bbva/
 │   └── gold/
 │       ├── kpi_definitions.py    # Lógica de cálculo de cada KPI
 │       ├── risk_features.py      # Feature store: construir, persistir y leer features
+│       ├── movimientos.py        # gold_movimientos_mensuales: transacciones por cliente y mes
 │       ├── etiquetas_impago.py   # Modelo latente de la etiqueta de impago (módulo puro)
 │       └── etiquetas_gold.py     # Lectura/escritura de gold_etiquetas_impago y verificación del esquema
 ├── dags/
 │   └── gemelo_pipeline_dag.py    # DAG de Airflow (DockerOperator)
+├── dashboard/
+│   ├── app.py                    # Entrada de Streamlit y navegación
+│   ├── datos.py                  # Consultas de solo lectura a Gold y a los logs (sin Streamlit)
+│   ├── comun.py                  # Caché, formato y paleta compartidos
+│   └── paginas/                  # portafolio.py, cliente.py, observabilidad.py
 ├── tests/
 │   ├── conftest.py
 │   ├── test_validation.py        # Pruebas del motor de Silver
@@ -124,6 +131,8 @@ digital-twin-bbva/
 │   ├── test_features.py          # Persistencia y preparación del feature store
 │   ├── test_predict_risk.py      # Escritura de probabilidad_impago en Gold y ROLLBACK ante fallos
 │   ├── test_silver_rollback.py   # Reversión de una corrida fallida de Silver
+│   ├── test_movimientos.py       # Agregación mensual de Gold
+│   ├── test_dashboard_datos.py   # Consultas del dashboard y lectura de logs
 │   ├── test_sesiones.py          # Reproducibilidad y reuso de sesiones de datos
 │   ├── test_pii.py               # Identificadores, HMAC Spark == Python, política de PII
 │   ├── test_landing.py           # Landing zone (S3 simulado) e ingesta incremental
@@ -220,6 +229,14 @@ Dos reportes, para preguntas distintas:
 | `pipeline_summary.py` | ¿Cuántas filas hay en cada capa en la última corrida? (HTML) | `uv run python pipeline_summary.py` |
 | `quality_report.py` | ¿Qué se rechazó, por qué regla, y cómo cambia entre corridas? | `uv run python main.py calidad` |
 
+**Dashboard.** Tres vistas sobre Gold: portafolio (dónde se concentra el riesgo y quién revisar), cliente (perfil, flujo de efectivo mes a mes y a dónde se va el dinero) y observabilidad (última corrida por capa, calidad en Silver y coherencia entre las tablas de Gold). Solo lee: abre DuckDB en modo solo lectura y los logs de `data/logs/`, sin Spark ni servicios de Docker. Streamlit vive en su propio grupo de dependencias, así que la imagen del worker no lo instala:
+
+```bash
+uv run --group dashboard streamlit run dashboard/app.py
+```
+
+Las bandas de riesgo (bajo, medio, alto) se configuran en `config/dashboard.yaml`.
+
 
 ---
 
@@ -237,7 +254,7 @@ El workflow de GitHub Actions (`.github/workflows/ci.yml`) corre en cada Pull Re
 |---|---|
 | `lint` | flake8, black y escaneo de secretos y de archivos de datos versionados (`detect-secrets`) |
 | `docker-compose-validate` | Sintaxis de `docker-compose.yml` con un `.env` generado por `setup.sh`, y shellcheck de `setup.sh`/`demo.sh` |
-| `unit-tests` | 147 pruebas (pytest): motor de validación, CURP/RFC y PII, sesiones, landing zone, registro de calidad, feature store, modelo, CLI y respaldo/restauración de `demo.sh` |
+| `unit-tests` | 155 pruebas (pytest): motor de validación, CURP/RFC y PII, sesiones, landing zone, registro de calidad, feature store, modelo, CLI y respaldo/restauración de `demo.sh` |
 | `pipeline-smoke-test` | Pipeline completo Bronze → Silver → Gold → modelo de riesgo con volumen reducido (100 clientes, 2 meses), parametrizable vía `workflow_dispatch`; verifica la reproducibilidad de la sesión, la ingesta incremental de Bronze, Silver sin cuarentena inesperada ni PII en claro, que una corrida fallida de Silver se revierta a la anterior, el registro de calidad, los 12 KPIs, el feature store, y que `probabilidad_impago` tenga valor en [0, 1] para todos los clientes |
 
 ---
@@ -282,7 +299,7 @@ Catálogo de 12 KPIs en 5 categorías (ingresos, gastos, ahorro y liquidez, ries
 - [x] Arranque reproducible con un comando en cualquier máquina con Docker (`demo.sh`)
 - [ ] Simulador de escenarios Monte Carlo
 - [ ] Asistente conversacional RAG local (Ollama + Llama 3 + LangChain)
-- [ ] Dashboards (Streamlit; decisión en [docs/arquitectura.md](docs/arquitectura.md#decisiones-de-diseno), construcción pendiente)
+- [x] Dashboard en Streamlit con tres vistas: portafolio, cliente y observabilidad (decisión en [docs/arquitectura.md](docs/arquitectura.md#decisiones-de-diseno))
 
 ---
 

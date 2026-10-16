@@ -432,6 +432,27 @@ jobs:
           print(f'Modelo verificado: probabilidad_impago en {con_valor}/{total} clientes')
           "
 
+      # Las mismas comprobaciones que muestra la vista de observabilidad del
+      # dashboard (dashboard/datos.py), sobre el Gold real del smoke test:
+      # KPIs, feature store, score y movimientos mensuales hablan de los
+      # mismos clientes y de una sola fecha de corte.
+      - name: Verificar coherencia de Gold (consultas del dashboard)
+        run: |
+          uv run python -c "
+          import sys
+          from dashboard import datos
+
+          chequeos = datos.consistencia_gold('data/gold/kpis.duckdb')
+          print(chequeos.to_string(index=False))
+          if not chequeos['ok'].all():
+              sys.exit(1)
+          flujo = datos.flujo_mensual('data/gold/kpis.duckdb')
+          if flujo.empty or (flujo['entradas'] <= 0).any():
+              print('ERROR: gold_movimientos_mensuales sin entradas en algun mes')
+              sys.exit(1)
+          print(f'Movimientos mensuales: {len(flujo)} meses')
+          "
+
       - name: Subir logs como artefacto
         if: always()
         uses: actions/upload-artifact@v4

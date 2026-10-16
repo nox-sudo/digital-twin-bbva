@@ -204,6 +204,22 @@ Sin PII.
 | `fecha_corte` | Silver | Fecha de la ultima transaccion con la que se construyeron las features. Es la fecha de observacion de las etiquetas de impago. Metadata; se excluye al entrenar |
 | `fecha_calculo` | | Metadata; se excluye al entrenar |
 
+## Gold: gold_movimientos_mensuales
+
+Transacciones de Silver agregadas por cliente, mes, tipo y categoria (`src/gold/movimientos.py`),
+escrita por `transform_gold.py` en la misma transaccion que `gold_kpis`. Sin PII. La leen el
+dashboard (flujo mensual y salidas por categoria) y la leeran el simulador y el asistente, sin
+levantar Spark.
+
+| Columna | Descripcion |
+|---|---|
+| `cliente_id` | |
+| `mes` | `AAAA-MM` de la fecha del movimiento |
+| `tipo_transaccion` | `nomina`, `p2p_recibido`, `compra`, `pago_recurrente`, `retiro`, `p2p_enviado` |
+| `categoria` | Categoria de Silver |
+| `monto_total` | Suma de `monto` con el signo de Silver: positivo para entradas, negativo para salidas. El neto de un mes es la suma simple |
+| `n_movimientos` | Numero de transacciones agregadas |
+
 ## Gold: gold_etiquetas_impago
 
 Etiqueta de impago por cliente, generada por `generate_labels.py` como un evento posterior a las
