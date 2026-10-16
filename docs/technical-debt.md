@@ -225,6 +225,28 @@ casi no deberia cambiar), o calibrar despues (`CalibratedClassifierCV`, isotonic
 sobre las probabilidades fuera de pliegue. Cambia un hiperparametro fijado el
 2026-10-09, asi que la evaluacion se vuelve a correr y se reporta junto a la actual.
 
+### El PSI reacciona tarde a una deriva reciente
+
+**Que pasa:** encontrado al construir el escenario de deriva del generador
+(2026-10-16). Casi todas las features de `gold_features_cliente` promedian
+todo el historial (rejilla cliente x mes completa), asi que un cambio en los
+ultimos meses se diluye en el promedio y el PSI tarda mucho en verlo. Con
+un deterioro de 5 % de ingreso al mes en el 40 % de los clientes, el PSI del
+ingreso promedio seguia en 0.037 (estable) tras 12 entregas, mientras que el
+del gasto de los ultimos 3 meses, la unica feature de ventana reciente,
+llegaba a 0.081 con los mismos datos. Valores aproximados con los CSV, no
+con el pipeline; detalle y parametros en `docs/monitoreo-deriva.md`.
+
+Es una limitacion del detector, no del escenario: una cartera que se
+deteriora mes a mes pasaria meses sin alerta.
+
+**Posible fix:** medir el PSI tambien sobre features de ventana reciente
+(por ejemplo, ingreso, gasto y capacidad de ahorro de los ultimos 3 meses)
+y no solo sobre las del modelo. Se cruza con el rediseno de la ventana de
+features de la etiqueta: si las features del modelo pasan a una ventana
+movil, el mismo PSI reacciona antes. Requiere nuevos KPIs en Gold y una
+referencia nueva (`monitor_drift.py --nueva-referencia`).
+
 ### Las entregas nuevas solo agregan transacciones
 
 **Que pasa:** una entrega mensual (`demo.sh nueva-entrega`) trae un mes
@@ -236,7 +258,11 @@ generador no los produce.
 
 **Posible fix:** en cada mes adicional, agregar algunos clientes nuevos
 (al final, para no alterar los existentes) y recalcular saldo_actual a
-partir de los movimientos del mes.
+partir de los movimientos del mes. Ojo: el generador hoy se niega a
+activar una entrega que cambie cualquier archivo ya entregado
+(`verificar_continuacion` en `src/common/sesiones.py`), y eso incluye
+`clientes.csv` y `cuentas.json`. Si estas entidades pasan a cambiar entre
+entregas, hay que decidir de forma explicita como versionarlas.
 
 ### Corrupcion estructural de archivos no se detecta en Bronze
 

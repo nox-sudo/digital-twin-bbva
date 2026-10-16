@@ -43,14 +43,64 @@ def id_sesion(
     clientes: int,
     meses: int,
     meses_adicionales: int = 0,
+    huella_escenario: str | None = None,
 ) -> str:
     """Id legible y deterministico: los mismos parametros dan el mismo id.
 
     Ejemplos: s42_20260930_500c_12m (sesion base),
               s42_20260930_500c_12m_e2 (la misma, con 2 entregas mensuales mas)
+              s42_20260930_500c_12m_e2_d1a2b3c4d (con escenario de deriva)
     """
     base = f"s{semilla}_{fecha_referencia:%Y%m%d}_{clientes}c_{meses}m"
-    return f"{base}_e{meses_adicionales}" if meses_adicionales else base
+    if meses_adicionales:
+        base = f"{base}_e{meses_adicionales}"
+    return f"{base}_d{huella_escenario}" if huella_escenario else base
+
+
+# Parametros que definen la poblacion y el periodo base de una sesion. Dos
+# sesiones con los mismos son la misma historia, quiza con mas entregas o
+# con otro escenario de deriva.
+PARAMETROS_BASE = ("semilla", "fecha_referencia", "clientes", "meses")
+
+
+def es_continuacion(parametros_activa: dict, parametros_nueva: dict) -> bool:
+    """La nueva sesion continua la historia de la activa: misma base
+    (PARAMETROS_BASE) y al menos las mismas entregas.
+
+    No compara el id ni el escenario de deriva, a proposito: el id lleva la
+    huella del escenario, y si se comparara, pasar del escenario A al B se
+    veria como una sesion distinta y verificar_continuacion no detectaria
+    que reescribe meses ya entregados."""
+    misma_base = all(
+        parametros_activa.get(p) == parametros_nueva.get(p) for p in PARAMETROS_BASE
+    )
+    return misma_base and parametros_nueva.get(
+        "meses_adicionales", 0
+    ) >= parametros_activa.get("meses_adicionales", 0)
+
+
+def verificar_continuacion(
+    manifest_activa: dict | None, manifest_nueva: dict
+) -> list[str]:
+    """Archivos ya entregados que la nueva sesion cambiaria. Vacia si la
+    nueva sesion no continua a la activa (cambiar de sesion esta permitido)
+    o si todo lo entregado sale identico.
+
+    Compara checksums, no la configuracion: detecta un escenario de deriva
+    distinto, pero tambien cualquier cambio del generador que altere un mes
+    ya publicado. Ninguna fuente cambia de forma legitima entre entregas
+    (clientes, cuentas y CETES se anclan a la fecha base), asi que aplica a
+    todos los archivos de la sesion activa."""
+    if manifest_activa is None or not es_continuacion(
+        manifest_activa["parametros"], manifest_nueva["parametros"]
+    ):
+        return []
+    nuevos = manifest_nueva["archivos"]
+    return sorted(
+        nombre
+        for nombre, checksum in manifest_activa["archivos"].items()
+        if nuevos.get(nombre) != checksum
+    )
 
 
 def checksum_archivo(ruta: Path) -> str:

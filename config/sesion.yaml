@@ -22,3 +22,24 @@ fecha_referencia: "2026-09-30"
 # 5000 (~1.2 M transacciones) y 50000 (~11.5 M transacciones).
 clientes: 500
 meses: 12
+
+# Escenario de deriva (src/common/escenario_deriva.py): deterioro gradual
+# de una parte de la cartera en las entregas mensuales (demo.sh
+# nueva-entrega), para que el monitoreo de deriva tenga algo que medir en
+# una instancia larga. Apagado, la sesion sale identica byte a byte. Los
+# meses base nunca cambian. Una vez entregados meses afectados, el
+# escenario no se puede cambiar: el generador se niega (ver
+# docs/monitoreo-deriva.md).
+#
+# Valores calibrados, no realistas: se eligieron probando varias
+# configuraciones hasta que el PSI llegara a "vigilar" en unas 6 entregas,
+# para que el detector tenga algo que detectar en el horizonte de una demo.
+# Con efectos mas suaves (40 %, -5 % de ingreso) el PSI seguia "estable"
+# tras 12 entregas; el porque esta en docs/monitoreo-deriva.md.
+escenario_deriva:
+  activo: false
+  desde_entrega: 1                 # primer mes afectado, contado desde el corte base
+  proporcion_clientes: 0.6         # fraccion de clientes afectados (sorteo con la semilla)
+  caida_ingreso_mensual: 0.10      # el ingreso cae 10 % compuesto por cada mes de escenario
+  aumento_gasto_mensual: 0.08      # el gasto sube 8 % compuesto
+  caida_puntualidad_mensual: 0.05  # la probabilidad de pagar cada deuda baja 5 puntos por mes
