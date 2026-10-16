@@ -5,7 +5,7 @@ DAG que orquesta el pipeline completo: generacion de datos sinteticos
 -> publicacion en la landing zone (MinIO) -> ingesta Bronze incremental
 -> transformacion Silver -> transformacion Gold -> feature store
 (gold_features_cliente) -> etiquetas de riesgo -> entrenamiento del
-modelo -> prediccion de riesgo crediticio.
+modelo -> prediccion de riesgo crediticio -> monitoreo de deriva (PSI).
 
 Cada tarea lanza el contenedor "worker" (definido en docker-compose.yml)
 para hacer el trabajo pesado — Airflow solo decide CUANDO y en que
@@ -170,6 +170,15 @@ with DAG(
         "--model models/risk_model.joblib",
     )
 
+    # Ultimo paso: PSI contra la referencia congelada del modelo base
+    # (docs/monitoreo-deriva.md). Una variable en estado "reentrenar" queda
+    # como alerta en el log; la tarea no falla por deriva.
+    monitorear_deriva = tarea_worker(
+        "monitorear_deriva",
+        "monitor_drift.py --gold data/gold/kpis.duckdb "
+        "--model models/risk_model.joblib --config config/monitoreo_psi.yaml",
+    )
+
     (
         generar_fuentes
         >> publicar_landing
@@ -180,4 +189,5 @@ with DAG(
         >> generar_etiquetas
         >> entrenar_modelo
         >> predict_risk
+        >> monitorear_deriva
     )

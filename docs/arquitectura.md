@@ -41,6 +41,8 @@ hace el computo.
 | Silver | `data/silver/` (Delta) | Datos tipados, deduplicados y validados | Protegida |
 | Gold | `data/gold/kpis.duckdb` | 12 KPIs por cliente y feature store | Sin PII |
 | Modelo | `models/` | Clasificador de riesgo y grafico de importancia SHAP | Sin PII |
+| Referencia de deriva | `models/referencia_psi/` | Linea base congelada del PSI: cortes y proporciones de entrenamiento y copia del modelo base | Sin PII |
+| Deriva de datos | `data/calidad/deriva_psi/` (Parquet) | Historico del PSI por corrida y variable | Sin PII |
 
 ## Tareas del DAG
 
@@ -55,6 +57,7 @@ hace el computo.
 | 7 | `generar_etiquetas` | `generate_labels.py` | Etiqueta de impago como evento posterior (modelo latente): escribe `gold_etiquetas_impago` y la auditoria fuera de Gold |
 | 8 | `entrenar_modelo` | `train_model.py` | Entrena XGBoost con `gold_etiquetas_impago` y genera la importancia SHAP |
 | 9 | `predict_risk` | `predict_risk.py` | Completa `probabilidad_impago` en Gold |
+| 10 | `monitorear_deriva` | `monitor_drift.py` | PSI de cada feature numerica y del score contra la referencia congelada; agrega la corrida a `data/calidad/deriva_psi/` y alerta en el log sin detener el pipeline ([monitoreo-deriva.md](monitoreo-deriva.md)) |
 
 Todos los pasos tambien se pueden correr sin Airflow con el CLI unico:
 `python main.py <paso>` (o `bash demo.sh pipeline` en Docker).
@@ -68,6 +71,7 @@ codigo:
 |---|---|
 | `config/sesion.yaml` | Semilla, fecha de referencia y volumen de los datos |
 | `config/business_rules.yaml` | Reglas de calidad de Silver por entidad |
+| `config/monitoreo_psi.yaml` | Intervalos, epsilon y umbrales (vigilar, reentrenar) del monitoreo de deriva |
 | `config/politica_pii.yaml` | Que datos personales se protegen en Silver, y como |
 | `config/kpi_catalog.yaml` | Metadata de los KPIs de Gold |
 

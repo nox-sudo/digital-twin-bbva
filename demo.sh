@@ -19,10 +19,12 @@
 #   bash demo.sh calidad      reporte de calidad: rechazos por regla, nulos y tendencia
 #   bash demo.sh sesiones     lista las sesiones de datos guardadas en data/sesiones/
 #   bash demo.sh limpiar      borra capas, modelo y volumenes; conserva las sesiones
-#   bash demo.sh limpiar todo igual, pero borra tambien las sesiones
+#                             y la referencia de deriva
+#   bash demo.sh limpiar todo igual, pero borra tambien las sesiones y la referencia
 #   bash demo.sh respaldar [destino]
-#                             copia sesiones, landing zone (MinIO) e historico de
-#                             calidad fuera del repo, con manifiesto SHA-256
+#                             copia sesiones, landing zone (MinIO), historico de
+#                             calidad y referencia de deriva (models/referencia_psi)
+#                             fuera del repo, con manifiesto SHA-256
 #   bash demo.sh restaurar <respaldo>
 #                             verifica el respaldo y lo restaura en data/; luego
 #                             bash demo.sh reconstruye Bronze/Silver/Gold desde ahi
@@ -45,6 +47,11 @@ MAX_FALLOS_SONDEO=3      # consultas seguidas a Airflow que pueden fallar antes 
 # (data/minio) con "bash demo.sh". data/calidad se incluye porque guarda el
 # historico entre corridas (tendencia de incidencias) y no se recalcula.
 DIRS_RESPALDO=(sesiones minio calidad)
+# Bajo models/: la referencia congelada del monitoreo de deriva (cortes,
+# proporciones y copia del modelo base). No se regenera: un modelo
+# reentrenado daria otra linea base. Va al respaldo en models/ y su hash
+# al mismo MANIFIESTO.sha256, con el prefijo models/.
+MODELOS_RESPALDO=(referencia_psi)
 
 info() { printf '\n==> %s\n' "$*"; }
 error() {
@@ -230,6 +237,7 @@ cmd_pipeline() {
         "labels --gold data/gold/kpis.duckdb --config config/etiquetas_impago.yaml --auditoria-out data/auditoria/etiquetas_latentes.parquet"
         "train-model --gold data/gold/kpis.duckdb --model-out models/risk_model.joblib --shap-out models/shap_importancia.png"
         "predict-risk --gold data/gold/kpis.duckdb --model models/risk_model.joblib"
+        "monitor --gold data/gold/kpis.duckdb --model models/risk_model.joblib --config config/monitoreo_psi.yaml"
     )
     local paso
     for paso in "${pasos[@]}"; do
@@ -330,6 +338,37 @@ dirs_presentes() {
     done
 }
 
+# Subconjunto de MODELOS_RESPALDO que existe en models/ (o en $1) y tiene
+# archivos: una carpeta vacia no aporta nada y daria un manifiesto vacio.
+modelos_presentes() {
+    local base="${1:-models}" d
+    for d in "${MODELOS_RESPALDO[@]}"; do
+        if [ -d "${base}/${d}" ] && [ -n "$(find "${base}/${d}" -type f | head -n 1)" ]; then
+            echo "${d}"
+        fi
+    done
+}
+
+# Manifiesto de un respaldo completo: lo de data/ (rutas relativas a $1) y
+# lo de models/ (relativas a $2, con el prefijo models/). Se arma igual para
+# el original y para la copia, asi que ambos se comparan como texto.
+manifiesto_respaldo() {
+    local base_datos="$1" base_modelos="$2" d
+    local datos=() modelos=()
+    while IFS= read -r d; do
+        [ -n "${d}" ] && datos+=("${d}")
+    done < <(dirs_presentes "${base_datos}")
+    while IFS= read -r d; do
+        [ -n "${d}" ] && modelos+=("${d}")
+    done < <(modelos_presentes "${base_modelos}")
+    if [ "${#datos[@]}" -gt 0 ]; then
+        manifiesto_de "${base_datos}" "${datos[@]}"
+    fi
+    if [ "${#modelos[@]}" -gt 0 ]; then
+        manifiesto_de "${base_modelos}" "${modelos[@]}" | sed 's|^\([0-9a-f]*  \)|\1models/|'
+    fi
+}
+
 cmd_respaldar() {
     local destino="${1:-${HOME}/respaldos-gemelo/$(date +%Y-%m-%d_%H%M%S)}"
     local presentes=() d
@@ -357,17 +396,32 @@ cmd_respaldar() {
         MINIO_DETENIDO=1
     fi
 
-    info "Copiando ${presentes[*]} a ${destino}"
+    local modelos=()
+    while IFS= read -r d; do
+        [ -n "${d}" ] && modelos+=("${d}")
+    done < <(modelos_presentes models)
+
+    local que_se_copia="${presentes[*]}"
+    if [ "${#modelos[@]}" -gt 0 ]; then
+        que_se_copia="${que_se_copia} y models/${modelos[*]}"
+    fi
+    info "Copiando ${que_se_copia} a ${destino}"
     local manifiesto_origen manifiesto_copia
-    manifiesto_origen="$(manifiesto_de data "${presentes[@]}")"
+    manifiesto_origen="$(manifiesto_respaldo data models)"
     mkdir -p "${destino}"
     chmod 700 "${destino}"
     for d in "${presentes[@]}"; do
         cp -Rp "data/${d}" "${destino}/${d}"
     done
+    if [ "${#modelos[@]}" -gt 0 ]; then
+        mkdir -p "${destino}/models"
+        for d in "${modelos[@]}"; do
+            cp -Rp "models/${d}" "${destino}/models/${d}"
+        done
+    fi
     reiniciar_minio
 
-    manifiesto_copia="$(manifiesto_de "${destino}" "${presentes[@]}")"
+    manifiesto_copia="$(manifiesto_respaldo "${destino}" "${destino}/models")"
     [ "${manifiesto_origen}" = "${manifiesto_copia}" ] \
         || error "La copia no coincide con el original (SHA-256). Revisa ${destino}."
     printf '%s\n' "${manifiesto_origen}" > "${destino}/MANIFIESTO.sha256"
@@ -391,9 +445,15 @@ cmd_restaurar() {
     done < <(dirs_presentes "${origen}")
     [ "${#presentes[@]}" -gt 0 ] \
         || error "El respaldo no contiene ninguno de ${DIRS_RESPALDO[*]}."
+    # Un respaldo anterior a la referencia de deriva no trae models/: se
+    # restaura igual, solo con lo de data/.
+    local modelos=()
+    while IFS= read -r d; do
+        [ -n "${d}" ] && modelos+=("${d}")
+    done < <(modelos_presentes "${origen}/models")
 
     info "Verificando la integridad del respaldo"
-    [ "$(manifiesto_de "${origen}" "${presentes[@]}")" = "$(cat "${origen}/MANIFIESTO.sha256")" ] \
+    [ "$(manifiesto_respaldo "${origen}" "${origen}/models")" = "$(cat "${origen}/MANIFIESTO.sha256")" ] \
         || error "El respaldo no coincide con su manifiesto (archivos alterados, faltantes o de mas). No se restaura nada."
 
     for d in "${presentes[@]}"; do
@@ -401,6 +461,13 @@ cmd_restaurar() {
             error "data/${d} ya tiene contenido; restaurar no sobrescribe. Corre antes: bash demo.sh limpiar todo"
         fi
     done
+    if [ "${#modelos[@]}" -gt 0 ]; then
+        for d in "${modelos[@]}"; do
+            if [ -n "$(ls -A "models/${d}" 2>/dev/null)" ]; then
+                error "models/${d} ya tiene contenido; restaurar no sobrescribe. Corre antes: bash demo.sh limpiar todo"
+            fi
+        done
+    fi
 
     if [ -f .env ] && compose_disponible; then
         info "Deteniendo el stack (restaurar no se hace con MinIO escribiendo)"
@@ -414,8 +481,16 @@ cmd_restaurar() {
         [ -d "data/${d}" ] && rmdir "data/${d}"
         cp -Rp "${origen}/${d}" "data/${d}"
     done
-    [ "$(manifiesto_de data "${presentes[@]}")" = "$(cat "${origen}/MANIFIESTO.sha256")" ] \
-        || error "Lo restaurado no coincide con el manifiesto. Revisa data/."
+    if [ "${#modelos[@]}" -gt 0 ]; then
+        info "Restaurando models/${modelos[*]}"
+        mkdir -p models
+        for d in "${modelos[@]}"; do
+            [ -d "models/${d}" ] && rmdir "models/${d}"
+            cp -Rp "${origen}/models/${d}" "models/${d}"
+        done
+    fi
+    [ "$(manifiesto_respaldo data models)" = "$(cat "${origen}/MANIFIESTO.sha256")" ] \
+        || error "Lo restaurado no coincide con el manifiesto. Revisa data/ y models/."
 
     echo "Restaurado y verificado con SHA-256."
     echo "Siguiente paso: bash demo.sh  (reconstruye Bronze, Silver, Gold y el modelo desde la landing zone)"
@@ -426,11 +501,15 @@ cmd_restaurar() {
 }
 
 cmd_limpiar() {
-    local alcance="${1:-}" que_se_borra="capas Bronze/Silver/Gold, modelo y volumenes (se conservan las sesiones y el historico de MinIO)"
+    local alcance="${1:-}" que_se_borra="capas Bronze/Silver/Gold, modelo y volumenes (se conservan las sesiones, el historico de MinIO y la referencia de deriva)"
     local filtro="! -name sesiones ! -name minio"
+    # La referencia de deriva (models/referencia_psi) es la linea base del
+    # monitoreo: solo "limpiar todo" la borra.
+    local borrar_referencia=""
     if [ "${alcance}" = "todo" ]; then
-        que_se_borra="todo data/ INCLUIDAS las sesiones y el historico de MinIO, el modelo y los volumenes"
+        que_se_borra="todo data/ INCLUIDAS las sesiones y el historico de MinIO, el modelo, la referencia de deriva y los volumenes"
         filtro=""
+        borrar_referencia="rm -rf /opt/lakehouse/models/referencia_psi"
     fi
     printf 'Esto borra %s. Escribe "si" para continuar: ' "${que_se_borra}"
     local respuesta
@@ -441,7 +520,8 @@ cmd_limpiar() {
     # se borran desde un contenedor para no necesitar sudo en Linux.
     docker compose run --rm --entrypoint sh worker -c \
         "find /opt/lakehouse/data -mindepth 1 -maxdepth 1 ${filtro} -exec rm -rf {} + ;
-         rm -f /opt/lakehouse/models/*.joblib /opt/lakehouse/models/*.png"
+         rm -f /opt/lakehouse/models/*.joblib /opt/lakehouse/models/*.png;
+         ${borrar_referencia}"
     docker compose down -v
     echo "Listo."
 }

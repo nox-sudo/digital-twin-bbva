@@ -462,6 +462,41 @@ jobs:
           grep -q "Probabilidad de saldo negativo" /tmp/simulacion.log
           grep -q "Capacidad hipotecaria" /tmp/simulacion.log
 
+      # Monitoreo de deriva con el XGBoost real: la primera corrida crea la
+      # referencia congelada y da PSI 0 contra si misma; la segunda la
+      # reutiliza sin modificarla y agrega otra corrida al historico.
+      - name: Monitoreo de deriva (PSI)
+        run: |
+          uv run python main.py monitor --gold data/gold/kpis.duckdb \
+            --model models/risk_model.joblib --config config/monitoreo_psi.yaml
+          sha256sum models/referencia_psi/ref_*/referencia.json > /tmp/referencia.sha256
+          uv run python main.py monitor --gold data/gold/kpis.duckdb \
+            --model models/risk_model.joblib --config config/monitoreo_psi.yaml
+          sha256sum -c /tmp/referencia.sha256
+          uv run python -c "
+          import sys
+          import duckdb
+
+          filas = duckdb.sql('''
+              SELECT run_id, COUNT(*) AS variables, MAX(ABS(psi)) AS psi_max,
+                     COUNT(*) FILTER (WHERE tipo = 'score') AS scores
+              FROM read_parquet('data/calidad/deriva_psi/*.parquet')
+              GROUP BY run_id ORDER BY run_id
+          ''').fetchall()
+          print(filas)
+          if len(filas) != 2:
+              print(f'ERROR: se esperaban 2 corridas en el historico, hay {len(filas)}')
+              sys.exit(1)
+          for run_id, variables, psi_max, scores in filas:
+              if scores != 1 or variables < 2:
+                  print(f'ERROR: {run_id} con {variables} variables y {scores} scores')
+                  sys.exit(1)
+              if psi_max > 1e-9:
+                  print(f'ERROR: {run_id} con PSI {psi_max} sobre los mismos datos')
+                  sys.exit(1)
+          print('Monitoreo verificado: 2 corridas, PSI 0 sobre los mismos datos')
+          "
+
       - name: Subir logs como artefacto
         if: always()
         uses: actions/upload-artifact@v4

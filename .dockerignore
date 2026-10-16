@@ -6,6 +6,7 @@ __pycache__
 data/
 models/*.joblib
 models/*.png
+models/referencia_psi/
 *.log
 .env
 .env.*

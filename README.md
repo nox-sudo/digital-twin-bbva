@@ -95,6 +95,7 @@ digital-twin-bbva/
 │   ├── kpi_catalog.yaml          # Metadata de los 12 KPIs de Gold
 │   ├── dashboard.yaml            # Rutas de lectura y bandas de riesgo del dashboard
 │   ├── simulacion.yaml           # Supuestos del simulador de hipoteca
+│   ├── monitoreo_psi.yaml        # Intervalos, epsilon y umbrales del monitoreo de deriva (PSI)
 │   └── etiquetas_impago.yaml     # Parámetros del modelo latente de la etiqueta de impago (pre-registrados)
 ├── src/
 │   ├── common/
@@ -118,6 +119,9 @@ digital-twin-bbva/
 │   │   ├── movimientos.py        # gold_movimientos_mensuales: transacciones por cliente y mes
 │   │   ├── etiquetas_impago.py   # Modelo latente de la etiqueta de impago (módulo puro)
 │   │   └── etiquetas_gold.py     # Lectura/escritura de gold_etiquetas_impago y verificación del esquema
+│   ├── monitoreo/
+│   │   ├── psi.py                # PSI: cortes por deciles, proporciones, epsilon y estados
+│   │   └── referencia.py         # Línea base congelada: crear, archivar y cargar la activa
 │   └── simulacion/
 │       └── montecarlo.py         # Simulador Monte Carlo de hipoteca (módulo puro, sin Spark)
 ├── dags/
@@ -146,12 +150,14 @@ digital-twin-bbva/
 │   ├── test_etiquetas_impago.py  # Modelo latente: determinismo, tasa, esquema, signos, oráculo, atenuación
 │   ├── test_etiquetas_gold.py    # Etiquetas en Gold, auditoría fuera de Gold, generate_labels de punta a punta
 │   ├── test_demo_respaldo.py     # demo.sh respaldar/restaurar: copia idéntica, rechazo de respaldos alterados
+│   ├── test_psi.py               # PSI: distribuciones idénticas, desplazamiento, bins vacíos, cortes reutilizados
 │   └── test_main_cli.py          # Pruebas de enrutamiento del CLI (main.py)
 ├── docs/
 │   ├── arquitectura.md           # Flujo, zonas, DAG y decisiones de diseño
 │   ├── diccionario-datos.md      # Columnas, tipos, reglas y tratamiento de PII
 │   ├── ejecucion-local.md        # Guía para correr el proyecto en otra máquina
 │   ├── seguridad.md              # Secretos, clasificación de datos por capa, auditoría
+│   ├── monitoreo-deriva.md       # PSI: qué mide, línea base congelada, data drift vs concept drift
 │   ├── pruebas-robustez.md       # Las 5 brechas de robustez: qué se probó, resultado y cobertura
 │   └── technical-debt.md         # Deuda técnica conocida
 ├── experimentos/
@@ -168,6 +174,7 @@ digital-twin-bbva/
 ├── generate_labels.py            # Etiqueta de impago como evento posterior (gold_etiquetas_impago)
 ├── train_model.py
 ├── predict_risk.py
+├── monitor_drift.py
 ├── quality_report.py             # Reporte del registro histórico de calidad
 ├── pipeline_summary.py           # Reporte visual HTML: volumen por capa en la última corrida
 ├── Dockerfile                    # Imagen del worker (PySpark + Delta)
@@ -212,11 +219,12 @@ uv run python build_features.py
 uv run python generate_labels.py
 uv run python train_model.py
 uv run python predict_risk.py
+uv run python monitor_drift.py
 ```
 
 También existe `main.py` como punto de entrada único: expone cada paso como
 subcomando (`generate`, `landing`, `bronze`, `silver`, `gold`, `features`, `labels`,
-`train-model`, `predict-risk`, `calidad`), reenviando las mismas opciones al script real. Por ejemplo,
+`train-model`, `predict-risk`, `monitor`, `calidad`), reenviando las mismas opciones al script real. Por ejemplo,
 las primeras dos líneas de arriba son equivalentes a:
 
 ```bash
@@ -266,7 +274,7 @@ El workflow de GitHub Actions (`.github/workflows/ci.yml`) corre en cada Pull Re
 |---|---|
 | `lint` | flake8, black y escaneo de secretos y de archivos de datos versionados (`detect-secrets`) |
 | `docker-compose-validate` | Sintaxis de `docker-compose.yml` con un `.env` generado por `setup.sh`, y shellcheck de `setup.sh`/`demo.sh` |
-| `unit-tests` | 174 pruebas (pytest): motor de validación, CURP/RFC y PII, sesiones, landing zone, registro de calidad, feature store, modelo, CLI y respaldo/restauración de `demo.sh` |
+| `unit-tests` | 197 pruebas (pytest): motor de validación, CURP/RFC y PII, sesiones, landing zone, registro de calidad, feature store, modelo, monitoreo de deriva (PSI), CLI y respaldo/restauración de `demo.sh` |
 | `pipeline-smoke-test` | Pipeline completo Bronze → Silver → Gold → modelo de riesgo con volumen reducido (100 clientes, 2 meses), parametrizable vía `workflow_dispatch`; verifica la reproducibilidad de la sesión, la ingesta incremental de Bronze, Silver sin cuarentena inesperada ni PII en claro, que una corrida fallida de Silver se revierta a la anterior, el registro de calidad, los 12 KPIs, el feature store, y que `probabilidad_impago` tenga valor en [0, 1] para todos los clientes |
 
 ---
@@ -307,9 +315,10 @@ Catálogo de 12 KPIs en 5 categorías (ingresos, gastos, ahorro y liquidez, ries
 - [x] Sesiones de datos reproducibles, con manifest, checksums y reuso
 - [x] Registro histórico de calidad: incidencias por regla, nulos por columna y errores de tipo, sin PII
 - [x] Landing zone en MinIO con entregas inmutables e ingesta incremental en Bronze
-- [x] Respaldo y restauración (`demo.sh respaldar` / `restaurar`) con verificación SHA-256, incluido el histórico de calidad
+- [x] Respaldo y restauración (`demo.sh respaldar` / `restaurar`) con verificación SHA-256, incluidos el histórico de calidad y la referencia de deriva
 - [x] Arranque reproducible con un comando en cualquier máquina con Docker (`demo.sh`)
 - [x] Simulador Monte Carlo de hipoteca: riesgo de déficit con y sin el crédito, enganche y capacidad hipotecaria, en línea de comandos y en el dashboard
+- [x] Monitoreo de deriva de datos con PSI contra una línea base congelada, con histórico en `data/calidad/deriva_psi/` (detalle en [docs/monitoreo-deriva.md](docs/monitoreo-deriva.md))
 - [ ] Asistente conversacional RAG local (Ollama + Llama 3 + LangChain)
 - [x] Dashboard en Streamlit con tres vistas: portafolio, cliente y observabilidad (decisión en [docs/arquitectura.md](docs/arquitectura.md#decisiones-de-diseno))
 

@@ -103,7 +103,11 @@ else:
 
     # --- Duracion entre corridas -----------------------------------------
     st.subheader("Duración por corrida")
-    historico = corridas.dropna(subset=["inicio", "duracion_segundos"])
+    # Solo las capas del lakehouse: el monitoreo de deriva tambien escribe
+    # en data/logs/ y aparece en "Todas las corridas registradas".
+    historico = corridas[corridas["capa"].isin(["bronze", "silver", "gold"])].dropna(
+        subset=["inicio", "duracion_segundos"]
+    )
     grafica = (
         alt.Chart(historico)
         .mark_line(strokeWidth=2, point=alt.OverlayMarkDef(size=60, filled=True))
