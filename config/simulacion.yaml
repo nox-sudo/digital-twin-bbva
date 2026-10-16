@@ -1,0 +1,32 @@
+# config/simulacion.yaml
+#
+# Supuestos del simulador Monte Carlo (src/simulacion/montecarlo.py).
+# Son parametros de un escenario hipotetico, no datos: cada uno se puede
+# cambiar desde el dashboard o la linea de comandos, y estos son solo los
+# valores de partida.
+
+hipoteca:
+  # Supuestos de mercado, no consultados a una fuente: revisar contra las
+  # condiciones vigentes antes de usarlos en una presentacion.
+  tasa_anual: 0.11          # tasa fija anual del credito
+  plazo_anios: 20
+  enganche_pct: 0.10        # fraccion del precio que se paga al contratar
+  gastos_iniciales_pct: 0.05  # escrituracion, avaluo y comisiones, sobre el precio
+
+simulacion:
+  meses: 36                 # horizonte simulado; mas alla, la incertidumbre crece sin informar
+  trayectorias: 5000
+  semilla: 42
+
+# Choque de ingreso: en cada mes, con esta probabilidad, el cliente pierde
+# su ingreso laboral (nomina o depositos) durante un numero de meses entre
+# los dos limites. Es lo que el historial no contiene: 12 meses sin
+# desempleo no significan que no pueda ocurrir.
+choque_ingreso:
+  probabilidad_mensual: 0.01   # ~11 % de que ocurra al menos una vez en un ano
+  duracion_meses: [2, 6]
+
+# Politica para "capacidad hipotecaria": el precio maximo de vivienda con el
+# que la hipoteca no sube la probabilidad de quedar en saldo negativo mas de
+# este incremento sobre la del cliente sin hipoteca (0.05 = 5 puntos).
+incremento_deficit_maximo: 0.05

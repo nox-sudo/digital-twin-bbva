@@ -47,6 +47,7 @@ PASOS = {
     "train-model": "train_model",
     "predict-risk": "predict_risk",
     "calidad": "quality_report",
+    "simulate": "simulate_mortgage",
 }
 
 

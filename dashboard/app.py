@@ -6,6 +6,7 @@ vistas sobre la misma capa Gold:
 
   - Portafolio: vista ejecutiva, donde se concentra el riesgo.
   - Cliente: vista 360 de una persona.
+  - Simulador de hipoteca: escenario Monte Carlo sobre el flujo del cliente.
   - Observabilidad: estado de las corridas y coherencia de Gold.
 
 Solo lee: DuckDB en modo solo lectura y los logs JSON de cada corrida.
@@ -27,6 +28,7 @@ st.set_page_config(page_title="Gemelo Digital Financiero", layout="wide")
 PAGINAS = Path(__file__).resolve().parent / "paginas"
 portafolio = st.Page(PAGINAS / "portafolio.py", title="Portafolio", default=True)
 cliente = st.Page(PAGINAS / "cliente.py", title="Cliente")
+simulador = st.Page(PAGINAS / "simulador.py", title="Simulador de hipoteca")
 observabilidad = st.Page(PAGINAS / "observabilidad.py", title="Observabilidad")
 
 # La tabla de clientes a revisar del portafolio salta a la vista de
@@ -34,7 +36,7 @@ observabilidad = st.Page(PAGINAS / "observabilidad.py", title="Observabilidad")
 st.session_state["pagina_cliente"] = cliente
 
 navegacion = st.navigation(
-    {"Negocio": [portafolio, cliente], "Operación": [observabilidad]}
+    {"Negocio": [portafolio, cliente, simulador], "Operación": [observabilidad]}
 )
 st.sidebar.caption(
     "Gemelo Digital Financiero · Path Data Engineering BBVA × Tecmilenio"

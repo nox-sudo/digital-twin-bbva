@@ -453,6 +453,15 @@ jobs:
           print(f'Movimientos mensuales: {len(flujo)} meses')
           "
 
+      # El simulador corre de punta a punta sobre el Gold real del smoke test
+      # y sus resultados son probabilidades validas.
+      - name: Simulador Monte Carlo de hipoteca
+        run: |
+          uv run python main.py simulate --cliente CLI-000001 --precio 900000 \
+            | tee /tmp/simulacion.log
+          grep -q "Probabilidad de saldo negativo" /tmp/simulacion.log
+          grep -q "Capacidad hipotecaria" /tmp/simulacion.log
+
       - name: Subir logs como artefacto
         if: always()
         uses: actions/upload-artifact@v4
