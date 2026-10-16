@@ -94,6 +94,7 @@ digital-twin-bbva/
 │   ├── politica_pii.yaml         # Qué datos personales se protegen en Silver, y cómo
 │   ├── kpi_catalog.yaml          # Metadata de los 12 KPIs de Gold
 │   ├── dashboard.yaml            # Rutas de lectura y bandas de riesgo del dashboard
+│   ├── simulacion.yaml           # Supuestos del simulador de hipoteca
 │   └── etiquetas_impago.yaml     # Parámetros del modelo latente de la etiqueta de impago (pre-registrados)
 ├── src/
 │   ├── common/
@@ -111,19 +112,21 @@ digital-twin-bbva/
 │   │   └── typing_rules.py       # Tipado específico por entidad
 │   ├── calidad/
 │   │   └── registro.py           # Registro histórico: incidencias, perfil de nulos, errores de tipo
-│   └── gold/
-│       ├── kpi_definitions.py    # Lógica de cálculo de cada KPI
-│       ├── risk_features.py      # Feature store: construir, persistir y leer features
-│       ├── movimientos.py        # gold_movimientos_mensuales: transacciones por cliente y mes
-│       ├── etiquetas_impago.py   # Modelo latente de la etiqueta de impago (módulo puro)
-│       └── etiquetas_gold.py     # Lectura/escritura de gold_etiquetas_impago y verificación del esquema
+│   ├── gold/
+│   │   ├── kpi_definitions.py    # Lógica de cálculo de cada KPI
+│   │   ├── risk_features.py      # Feature store: construir, persistir y leer features
+│   │   ├── movimientos.py        # gold_movimientos_mensuales: transacciones por cliente y mes
+│   │   ├── etiquetas_impago.py   # Modelo latente de la etiqueta de impago (módulo puro)
+│   │   └── etiquetas_gold.py     # Lectura/escritura de gold_etiquetas_impago y verificación del esquema
+│   └── simulacion/
+│       └── montecarlo.py         # Simulador Monte Carlo de hipoteca (módulo puro, sin Spark)
 ├── dags/
 │   └── gemelo_pipeline_dag.py    # DAG de Airflow (DockerOperator)
 ├── dashboard/
 │   ├── app.py                    # Entrada de Streamlit y navegación
 │   ├── datos.py                  # Consultas de solo lectura a Gold y a los logs (sin Streamlit)
 │   ├── comun.py                  # Caché, formato y paleta compartidos
-│   └── paginas/                  # portafolio.py, cliente.py, observabilidad.py
+│   └── paginas/                  # portafolio.py, cliente.py, simulador.py, observabilidad.py
 ├── tests/
 │   ├── conftest.py
 │   ├── test_validation.py        # Pruebas del motor de Silver
@@ -133,6 +136,7 @@ digital-twin-bbva/
 │   ├── test_silver_rollback.py   # Reversión de una corrida fallida de Silver
 │   ├── test_movimientos.py       # Agregación mensual de Gold
 │   ├── test_kpis.py              # Definiciones de ingreso, gasto y capacidad de ahorro
+│   ├── test_montecarlo.py        # Cuota, contabilidad del saldo, choque y capacidad hipotecaria
 │   ├── test_generador_perfiles.py  # Perfil financiero estable por cliente en el generador
 │   ├── test_dashboard_datos.py   # Consultas del dashboard y lectura de logs
 │   ├── test_sesiones.py          # Reproducibilidad y reuso de sesiones de datos
@@ -239,6 +243,12 @@ uv run --group dashboard streamlit run dashboard/app.py
 
 Las bandas de riesgo (bajo, medio, alto) se configuran en `config/dashboard.yaml`.
 
+**Simulador de hipoteca.** Responde, para un cliente, qué tan probable es que su saldo quede negativo en los próximos 36 meses si contrata una hipoteca, y cuál es el precio máximo de vivienda que puede asumir. Cada una de las 5,000 trayectorias arma el futuro eligiendo al azar meses del historial real del cliente (`gold_movimientos_mensuales`), más un choque de pérdida de ingreso que el historial no contiene; con y sin hipoteca se evalúan sobre los mismos meses simulados, así que la diferencia es solo el crédito. Los supuestos (tasa, plazo, enganche, gastos, choque y umbral de capacidad) están en `config/simulacion.yaml`. Está en el dashboard y en línea de comandos:
+
+```bash
+uv run python main.py simulate --cliente CLI-000001 --precio 900000 --renta 7000
+```
+
 
 ---
 
@@ -256,7 +266,7 @@ El workflow de GitHub Actions (`.github/workflows/ci.yml`) corre en cada Pull Re
 |---|---|
 | `lint` | flake8, black y escaneo de secretos y de archivos de datos versionados (`detect-secrets`) |
 | `docker-compose-validate` | Sintaxis de `docker-compose.yml` con un `.env` generado por `setup.sh`, y shellcheck de `setup.sh`/`demo.sh` |
-| `unit-tests` | 164 pruebas (pytest): motor de validación, CURP/RFC y PII, sesiones, landing zone, registro de calidad, feature store, modelo, CLI y respaldo/restauración de `demo.sh` |
+| `unit-tests` | 174 pruebas (pytest): motor de validación, CURP/RFC y PII, sesiones, landing zone, registro de calidad, feature store, modelo, CLI y respaldo/restauración de `demo.sh` |
 | `pipeline-smoke-test` | Pipeline completo Bronze → Silver → Gold → modelo de riesgo con volumen reducido (100 clientes, 2 meses), parametrizable vía `workflow_dispatch`; verifica la reproducibilidad de la sesión, la ingesta incremental de Bronze, Silver sin cuarentena inesperada ni PII en claro, que una corrida fallida de Silver se revierta a la anterior, el registro de calidad, los 12 KPIs, el feature store, y que `probabilidad_impago` tenga valor en [0, 1] para todos los clientes |
 
 ---
@@ -299,7 +309,7 @@ Catálogo de 12 KPIs en 5 categorías (ingresos, gastos, ahorro y liquidez, ries
 - [x] Landing zone en MinIO con entregas inmutables e ingesta incremental en Bronze
 - [x] Respaldo y restauración (`demo.sh respaldar` / `restaurar`) con verificación SHA-256, incluido el histórico de calidad
 - [x] Arranque reproducible con un comando en cualquier máquina con Docker (`demo.sh`)
-- [ ] Simulador de escenarios Monte Carlo
+- [x] Simulador Monte Carlo de hipoteca: riesgo de déficit con y sin el crédito, enganche y capacidad hipotecaria, en línea de comandos y en el dashboard
 - [ ] Asistente conversacional RAG local (Ollama + Llama 3 + LangChain)
 - [x] Dashboard en Streamlit con tres vistas: portafolio, cliente y observabilidad (decisión en [docs/arquitectura.md](docs/arquitectura.md#decisiones-de-diseno))
 
