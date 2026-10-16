@@ -89,7 +89,7 @@ Decisiones descartadas y por qué: Scala (PySpark cubre lo mismo sin costo de ap
 ```
 digital-twin-bbva/
 ├── config/
-│   ├── sesion.yaml               # Parámetros de la sesión de datos (semilla, fecha, volumen)
+│   ├── sesion.yaml               # Parámetros de la sesión de datos (semilla, fecha, volumen, escenario de deriva)
 │   ├── business_rules.yaml       # Reglas de calidad de Silver, declarativas
 │   ├── politica_pii.yaml         # Qué datos personales se protegen en Silver, y cómo
 │   ├── kpi_catalog.yaml          # Metadata de los 12 KPIs de Gold
@@ -103,6 +103,7 @@ digital-twin-bbva/
 │   │   ├── sesiones.py           # Sesiones de datos: manifest, checksums, reuso
 │   │   ├── identificadores.py    # CURP y RFC: construcción y validación (RENAPO/SAT)
 │   │   ├── secretos.py           # Lectura de secretos desde entorno o .env
+│   │   ├── escenario_deriva.py   # Escenario de deriva del generador (apagado por defecto)
 │   │   └── logging_utils.py      # Logging estructurado por entidad
 │   ├── bronze/
 │   │   └── control.py            # Registro de control de la ingesta incremental (archivo + SHA-256)
@@ -150,6 +151,7 @@ digital-twin-bbva/
 │   ├── test_etiquetas_impago.py  # Modelo latente: determinismo, tasa, esquema, signos, oráculo, atenuación
 │   ├── test_etiquetas_gold.py    # Etiquetas en Gold, auditoría fuera de Gold, generate_labels de punta a punta
 │   ├── test_demo_respaldo.py     # demo.sh respaldar/restaurar: copia idéntica, rechazo de respaldos alterados
+│   ├── test_escenario_deriva.py  # Escenario de deriva: apagado idéntico, solo afectados, regla de continuación
 │   ├── test_psi.py               # PSI: distribuciones idénticas, desplazamiento, bins vacíos, cortes reutilizados
 │   └── test_main_cli.py          # Pruebas de enrutamiento del CLI (main.py)
 ├── docs/
@@ -274,7 +276,7 @@ El workflow de GitHub Actions (`.github/workflows/ci.yml`) corre en cada Pull Re
 |---|---|
 | `lint` | flake8, black y escaneo de secretos y de archivos de datos versionados (`detect-secrets`) |
 | `docker-compose-validate` | Sintaxis de `docker-compose.yml` con un `.env` generado por `setup.sh`, y shellcheck de `setup.sh`/`demo.sh` |
-| `unit-tests` | 197 pruebas (pytest): motor de validación, CURP/RFC y PII, sesiones, landing zone, registro de calidad, feature store, modelo, monitoreo de deriva (PSI), CLI y respaldo/restauración de `demo.sh` |
+| `unit-tests` | 215 pruebas (pytest): motor de validación, CURP/RFC y PII, sesiones, landing zone, registro de calidad, feature store, modelo, monitoreo de deriva (PSI), escenario de deriva del generador, CLI y respaldo/restauración de `demo.sh` |
 | `pipeline-smoke-test` | Pipeline completo Bronze → Silver → Gold → modelo de riesgo con volumen reducido (100 clientes, 2 meses), parametrizable vía `workflow_dispatch`; verifica la reproducibilidad de la sesión, la ingesta incremental de Bronze, Silver sin cuarentena inesperada ni PII en claro, que una corrida fallida de Silver se revierta a la anterior, el registro de calidad, los 12 KPIs, el feature store, y que `probabilidad_impago` tenga valor en [0, 1] para todos los clientes |
 
 ---

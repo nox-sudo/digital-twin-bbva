@@ -113,10 +113,13 @@ se promedian sobre la rejilla completa cliente x mes
 (`src/gold/kpi_definitions.py`). Con 24 meses acumulados, un cambio en los
 ultimos 3 apenas mueve el promedio, y el PSI lo detecta tarde aunque el
 calculo sea correcto. Solo `gasto_promedio_3_meses` mira una ventana
-reciente. Corregirlo depende del rediseno de la etiqueta: la ventana de
-features deberia ser movil (por ejemplo, los 6 o 12 meses previos a la
-fecha de corte), alineada con la fecha de observacion de la etiqueta, y no
-todo el historial.
+reciente. El escenario de deriva lo confirmo con datos (seccion siguiente):
+es el hallazgo principal de esta prueba, registrado en
+`docs/technical-debt.md` ("El PSI reacciona tarde a una deriva reciente").
+Corregirlo pasa por medir tambien features de ventana reciente y se cruza
+con el rediseno de la etiqueta: la ventana de features deberia ser movil
+(por ejemplo, los 6 o 12 meses previos a la fecha de corte), alineada con la
+fecha de observacion de la etiqueta, y no todo el historial.
 
 **La alerta es informativa.** El DAG reentrena cada corrida sin
 condiciones, asi que una alerta `reentrenar` no dispara nada que no fuera a
@@ -124,7 +127,71 @@ pasar de todos modos: sirve para saber que la poblacion cambio y desde
 cuando. Reentrenar solo cuando el PSI lo indique (y promover la nueva
 referencia en ese momento) queda como trabajo futuro.
 
-**Sin escenario de deriva en los datos.** El generador agrega meses con los
-mismos perfiles por cliente, asi que hoy el PSI se queda cerca de 0 en una
-instancia larga. Un escenario de deriva configurable, apagado por defecto y
-reproducible con semilla, va en un PR aparte.
+## Escenario de deriva para probar el detector
+
+Sin escenario, el generador agrega cada mes con los mismos perfiles por
+cliente y el PSI se queda cerca de 0 aunque la instancia crezca. El
+escenario (`escenario_deriva` en `config/sesion.yaml`,
+`src/common/escenario_deriva.py`) deteriora a una parte de la cartera a
+partir de cierta entrega: el ingreso cae y el gasto sube de forma compuesta
+cada mes, y baja la probabilidad de pagar cada deuda.
+
+Para usarlo en una instancia larga:
+
+1. Poner `activo: true` en `config/sesion.yaml` antes de la primera entrega
+   afectada (`desde_entrega`).
+2. Correr `bash demo.sh nueva-entrega` las veces que se quiera. Cada entrega
+   genera una sesion con su propio id (sufijo `_d<huella>` del escenario) y
+   el monitoreo mide contra la referencia congelada de la sesion base.
+
+Garantias:
+
+- **Apagado no cambia nada.** Con `activo: false` la sesion sale byte a byte
+  igual que antes de existir el escenario (mismo id, mismos parametros,
+  mismos checksums).
+- **Meses base intactos.** El escenario solo toca meses posteriores al corte
+  base; clientes, cuentas, CETES y los meses base no cambian, asi que la
+  referencia del PSI sigue siendo valida.
+- **Reproducible.** Los clientes afectados se sortean con un generador
+  propio derivado de la semilla de la sesion, y los efectos no hacen sorteos
+  nuevos: fechas, categorias y numero de compras de un mes son los mismos
+  con o sin escenario. Un pago suprimido deja un hueco en la numeracion de
+  `transaccion_id` en vez de recorrer los ids siguientes.
+- **No se puede cambiar despues de entregar.** Si la sesion nueva continua
+  a la activa (misma semilla, fecha base, clientes y meses; el escenario no
+  cuenta) y cambiaria algun archivo ya entregado, el generador se detiene
+  sin activar nada. Activar el escenario con un `desde_entrega` posterior a
+  lo ya entregado si esta permitido.
+
+**Los valores de ejemplo estan calibrados, no son realistas.** Se probaron
+varias configuraciones y se dejo la que lleva el PSI a "vigilar" en unas 6
+entregas: 60 % de clientes afectados, ingreso -10 % y gasto +8 % compuestos
+por mes. El criterio fue que el detector tenga algo que detectar en el
+horizonte de una demo, no representar una crisis plausible. Es lo contrario
+de las etiquetas de impago, cuyos parametros se fijaron antes de ver
+resultados.
+
+**Resultado: el detector reacciona tarde.** PSI con la sesion base s42,
+fecha 2026-09-30, 500 clientes, 12 meses, `desde_entrega: 1`:
+
+| Escenario (afectados / ingreso / gasto por mes) | Entregas | Ingreso promedio, todo el historial | Gasto, ultimos 3 meses |
+|---|---|---|---|
+| 40 % / -5 % / +3 % | 6 | 0.012 estable | 0.033 estable |
+| 40 % / -5 % / +3 % | 12 | 0.037 estable | 0.081 estable |
+| 60 % / -10 % / +8 % (ejemplo) | 6 | 0.036 estable | 0.186 vigilar |
+| 100 % / -15 % / +10 % | 3 | 0.021 estable | 0.239 vigilar |
+| 100 % / -15 % / +10 % | 6 | 0.113 vigilar | 0.780 reentrenar |
+
+Estas cifras son una **aproximacion**: se calcularon sobre los CSV
+generados, con la misma definicion que los KPIs (nomina y depositos sobre
+la rejilla completa cliente x mes; compras de los ultimos 3 meses) y los
+cortes por deciles de la sesion base, pero sin correr el pipeline. Antes de
+citarlas en el reporte o la presentacion hay que medirlas con el pipeline
+real (`demo.sh nueva-entrega` con el escenario activo y el historico de
+`data/calidad/deriva_psi/`).
+
+Lo que muestran no depende de la aproximacion: con un deterioro de 5 % al
+mes, la feature que promedia todo el historial sigue estable despues de un
+ano, mientras que la de ventana reciente se mueve el doble. La causa es la
+dilucion descrita arriba, y la solucion es medir tambien features de
+ventana reciente (`docs/technical-debt.md`).

@@ -18,6 +18,13 @@ parametros producen exactamente los mismos archivos cualquier dia y en
 cualquier maquina. Si la sesion ya existe en data/sesiones/ y esta
 integra, se reutiliza sin regenerar. Detalle en src/common/sesiones.py.
 
+Escenario de deriva (escenario_deriva en config/sesion.yaml, apagado por
+defecto): deteriora a una parte de la cartera en las entregas mensuales,
+para probar el monitoreo de deriva. Antes de activar una sesion que
+continua a la activa, el generador comprueba que no cambie ningun archivo
+ya entregado. Detalle en src/common/escenario_deriva.py y
+docs/monitoreo-deriva.md.
+
 Uso:
     python generate_synthetic_sources.py                 # parametros de config/sesion.yaml
     python generate_synthetic_sources.py --clientes 5000 # sobreescribe uno
@@ -36,6 +43,7 @@ import calendar
 import hashlib
 import json
 import random
+import shutil
 import sys
 import tempfile
 from datetime import date, datetime, timedelta
@@ -54,12 +62,20 @@ from src.common.identificadores import (  # noqa: E402
     construir_curp,
     construir_rfc,
 )
+from src.common.escenario_deriva import (  # noqa: E402
+    cargar_escenario,
+    clientes_afectados,
+    efectos,
+    huella,
+    meses_de_escenario,
+)
 from src.common.sesiones import (  # noqa: E402
     activar_sesion,
     escribir_manifest,
     id_sesion,
     leer_manifest,
     publicar_sesion,
+    verificar_continuacion,
     verificar_sesion,
 )
 
@@ -580,13 +596,21 @@ def _montos_que_suman(total: float, n: int) -> np.ndarray:
 
 
 def generar_transacciones_mes(
-    cuentas: list[dict], anio: int, mes: int, perfiles: dict[str, dict]
+    cuentas: list[dict],
+    anio: int,
+    mes: int,
+    perfiles: dict[str, dict],
+    deriva: dict | None = None,
 ) -> pd.DataFrame:
     """
     Genera transacciones de un mes específico para todas las cuentas activas.
     Simula: ingreso (nómina quincenal o depósitos irregulares), gasto por
     categoría, P2P, pagos de deuda y retiros. Los montos salen del perfil
     estable de cada cliente (generar_perfiles) más el ruido propio del mes.
+
+    deriva (src/common/escenario_deriva.py) trae los clientes afectados y los
+    efectos de este mes. Se aplican despues de los sorteos, sin hacer sorteos
+    nuevos; None (escenario apagado o mes no afectado) deja el mes intacto.
     """
     registros = []
     tx_id = 1
@@ -603,6 +627,10 @@ def generar_transacciones_mes(
 
         perfil = perfiles[cliente_id]
         ultimo_dia = calendar.monthrange(anio, mes)[1]
+        afectado = deriva is not None and cliente_id in deriva["afectados"]
+        factor_ingreso = deriva["factor_ingreso"] if afectado else 1.0
+        factor_gasto = deriva["factor_gasto"] if afectado else 1.0
+        caida_puntualidad = deriva["caida_puntualidad"] if afectado else 0.0
 
         def agregar(fecha_mov, tipo, categoria, monto, contraparte, **extra):
             nonlocal tx_id
@@ -625,7 +653,10 @@ def generar_transacciones_mes(
         # Informal: el ingreso del mes varia alrededor del base (lognormal con
         # media 1) y llega en 2 a 6 depositos; algun mes puede no llegar nada.
         if perfil["formal"]:
-            quincena = round(perfil["ingreso_base"] / 2, 2)
+            ingreso_base = perfil["ingreso_base"]
+            if afectado:
+                ingreso_base *= factor_ingreso
+            quincena = round(ingreso_base / 2, 2)
             for dia_pago in [15, ultimo_dia]:
                 agregar(
                     date(anio, mes, dia_pago),
@@ -639,6 +670,8 @@ def generar_transacciones_mes(
             ingreso_mes = perfil["ingreso_base"] * np.random.lognormal(
                 -(sigma**2) / 2, sigma
             )
+            if afectado:
+                ingreso_mes *= factor_ingreso
             n_depositos = random.randint(2, 6)
             for monto in _montos_que_suman(ingreso_mes, n_depositos):
                 agregar(
@@ -659,6 +692,8 @@ def generar_transacciones_mes(
             * estacional
             * np.random.uniform(0.85, 1.15)
         )
+        if afectado:
+            gasto_mes *= factor_gasto
         n_transacciones = random.randint(8, 25)
         categorias = np.random.choice(
             CATEGORIAS_GASTO, size=n_transacciones, p=perfil["pesos_categoria"]
@@ -694,7 +729,23 @@ def generar_transacciones_mes(
         # o no en un mes depende de la puntualidad del cliente. Un cliente
         # impuntual deja huella en los datos, no solo en la etiqueta.
         for deuda in deudas_por_cliente.get(cliente_id, []):
-            if random.random() < perfil["puntualidad"]:
+            sorteo = random.random()
+            paga = sorteo < perfil["puntualidad"]
+            if (
+                afectado
+                and paga
+                and sorteo >= perfil["puntualidad"] - caida_puntualidad
+            ):
+                # Pago que se habria hecho sin escenario. Se consume el mismo
+                # sorteo de fecha que haria el pago, para no desfasar el
+                # generador global (todo lo que sigue en el mes cambiaria), y
+                # el contador avanza igual: queda un hueco en la numeracion y
+                # los ids de las filas siguientes son los mismos que sin
+                # escenario. Silver solo exige ids unicos.
+                random.choice([5, 10, 20])
+                tx_id += 1
+                continue
+            if paga:
                 agregar(
                     date(anio, mes, random.choice([5, 10, 20])),
                     "pago_recurrente",
@@ -739,7 +790,7 @@ def resolver_parametros(args) -> dict:
     def valor(flag, clave, default):
         return flag if flag is not None else config.get(clave, default)
 
-    return {
+    parametros = {
         "semilla": int(valor(args.semilla, "semilla", 42)),
         "fecha_referencia": str(
             valor(args.fecha_referencia, "fecha_referencia", date.today().isoformat())
@@ -748,6 +799,40 @@ def resolver_parametros(args) -> dict:
         "meses": int(valor(args.meses, "meses", 12)),
         "meses_adicionales": int(valor(args.meses_adicionales, "meses_adicionales", 0)),
     }
+    # Solo se registra si esta activo: apagado, los parametros (y el
+    # manifest) quedan exactamente como antes de existir el escenario.
+    escenario = cargar_escenario(
+        config.get("escenario_deriva"), f"{args.config}: escenario_deriva"
+    )
+    if escenario is not None:
+        parametros["escenario_deriva"] = escenario.como_dict()
+    return parametros
+
+
+def escenario_de(parametros: dict):
+    """Escenario de deriva registrado en los parametros, o None si la sesion
+    no tiene (resolver_parametros solo lo registra si esta activo)."""
+    crudo = parametros.get("escenario_deriva")
+    return cargar_escenario(dict(crudo, activo=True)) if crudo else None
+
+
+def exigir_continuacion(manifest_activa: dict | None, manifest_nueva: dict) -> None:
+    """Detiene la generacion si la nueva sesion continua a la activa (misma
+    base, mas entregas) pero cambiaria algun archivo ya entregado: la landing
+    zone recibiria una version distinta de un mes ya publicado, y Bronze lo
+    ingeriria dos veces. Ver src/common/sesiones.py:verificar_continuacion."""
+    cambiados = verificar_continuacion(manifest_activa, manifest_nueva)
+    if not cambiados:
+        return
+    lista = "\n".join(f"  - {nombre}" for nombre in cambiados)
+    raise SystemExit(
+        f"ERROR: la sesion {manifest_nueva['sesion_id']} continua a la activa "
+        f"({manifest_activa['sesion_id']}) pero cambiaria {len(cambiados)} archivo(s) "
+        f"ya entregado(s):\n{lista}\n"
+        "Probablemente cambio escenario_deriva en config/sesion.yaml despues de "
+        "entregar meses afectados. Devuelvelo a como estaba, o empieza una instancia "
+        "nueva: bash demo.sh respaldar y bash demo.sh limpiar. No se activo nada."
+    )
 
 
 def generar_fuentes(out_dir: Path, parametros: dict) -> dict:
@@ -782,6 +867,18 @@ def generar_fuentes(out_dir: Path, parametros: dict) -> dict:
 
     perfiles = generar_perfiles(clientes_df, cuentas, parametros["semilla"])
 
+    escenario = escenario_de(parametros)
+    afectados = frozenset()
+    if escenario is not None:
+        afectados = clientes_afectados(
+            clientes_df["cliente_id"], escenario, parametros["semilla"]
+        )
+        print(
+            f"Escenario de deriva: {len(afectados)} clientes afectados desde la "
+            f"entrega {escenario.desde_entrega}"
+        )
+    ultimo_mes_base = meses_a_generar(fecha_ref, 1)[0]
+
     print(f"Generando transacciones para {total_meses} meses (corte {corte})...")
     total_tx = 0
     for anio, mes in meses_a_generar(corte, total_meses):
@@ -789,7 +886,12 @@ def generar_fuentes(out_dir: Path, parametros: dict) -> dict:
         random.seed(semilla)
         np.random.seed(semilla)
         Faker.seed(semilla)  # contraparte_persona (P2P) usa Faker
-        tx_df = generar_transacciones_mes(cuentas, anio, mes, perfiles)
+        deriva = None
+        if escenario is not None:
+            k = meses_de_escenario(escenario, anio, mes, ultimo_mes_base)
+            if k:
+                deriva = {"afectados": afectados, **efectos(escenario, k)}
+        tx_df = generar_transacciones_mes(cuentas, anio, mes, perfiles, deriva)
         archivo = out_dir / "transacciones" / f"transacciones_{anio}_{mes:02d}.csv"
         tx_df.to_csv(archivo, index=False)
         total_tx += len(tx_df)
@@ -835,8 +937,10 @@ def main(argv: list[str] | None = None):
         parametros["clientes"],
         parametros["meses"],
         parametros["meses_adicionales"],
+        huella(escenario_de(parametros)) if escenario_de(parametros) else None,
     )
     sesiones_dir = Path(args.sesiones_dir)
+    manifest_activa = leer_manifest(Path(args.out))
     carpeta_sesion = sesiones_dir / sesion_id
     print(f"Sesion: {sesion_id}")
 
@@ -851,6 +955,7 @@ def main(argv: list[str] | None = None):
                 "  Aviso: se genero con otra version del generador. Se reutiliza tal "
                 "cual; usa --forzar para regenerarla con la version actual."
             )
+        exigir_continuacion(manifest_activa, manifest)
     else:
         if problemas:
             print("La sesion existe pero no esta integra, se regenera:")
@@ -861,9 +966,14 @@ def main(argv: list[str] | None = None):
             tempfile.mkdtemp(prefix=f".{sesion_id}.", dir=sesiones_dir)
         )
         conteos = generar_fuentes(carpeta_temporal, parametros)
-        escribir_manifest(
+        manifest_nuevo = escribir_manifest(
             carpeta_temporal, sesion_id, parametros, conteos, version_generador()
         )
+        try:
+            exigir_continuacion(manifest_activa, manifest_nuevo)
+        except SystemExit:
+            shutil.rmtree(carpeta_temporal)
+            raise
         publicar_sesion(carpeta_temporal, carpeta_sesion)
         manifest = leer_manifest(carpeta_sesion)
 
