@@ -132,6 +132,8 @@ digital-twin-bbva/
 │   ├── test_predict_risk.py      # Escritura de probabilidad_impago en Gold y ROLLBACK ante fallos
 │   ├── test_silver_rollback.py   # Reversión de una corrida fallida de Silver
 │   ├── test_movimientos.py       # Agregación mensual de Gold
+│   ├── test_kpis.py              # Definiciones de ingreso, gasto y capacidad de ahorro
+│   ├── test_generador_perfiles.py  # Perfil financiero estable por cliente en el generador
 │   ├── test_dashboard_datos.py   # Consultas del dashboard y lectura de logs
 │   ├── test_sesiones.py          # Reproducibilidad y reuso de sesiones de datos
 │   ├── test_pii.py               # Identificadores, HMAC Spark == Python, política de PII
@@ -254,14 +256,14 @@ El workflow de GitHub Actions (`.github/workflows/ci.yml`) corre en cada Pull Re
 |---|---|
 | `lint` | flake8, black y escaneo de secretos y de archivos de datos versionados (`detect-secrets`) |
 | `docker-compose-validate` | Sintaxis de `docker-compose.yml` con un `.env` generado por `setup.sh`, y shellcheck de `setup.sh`/`demo.sh` |
-| `unit-tests` | 155 pruebas (pytest): motor de validación, CURP/RFC y PII, sesiones, landing zone, registro de calidad, feature store, modelo, CLI y respaldo/restauración de `demo.sh` |
+| `unit-tests` | 164 pruebas (pytest): motor de validación, CURP/RFC y PII, sesiones, landing zone, registro de calidad, feature store, modelo, CLI y respaldo/restauración de `demo.sh` |
 | `pipeline-smoke-test` | Pipeline completo Bronze → Silver → Gold → modelo de riesgo con volumen reducido (100 clientes, 2 meses), parametrizable vía `workflow_dispatch`; verifica la reproducibilidad de la sesión, la ingesta incremental de Bronze, Silver sin cuarentena inesperada ni PII en claro, que una corrida fallida de Silver se revierta a la anterior, el registro de calidad, los 12 KPIs, el feature store, y que `probabilidad_impago` tenga valor en [0, 1] para todos los clientes |
 
 ---
 
 ## Datos y KPIs
 
-5 entidades sintéticas (Faker + NumPy): `clientes`, `cuentas`, `catalogo_productos`, `cetes_inversiones`, `transacciones` (6 tipos de movimiento). Volumen de referencia: 500 clientes, 979 cuentas, 117,081 transacciones.
+5 entidades sintéticas (Faker + NumPy): `clientes`, `cuentas`, `catalogo_productos`, `cetes_inversiones`, `transacciones` (7 tipos de movimiento). Volumen de referencia: 500 clientes, 979 cuentas, 125,064 transacciones. Cada cliente tiene un perfil financiero estable (ingreso formal o informal anclado a su ingreso declarado, proporción de gasto, categorías preferidas y puntualidad de pago), así que su comportamiento es coherente mes a mes.
 
 **Sesiones de datos reproducibles.** Cada conjunto generado es una sesión identificada por sus parámetros (`config/sesion.yaml`: semilla, fecha de referencia, clientes, meses), por ejemplo `s42_20260930_500c_12m`. Todas las fechas se calculan contra la fecha de referencia, nunca contra el reloj del sistema, así que los mismos parámetros producen exactamente los mismos archivos cualquier día y en cualquier máquina; el CI lo verifica comparando checksums. Silver sigue el mismo criterio: la regla de fecha no futura se mide contra la fecha de corte de los datos (el movimiento más reciente en Bronze), no contra el día en que corre. La sesión se guarda en `data/sesiones/<id>/` con un `manifest.json` (parámetros, conteos, SHA-256 de cada archivo); si ya existe y está íntegra, el pipeline la reutiliza en vez de regenerarla, y si algún archivo fue alterado, lo detecta y la regenera. `data/raw_sources/` apunta a la sesión activa mediante hard links, y cada fila de Bronze guarda su `_sesion_id`. Las sesiones viven en disco, fuera de los contenedores: sobreviven a `docker compose down` y a `demo.sh limpiar`, pero no a `demo.sh limpiar todo`: para eso existe `demo.sh respaldar`.
 
@@ -279,7 +281,7 @@ Catálogo de 12 KPIs en 5 categorías (ingresos, gastos, ahorro y liquidez, ries
 
 ## Estado del proyecto
 
-- [x] Generador de datos sintéticos reproducible (6 tipos de transacción)
+- [x] Generador de datos sintéticos reproducible (7 tipos de transacción, perfil financiero estable por cliente)
 - [x] Capa Bronze — ingesta en Delta Lake con trazabilidad
 - [x] Capa Silver — motor de validación genérico, patrón de cuarentena
 - [x] Infraestructura Docker Compose — Airflow, Postgres, MinIO, worker

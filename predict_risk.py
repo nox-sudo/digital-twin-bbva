@@ -40,11 +40,31 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger(__name__)
 
 
-def predecir(modelo, features: pd.DataFrame) -> pd.DataFrame:
-    """Calcula probabilidad_impago para cada cliente en features."""
-    probabilidades = modelo.predict_proba(features)[:, 1]
+def predecir(
+    modelo, features: pd.DataFrame, fuera_de_pliegue: pd.DataFrame | None = None
+) -> pd.DataFrame:
+    """Calcula probabilidad_impago para cada cliente en features.
+
+    Un cliente con probabilidad fuera de pliegue (train_model.py) recibe
+    esa: el modelo final se entreno con su etiqueta, y predecirlo con el
+    daria un valor sobreajustado. El modelo final solo se usa para clientes
+    que no participaron en el entrenamiento (por ejemplo, altas nuevas)."""
+    probabilidades = pd.Series(
+        modelo.predict_proba(features)[:, 1], index=features.index
+    )
+    origen = pd.Series("modelo_final", index=features.index)
+    if fuera_de_pliegue is not None:
+        oof = fuera_de_pliegue.set_index("cliente_id")["probabilidad"]
+        comunes = probabilidades.index.intersection(oof.index)
+        probabilidades.loc[comunes] = oof.loc[comunes]
+        origen.loc[comunes] = "fuera_de_pliegue"
+    logger.info(
+        "Probabilidades: %d fuera de pliegue, %d del modelo final",
+        int((origen == "fuera_de_pliegue").sum()),
+        int((origen == "modelo_final").sum()),
+    )
     return pd.DataFrame(
-        {"cliente_id": features.index, "valor_numerico": probabilidades}
+        {"cliente_id": features.index, "valor_numerico": probabilidades.values}
     )
 
 
@@ -112,6 +132,7 @@ def main():
     parser.add_argument("--gold", default="data/gold/kpis.duckdb")
     parser.add_argument("--model", default="models/risk_model.joblib")
     parser.add_argument("--out", default="data/gold/predicciones")
+    parser.add_argument("--oof", default="models/probabilidad_fuera_de_pliegue.parquet")
     args = parser.parse_args()
 
     modelo = joblib.load(args.model)
@@ -121,7 +142,15 @@ def main():
         features = preparar_para_modelo(
             cargar_features(args.gold), columnas_modelo=modelo.feature_names_in_
         )
-        predicciones = predecir(modelo, features)
+        ruta_oof = Path(args.oof)
+        fuera_de_pliegue = pd.read_parquet(ruta_oof) if ruta_oof.exists() else None
+        if fuera_de_pliegue is None:
+            logger.warning(
+                "No existe %s: todos los clientes se predicen con el modelo final "
+                "(sobreajustado para los que tienen etiqueta). Corre train_model.py.",
+                ruta_oof,
+            )
+        predicciones = predecir(modelo, features, fuera_de_pliegue)
 
         # DuckDB primero: es la fuente que leen el dashboard y el asistente.
         # El Parquet es la copia de exportacion y solo se escribe si Gold

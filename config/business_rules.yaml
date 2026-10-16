@@ -129,6 +129,7 @@ transacciones:
       - p2p_recibido
       - pago_recurrente
       - nomina
+      - deposito
       - retiro
   numeric_not_zero:
     - monto

@@ -64,3 +64,4 @@ gfd:silver.zip
 # train_model.py: el .joblib y el grafico SHAP no son codigo fuente)
 models/*.joblib
 models/*.png
+models/*.parquet

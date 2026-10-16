@@ -11,6 +11,12 @@ etiquetas de la tabla gold_etiquetas_impago (generate_labels.py: impago
 como evento posterior, con un modelo latente). No necesita Spark: todo lo
 que consume ya esta en Gold.
 
+Ademas guarda la probabilidad de cada cliente calculada FUERA DE PLIEGUE
+(validacion cruzada de 5 pliegues): la de cada cliente sale de un modelo
+que no vio su etiqueta. predict_risk.py publica esa en Gold para los
+clientes con etiqueta; predecirlos con el modelo final, que si los vio,
+daba probabilidades sobreajustadas (decenas de clientes por encima de 90 %).
+
 El AUC que imprime sale de UN solo split 80/20; con pocos positivos en
 prueba oscila mucho (ver docs/technical-debt.md y experimentos/), asi que
 no debe citarse sin su intervalo.
@@ -37,7 +43,11 @@ from sklearn.metrics import (  # noqa: E402
     confusion_matrix,
     roc_auc_score,
 )
-from sklearn.model_selection import train_test_split  # noqa: E402
+from sklearn.model_selection import (  # noqa: E402
+    StratifiedKFold,
+    cross_val_predict,
+    train_test_split,
+)
 from xgboost import XGBClassifier  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -53,8 +63,39 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger(__name__)
 
 
+def nuevo_modelo(y: pd.Series) -> XGBClassifier:
+    """Mismos hiperparametros en el modelo final y en la validacion cruzada:
+    si difirieran, la probabilidad fuera de pliegue no describiria al
+    modelo que se publica."""
+    positivos = int(y.sum())
+    negativos = len(y) - positivos
+    peso_positivo = negativos / positivos if positivos else 1.0
+    return XGBClassifier(
+        n_estimators=200,
+        max_depth=4,
+        learning_rate=0.05,
+        scale_pos_weight=peso_positivo,
+        eval_metric="logloss",
+        random_state=42,
+    )
+
+
+def probabilidad_fuera_de_pliegue(x: pd.DataFrame, y: pd.Series) -> pd.DataFrame:
+    """Probabilidad de cada cliente predicha por un modelo entrenado sin el
+    (5 pliegues estratificados, semilla fija)."""
+    pliegues = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+    probabilidades = cross_val_predict(
+        nuevo_modelo(y), x, y, cv=pliegues, method="predict_proba"
+    )[:, 1]
+    return pd.DataFrame({"cliente_id": x.index, "probabilidad": probabilidades})
+
+
 def entrenar(
-    features: pd.DataFrame, etiquetas: pd.DataFrame, model_out: Path, shap_out: Path
+    features: pd.DataFrame,
+    etiquetas: pd.DataFrame,
+    model_out: Path,
+    shap_out: Path,
+    oof_out: Path | None = None,
 ):
     """Entrena XGBoost, evalua contra el conjunto de prueba, genera
     el grafico SHAP, y guarda el modelo. Retorna las metricas para el
@@ -84,18 +125,7 @@ def entrenar(
         int(y_test.sum()),
     )
 
-    positivos = int(y_train.sum())
-    negativos = len(y_train) - positivos
-    peso_positivo = negativos / positivos if positivos else 1.0
-
-    modelo = XGBClassifier(
-        n_estimators=200,
-        max_depth=4,
-        learning_rate=0.05,
-        scale_pos_weight=peso_positivo,
-        eval_metric="logloss",
-        random_state=42,
-    )
+    modelo = nuevo_modelo(y_train)
     modelo.fit(x_train, y_train)
 
     probabilidades = modelo.predict_proba(x_test)[:, 1]
@@ -110,6 +140,17 @@ def entrenar(
     model_out.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(modelo, model_out)
     logger.info("Modelo guardado en %s", model_out)
+
+    if oof_out is not None:
+        oof = probabilidad_fuera_de_pliegue(x, y)
+        oof_out.parent.mkdir(parents=True, exist_ok=True)
+        oof.to_parquet(oof_out, index=False)
+        logger.info(
+            "Probabilidad fuera de pliegue guardada en %s: %d clientes, AUC %.3f",
+            oof_out,
+            len(oof),
+            roc_auc_score(y, oof["probabilidad"]),
+        )
 
     explainer = shap.TreeExplainer(modelo)
     valores_shap = explainer.shap_values(x_test)
@@ -151,13 +192,20 @@ def main():
     parser.add_argument("--gold", default="data/gold/kpis.duckdb")
     parser.add_argument("--model-out", default="models/risk_model.joblib")
     parser.add_argument("--shap-out", default="models/shap_importancia.png")
+    parser.add_argument(
+        "--oof-out", default="models/probabilidad_fuera_de_pliegue.parquet"
+    )
     args = parser.parse_args()
 
     try:
         features = preparar_para_modelo(cargar_features(args.gold))
         etiquetas = cargar_etiquetas(args.gold)
         metricas = entrenar(
-            features, etiquetas, Path(args.model_out), Path(args.shap_out)
+            features,
+            etiquetas,
+            Path(args.model_out),
+            Path(args.shap_out),
+            Path(args.oof_out),
         )
     except Exception:
         logger.exception("Fallo el entrenamiento del modelo")

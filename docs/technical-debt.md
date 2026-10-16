@@ -212,6 +212,19 @@ DockerOperator y en el servicio `worker`). Requiere mover el cache de
 Ivy con los JARs de Delta a una ruta legible por cualquier usuario,
 porque hoy vive en el home de root dentro de la imagen.
 
+### Probabilidad de impago descalibrada por scale_pos_weight
+
+**Que pasa:** `train_model.py` entrena con `scale_pos_weight` (negativos entre
+positivos, ~6). Eso sube la sensibilidad del modelo, pero sus probabilidades
+dejan de estar calibradas: con la sesion base, la media publicada en Gold es
+0.205 contra una tasa real de 0.164, y 14 clientes quedan por encima de 0.90.
+El dashboard muestra esa salida como "probabilidad de impago".
+
+**Posible fix:** quitar el peso y comparar AUC fuera de pliegue (el ordenamiento
+casi no deberia cambiar), o calibrar despues (`CalibratedClassifierCV`, isotonica)
+sobre las probabilidades fuera de pliegue. Cambia un hiperparametro fijado el
+2026-10-09, asi que la evaluacion se vuelve a correr y se reporta junto a la actual.
+
 ### Las entregas nuevas solo agregan transacciones
 
 **Que pasa:** una entrega mensual (`demo.sh nueva-entrega`) trae un mes
@@ -261,6 +274,75 @@ Para actualizar una imagen: bajar la nueva, tomar su digest o version con
 inventado rompe el build, por eso no se fija sin esa verificacion. Airflow
 (`2.10.3`) y Postgres (`16-alpine`) ya estaban fijados por tag. Queda sin fijar
 la version de `uv` que instala el CI con `astral-sh/setup-uv@v3`.
+
+### Datos sinteticos sin perfil por cliente
+
+Registrado el 2026-10-16, al revisar clientes uno por uno en el dashboard: CLI-000001
+cobraba nomina en 5 de 12 meses y su "ingreso mensual" de 40,840 promediaba solo
+esos meses. La causa estaba en el generador: cada mes era un sorteo independiente.
+La regla "75 % son empleados formales" se sorteaba por cliente y por mes, la nomina
+era uniforme entre 4,000 y 25,000 sin relacion con el ingreso declarado, y compras,
+pagos y retiros tampoco dependian del cliente.
+
+Resuelto en `fix/datos-perfil-cliente`:
+
+- **Generador.** `generar_perfiles` sortea una vez por cliente: ingreso formal (nomina
+  quincenal fija) o informal (2 a 6 depositos al mes, tipo nuevo `deposito`, con
+  volatilidad propia), anclado al ingreso declarado; proporcion de gasto (15 % gasta
+  de forma cronica mas de lo que gana); preferencia por categorias; puntualidad de
+  pago y cuota fija por deuda. Usa un generador aleatorio propio, y la semilla por mes
+  sigue garantizando que una entrega nueva no altera los meses anteriores.
+- **Cuentas.** Saldo de la cuenta digital, linea de tarjeta (1 a 3 veces el ingreso)
+  y monto de prestamo (cuota de 10 % a 30 % del ingreso) escalan con el ingreso
+  declarado. Antes se sorteaban sin relacion: con el perfil ya corregido, eso dejaba
+  clientes con cuotas mayores que su ingreso (CLI-000001 pagaba 21,000 al mes de
+  deuda con 22,000 de ingreso). Clientes y CETES no cambian.
+- **KPIs.** Ingreso, gasto, estabilidad y actividad P2P se promedian sobre la rejilla
+  completa cliente x mes (un mes sin movimientos vale 0). El ingreso incluye
+  `deposito`. `capacidad_ahorro` descuenta compras, pagos de deuda y retiros; antes
+  solo compras.
+- **Score.** `train_model.py` guarda la probabilidad fuera de pliegue (5 pliegues) y
+  `predict_risk.py` la publica para los clientes con etiqueta. Antes se predecian con
+  el modelo final, que habia visto su etiqueta: 58 clientes salian por encima de 0.90,
+  ahora 14 (ver "Probabilidad de impago descalibrada" en Abiertos para el resto).
+
+Medido sobre los CSV de la sesion base (500 clientes, semilla 42), antes y despues:
+
+| Medida | Antes | Despues |
+|---|---|---|
+| Meses-cliente sin ingreso | 23.9 % | 3.0 % (informales con un mes seco) |
+| Correlacion ingreso declarado / observado | -0.03 | 0.97 |
+| Coeficiente de variacion mensual del ingreso (mediana) | 0.75 | 0.21 (formales 0, informales 0.2 a 0.45) |
+| Correlacion compras / ingreso entre clientes | -0.03 | 0.89 |
+| Misma categoria dominante en las dos mitades del ano | 12 % (azar con 12 categorias) | 64 % |
+| Clientes con flujo neto negativo | 68 % | 23 % |
+
+Evaluacion del modelo con los mismos parametros de etiqueta (sin cambios desde
+2026-10-09), 500 clientes, `experimentos/auc_evento_posterior.py`:
+
+| Medida | Datos anteriores (79 positivos) | Datos con perfil (82 positivos) |
+|---|---|---|
+| AUC, validacion cruzada (por pliegue) | 0.728 +- 0.060 | 0.741 +- 0.040 |
+| AUC fuera de pliegue, media de 5 repeticiones | 0.725 (0.676 a 0.753) | 0.738 (0.726 a 0.748) |
+| AUC del oraculo | 0.860 | 0.864 |
+| Hueco oraculo - modelo | 0.135 | 0.126 |
+| Sin las 3 variables observadas (ablacion) | 0.657 | 0.681 |
+
+El cambio en AUC es pequeno y no es el objetivo: el objetivo era que los datos
+describan clientes coherentes. Lo que si cambia es la estabilidad de la medida (la
+desviacion entre pliegues baja de 0.060 a 0.040) y que las demas variables llevan
+mas senal (la ablacion sube 2 puntos), porque la estabilidad de ingreso ahora
+distingue formales de informales. Una version intermedia, con perfil pero sin
+escalar las cuentas, dio 0.773: las cuotas desproporcionadas hacian el riesgo mas
+facil de separar de lo que seria con datos realistas. La evaluacion a 5,000 clientes no se
+repitio. Corrida fuera de Docker con Parquet en lugar de Delta (sin acceso a los
+JARs de Delta en ese entorno); los numeros de Gold no dependen del formato de
+almacenamiento, pero conviene repetirla en la imagen del worker.
+
+Efecto operativo: la sesion `s42_20260930_500c_12m` conserva su id, y el generador
+reutiliza una sesion existente aunque su codigo haya cambiado. Una instancia con la
+sesion anterior se reconstruye desde cero (respaldo, `limpiar todo`, generador con
+`--forzar`); si no, Bronze recibiria los archivos nuevos como entregas adicionales.
 
 ### Auditoria tecnica del 2026-10-14
 

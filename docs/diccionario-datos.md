@@ -99,7 +99,7 @@ Llave: `transaccion_id`. Bronze particiona por `anio_mes`.
 | `cuenta_id` | string | not_null, llave foranea a cuentas | | |
 | `cliente_id` | string | | | |
 | `fecha` | date | not_null | | Dias 1-28; nomina el 15 y el ultimo dia del mes |
-| `tipo_transaccion` | string | not_null, valores `compra`, `p2p_enviado`, `p2p_recibido`, `pago_recurrente`, `nomina`, `retiro` | | |
+| `tipo_transaccion` | string | not_null, valores `compra`, `p2p_enviado`, `p2p_recibido`, `pago_recurrente`, `nomina`, `deposito`, `retiro` | | `deposito`: ingreso informal (efectivo o transferencia de un cliente) |
 | `categoria` | string | | | Categoria de gasto o del movimiento |
 | `monto` | decimal(12,2) | not_null, distinto de 0 | | MXN. Negativo = salida de dinero |
 | `contraparte` | string | | | Descripcion no personal: comercio, "Depósito de Nómina", "Transferencia SPEI", etc. |
@@ -172,12 +172,12 @@ que agregar un KPI no cambie el esquema.
 
 | `kpi_id` | Categoria | Unidad | Calculo |
 |---|---|---|---|
-| `ingreso_mensual_promedio` | ingresos | MXN | Promedio mensual de depositos de nomina |
-| `estabilidad_ingreso` | ingresos | MXN | Desviacion estandar del ingreso mensual por nomina |
-| `gasto_mensual_total` | gastos | MXN | Promedio mensual de compras |
+| `ingreso_mensual_promedio` | ingresos | MXN | Promedio mensual de nomina y depositos, sobre todos los meses del periodo (un mes sin ingreso cuenta como 0) |
+| `estabilidad_ingreso` | ingresos | MXN | Desviacion estandar del ingreso mensual (nomina y depositos), con los meses sin ingreso en 0 |
+| `gasto_mensual_total` | gastos | MXN | Promedio mensual de compras, sobre todos los meses del periodo |
 | `gasto_promedio_3_meses` | gastos | MXN | Promedio mensual de compras de los 3 meses mas recientes |
 | `categoria_gasto_dominante` | gastos | categoria | Categoria con mayor gasto en compras |
-| `capacidad_ahorro` | ahorro_y_liquidez | MXN | Ingreso mensual promedio menos gasto mensual promedio |
+| `capacidad_ahorro` | ahorro_y_liquidez | MXN | Ingreso mensual promedio menos salidas mensuales promedio (compras, pagos de deuda y retiros). Las transferencias P2P no cuentan en ningun lado |
 | `saldo_liquido_disponible` | ahorro_y_liquidez | MXN | Saldo de la cuenta digital |
 | `ratio_endeudamiento` | riesgo_y_endeudamiento | ratio | Saldo de tarjeta y prestamo entre ingreso mensual promedio |
 | `uso_linea_credito` | riesgo_y_endeudamiento | ratio | Saldo de tarjeta entre limite de credito |
@@ -215,7 +215,7 @@ levantar Spark.
 |---|---|
 | `cliente_id` | |
 | `mes` | `AAAA-MM` de la fecha del movimiento |
-| `tipo_transaccion` | `nomina`, `p2p_recibido`, `compra`, `pago_recurrente`, `retiro`, `p2p_enviado` |
+| `tipo_transaccion` | `nomina`, `deposito`, `p2p_recibido`, `compra`, `pago_recurrente`, `retiro`, `p2p_enviado` |
 | `categoria` | Categoria de Silver |
 | `monto_total` | Suma de `monto` con el signo de Silver: positivo para entradas, negativo para salidas. El neto de un mes es la suma simple |
 | `n_movimientos` | Numero de transacciones agregadas |

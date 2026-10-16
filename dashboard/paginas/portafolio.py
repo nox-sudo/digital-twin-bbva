@@ -31,8 +31,8 @@ if comun.gold_disponible():
     c3.metric(
         "Gastan más de lo que ganan",
         comun.porcentaje(resumen["pct_ahorro_negativo"]),
-        help="Clientes con capacidad de ahorro negativa: compras mensuales "
-        "promedio mayores que su nómina promedio.",
+        help="Clientes con capacidad de ahorro negativa: sus compras, pagos de "
+        "deuda y retiros superan en promedio a su ingreso.",
     )
     c4.metric(
         "Probabilidad media de impago",
@@ -182,8 +182,8 @@ if comun.gold_disponible():
     )
     st.altair_chart(lineas, use_container_width=True)
     st.caption(
-        "Entradas: nómina y transferencias recibidas. Salidas: compras, pagos "
-        "recurrentes, retiros y transferencias enviadas."
+        "Entradas: nómina, depósitos y transferencias recibidas. Salidas: compras, "
+        "pagos de deuda, retiros y transferencias enviadas."
     )
 
     # --- Clientes a revisar -----------------------------------------------

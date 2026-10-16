@@ -66,7 +66,7 @@ if comun.gold_disponible():
         "Capacidad de ahorro",
         comun.pesos(fila["capacidad_ahorro"]),
         help=contexto("capacidad_ahorro")
-        + " Se calcula como nómina menos compras; no descuenta pagos de deuda.",
+        + " Ingreso menos compras, pagos de deuda y retiros, en promedio mensual.",
     )
     c4.metric(
         "Saldo disponible",
