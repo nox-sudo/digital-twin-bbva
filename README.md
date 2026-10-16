@@ -70,7 +70,7 @@ Detalle completo de zonas, tareas del DAG y decisiones de diseño en [docs/arqui
 |---|---|---|
 | Lenguaje | Python 3.11 | Estándar de la industria para Data Engineering |
 | Entorno | uv | Resolución de dependencias más rápida que pip/venv |
-| Procesamiento | PySpark | Procesamiento distribuido, justificado por el volumen de transacciones (115,000+ filas) |
+| Procesamiento | PySpark | Procesamiento distribuido, justificado por el volumen de transacciones (125,064 filas en la sesión de referencia) |
 | Almacenamiento Bronze/Silver | Delta Lake | Transacciones ACID y versionado |
 | Reglas de calidad | YAML | Reglas de negocio como datos, no como código |
 | Base analítica Gold | DuckDB | Motor ligero, sin infraestructura adicional |
