@@ -65,3 +65,6 @@ gfd:silver.zip
 models/*.joblib
 models/*.png
 models/*.parquet
+# Referencia congelada del monitoreo de deriva (monitor_drift.py): se
+# respalda con demo.sh respaldar, no con git.
+models/referencia_psi/

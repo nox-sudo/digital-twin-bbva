@@ -145,6 +145,87 @@ def test_respaldar_sin_datos_falla_con_mensaje(proyecto, tmp_path):
     assert "No hay nada que respaldar" in resultado.stderr
 
 
+REFERENCIA = {
+    "referencia_psi/activa.json": b'{"activa": "ref_20261016_130501"}',
+    "referencia_psi/ref_20261016_130501/referencia.json": b'{"variables": {}}',
+    "referencia_psi/ref_20261016_130501/modelo_base.joblib": bytes(range(64)),
+}
+
+
+@pytest.fixture
+def proyecto_con_referencia(proyecto):
+    """El mismo proyecto con la referencia congelada del monitoreo de deriva
+    en models/, y un modelo reentrenado al lado que NO debe respaldarse."""
+    for ruta, contenido in REFERENCIA.items():
+        destino = proyecto / "models" / ruta
+        destino.parent.mkdir(parents=True, exist_ok=True)
+        destino.write_bytes(contenido)
+    (proyecto / "models" / "risk_model.joblib").write_bytes(b"se regenera")
+    return proyecto
+
+
+def test_respaldar_incluye_la_referencia_de_deriva_con_su_hash(
+    proyecto_con_referencia, tmp_path
+):
+    destino = tmp_path / "respaldos" / "r1"
+    resultado = _demo(proyecto_con_referencia, "respaldar", str(destino))
+
+    assert resultado.returncode == 0, resultado.stderr
+    assert _arbol(destino / "models") == REFERENCIA
+    manifiesto = (destino / "MANIFIESTO.sha256").read_text()
+    for ruta in REFERENCIA:
+        assert f"  models/{ruta}\n" in manifiesto
+    assert "risk_model.joblib" not in manifiesto
+
+
+def test_restaurar_devuelve_la_referencia_de_deriva(proyecto_con_referencia, tmp_path):
+    destino = tmp_path / "respaldos" / "r1"
+    assert _demo(proyecto_con_referencia, "respaldar", str(destino)).returncode == 0
+
+    _vaciar_data(proyecto_con_referencia)
+    shutil.rmtree(proyecto_con_referencia / "models" / "referencia_psi")
+    resultado = _demo(proyecto_con_referencia, "restaurar", str(destino))
+
+    assert resultado.returncode == 0, resultado.stderr
+    assert _arbol(proyecto_con_referencia / "data") == ARCHIVOS
+    assert {
+        k: v
+        for k, v in _arbol(proyecto_con_referencia / "models").items()
+        if k in REFERENCIA
+    } == REFERENCIA
+
+
+def test_restaurar_rechaza_una_referencia_alterada(proyecto_con_referencia, tmp_path):
+    destino = tmp_path / "respaldos" / "r1"
+    assert _demo(proyecto_con_referencia, "respaldar", str(destino)).returncode == 0
+    (
+        destino
+        / "models"
+        / "referencia_psi"
+        / "ref_20261016_130501"
+        / "modelo_base.joblib"
+    ).write_bytes(b"otro modelo")
+
+    _vaciar_data(proyecto_con_referencia)
+    shutil.rmtree(proyecto_con_referencia / "models" / "referencia_psi")
+    resultado = _demo(proyecto_con_referencia, "restaurar", str(destino))
+
+    assert resultado.returncode != 0
+    assert "no coincide con su manifiesto" in resultado.stderr
+    assert not (proyecto_con_referencia / "models" / "referencia_psi").exists()
+
+
+def test_restaurar_no_pisa_una_referencia_existente(proyecto_con_referencia, tmp_path):
+    destino = tmp_path / "respaldos" / "r1"
+    assert _demo(proyecto_con_referencia, "respaldar", str(destino)).returncode == 0
+
+    _vaciar_data(proyecto_con_referencia)
+    resultado = _demo(proyecto_con_referencia, "restaurar", str(destino))
+
+    assert resultado.returncode != 0
+    assert "models/referencia_psi ya tiene contenido" in resultado.stderr
+
+
 @pytest.mark.parametrize(
     "argumentos, mensaje",
     [

@@ -1,0 +1,31 @@
+# config/monitoreo_psi.yaml
+#
+# Monitoreo de deriva de datos con PSI (monitor_drift.py,
+# src/monitoreo/). Compara la distribucion actual de cada feature numerica
+# del modelo, y del score, contra la referencia congelada del modelo base.
+# Explicacion y limites en docs/monitoreo-deriva.md.
+
+# Numero de intervalos de la referencia: deciles de la distribucion de
+# entrenamiento. Solo se usa al CREAR una referencia; una referencia ya
+# creada guarda sus cortes y no se recalcula aunque este valor cambie.
+bins: 10
+
+# Proporcion minima que se asigna a un intervalo vacio para que log(0) no
+# rompa el calculo. Pequena para no inflar el PSI de intervalos vacios en
+# ambas distribuciones (aportan 0 de todos modos).
+epsilon: 0.0001
+
+# Estado por variable: estable si psi < vigilar; vigilar si
+# vigilar <= psi <= reentrenar; reentrenar si psi > reentrenar.
+# Valores de uso comun en riesgo de credito, no derivados de estos datos.
+umbrales:
+  vigilar: 0.10
+  reentrenar: 0.25
+
+rutas:
+  # Referencias (una carpeta por referencia, nunca se sobrescriben) y
+  # marcador de la activa. Se respalda con demo.sh respaldar.
+  referencias: models/referencia_psi
+  # Historico acumulable, un Parquet por corrida, junto al registro de
+  # calidad (data/calidad/).
+  historico: data/calidad/deriva_psi

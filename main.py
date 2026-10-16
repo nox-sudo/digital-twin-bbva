@@ -19,7 +19,8 @@ Pasos disponibles:
     labels         generate_labels.py               (etiqueta de impago como evento posterior)
     train-model    train_model.py                   (entrena XGBoost)
     predict-risk   predict_risk.py                  (predice y escribe a Gold)
-    calidad        quality_report.py                (reporte del registro de calidad)
+    monitor        monitor_drift.py                 (deriva de datos con PSI)
+    calidad        quality_report.py               (reporte del registro de calidad)
 
 Cada paso reenvia sus opciones tal cual al argparse del script real, por
 ejemplo:
@@ -46,6 +47,7 @@ PASOS = {
     "labels": "generate_labels",
     "train-model": "train_model",
     "predict-risk": "predict_risk",
+    "monitor": "monitor_drift",
     "calidad": "quality_report",
     "simulate": "simulate_mortgage",
 }
