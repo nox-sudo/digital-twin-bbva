@@ -19,47 +19,61 @@ calcula directamente sobre Bronze.
 from pyspark.sql import functions as F
 from pyspark.sql.window import Window
 
+# Tipos de movimiento que cuentan como ingreso: nomina (empleo formal) y
+# deposito (ingreso informal: efectivo o transferencias de clientes). Las
+# transferencias P2P no cuentan: son dinero entre personas, no ingreso.
+TIPOS_INGRESO = ["nomina", "deposito"]
+# Salidas que reducen la capacidad de ahorro: consumo, pago de deudas y
+# efectivo. Los envios P2P quedan fuera, igual que los recibidos.
+TIPOS_SALIDA = ["compra", "pago_recurrente", "retiro"]
+
+
+def _serie_mensual(ctx, tipos: list[str], desde=None):
+    """Monto mensual por cliente sobre la rejilla completa cliente x mes.
+
+    Un mes sin movimientos de esos tipos vale 0, no desaparece. Promediar
+    solo los meses con movimientos inflaba el ingreso de quien no cobra
+    todos los meses (un cliente que cobra 5 de 12 meses aparecia con el
+    ingreso de un mes bueno) y ocultaba esa irregularidad en la
+    desviacion estandar. Devuelve cliente_id, mes, monto (valor absoluto).
+    """
+    tx = ctx["transacciones"].withColumn("mes", F.date_format("fecha", "yyyy-MM"))
+    if desde is not None:
+        tx = tx.filter(F.col("fecha") >= desde)
+    meses = tx.select("mes").distinct()
+    rejilla = ctx["clientes"].select("cliente_id").crossJoin(meses)
+    sumas = (
+        tx.filter(F.col("tipo_transaccion").isin(tipos))
+        .groupBy("cliente_id", "mes")
+        .agg(F.sum(F.abs("monto")).alias("monto"))
+    )
+    return rejilla.join(sumas, ["cliente_id", "mes"], "left").fillna(0, ["monto"])
+
+
+def _promedio_mensual(ctx, tipos: list[str], desde=None):
+    return (
+        _serie_mensual(ctx, tipos, desde)
+        .groupBy("cliente_id")
+        .agg(F.avg("monto").cast("double").alias("valor_numerico"))
+        .toPandas()
+    )
+
 
 def kpi_ingreso_mensual_promedio(ctx):
-    tx = ctx["transacciones"]
-    nomina = tx.filter(F.col("tipo_transaccion") == "nomina")
-    por_mes = (
-        nomina.withColumn("mes", F.date_format("fecha", "yyyy-MM"))
-        .groupBy("cliente_id", "mes")
-        .agg(F.sum("monto").alias("ingreso_mes"))
-    )
-    resultado = por_mes.groupBy("cliente_id").agg(
-        F.avg("ingreso_mes").alias("valor_numerico")
-    )
-    return resultado.toPandas()
+    return _promedio_mensual(ctx, TIPOS_INGRESO)
 
 
 def kpi_estabilidad_ingreso(ctx):
-    tx = ctx["transacciones"]
-    nomina = tx.filter(F.col("tipo_transaccion") == "nomina")
-    por_mes = (
-        nomina.withColumn("mes", F.date_format("fecha", "yyyy-MM"))
-        .groupBy("cliente_id", "mes")
-        .agg(F.sum("monto").alias("ingreso_mes"))
-    )
-    resultado = por_mes.groupBy("cliente_id").agg(
-        F.stddev_samp("ingreso_mes").alias("valor_numerico")
+    resultado = (
+        _serie_mensual(ctx, TIPOS_INGRESO)
+        .groupBy("cliente_id")
+        .agg(F.stddev_samp("monto").cast("double").alias("valor_numerico"))
     )
     return resultado.toPandas()
 
 
 def kpi_gasto_mensual_total(ctx):
-    tx = ctx["transacciones"]
-    compras = tx.filter(F.col("tipo_transaccion") == "compra")
-    por_mes = (
-        compras.withColumn("mes", F.date_format("fecha", "yyyy-MM"))
-        .groupBy("cliente_id", "mes")
-        .agg(F.sum(F.abs("monto")).alias("gasto_mes"))
-    )
-    resultado = por_mes.groupBy("cliente_id").agg(
-        F.avg("gasto_mes").alias("valor_numerico")
-    )
-    return resultado.toPandas()
+    return _promedio_mensual(ctx, ["compra"])
 
 
 def kpi_gasto_promedio_3_meses(ctx):
@@ -71,19 +85,7 @@ def kpi_gasto_promedio_3_meses(ctx):
         mes = fecha_corte.month - 1 or 12
         anio = fecha_corte.year - (1 if fecha_corte.month == 1 else 0)
         fecha_corte = fecha_corte.replace(year=anio, month=mes)
-
-    compras = tx.filter(
-        (F.col("tipo_transaccion") == "compra") & (F.col("fecha") >= fecha_corte)
-    )
-    por_mes = (
-        compras.withColumn("mes", F.date_format("fecha", "yyyy-MM"))
-        .groupBy("cliente_id", "mes")
-        .agg(F.sum(F.abs("monto")).alias("gasto_mes"))
-    )
-    resultado = por_mes.groupBy("cliente_id").agg(
-        F.avg("gasto_mes").alias("valor_numerico")
-    )
-    return resultado.toPandas()
+    return _promedio_mensual(ctx, ["compra"], desde=fecha_corte)
 
 
 def kpi_categoria_gasto_dominante(ctx):
@@ -108,12 +110,17 @@ def kpi_categoria_gasto_dominante(ctx):
 
 
 def kpi_capacidad_ahorro(ctx):
+    """Ingreso mensual promedio menos salidas mensuales promedio (compras,
+    pagos de deuda y retiros). Antes restaba solo compras, asi que un
+    cliente con un prestamo grande aparecia con buena capacidad de ahorro."""
     ingreso = kpi_ingreso_mensual_promedio(ctx).rename(
         columns={"valor_numerico": "ingreso"}
     )
-    gasto = kpi_gasto_mensual_total(ctx).rename(columns={"valor_numerico": "gasto"})
-    combinado = ingreso.merge(gasto, on="cliente_id", how="outer").fillna(0)
-    combinado["valor_numerico"] = combinado["ingreso"] - combinado["gasto"]
+    salidas = _promedio_mensual(ctx, TIPOS_SALIDA).rename(
+        columns={"valor_numerico": "salidas"}
+    )
+    combinado = ingreso.merge(salidas, on="cliente_id", how="outer").fillna(0)
+    combinado["valor_numerico"] = combinado["ingreso"] - combinado["salidas"]
     return combinado[["cliente_id", "valor_numerico"]]
 
 
@@ -133,7 +140,7 @@ def kpi_ratio_endeudamiento(ctx):
             F.col("tipo_cuenta").isin("tarjeta_credito", "prestamo_personal")
         )
         .groupBy("cliente_id")
-        .agg(F.sum("saldo_actual").alias("deuda_total"))
+        .agg(F.sum("saldo_actual").cast("double").alias("deuda_total"))
     )
     ingreso = kpi_ingreso_mensual_promedio(ctx).rename(
         columns={"valor_numerico": "ingreso"}
@@ -187,15 +194,14 @@ def kpi_frecuencia_transacciones(ctx):
 
 
 def kpi_actividad_p2p(ctx):
-    tx = ctx["transacciones"]
-    p2p = tx.filter(F.col("tipo_transaccion").isin("p2p_enviado", "p2p_recibido"))
-    por_mes = (
-        p2p.withColumn("mes", F.date_format("fecha", "yyyy-MM"))
-        .groupBy("cliente_id", "mes")
-        .agg(F.sum("monto").alias("neto_mes"))
-    )
-    resultado = por_mes.groupBy("cliente_id").agg(
-        F.avg("neto_mes").alias("valor_numerico")
+    """Neto mensual P2P (recibido menos enviado), promediado sobre todos los
+    meses: un mes sin transferencias cuenta como 0."""
+    recibido = _serie_mensual(ctx, ["p2p_recibido"]).withColumnRenamed("monto", "rec")
+    enviado = _serie_mensual(ctx, ["p2p_enviado"]).withColumnRenamed("monto", "env")
+    resultado = (
+        recibido.join(enviado, ["cliente_id", "mes"])
+        .groupBy("cliente_id")
+        .agg(F.avg(F.col("rec") - F.col("env")).cast("double").alias("valor_numerico"))
     )
     return resultado.toPandas()
 

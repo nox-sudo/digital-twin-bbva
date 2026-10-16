@@ -19,7 +19,7 @@ Sin esta tabla, cada uno tendria que leer Silver (Delta, con Spark) por
 su cuenta. Con ella, los tres leen la misma agregacion desde DuckDB.
 
 Grano: (cliente_id, mes, tipo_transaccion, categoria). El monto conserva
-el signo de Silver: entradas positivas (nomina, p2p_recibido) y salidas
+el signo de Silver: entradas positivas (nomina, deposito, p2p_recibido) y salidas
 negativas (compra, pago_recurrente, retiro, p2p_enviado), asi que el
 flujo neto de un mes es la suma simple de monto_total.
 """

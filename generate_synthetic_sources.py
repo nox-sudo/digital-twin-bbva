@@ -191,8 +191,21 @@ TIPOS_TRANSACCION = [
     "p2p_recibido",
     "pago_recurrente",
     "nomina",
+    "deposito",
     "retiro",
 ]
+
+# Perfil financiero de cada cliente: rasgos que se sortean UNA vez y se
+# mantienen todo el periodo (ver generar_perfiles). Sin ellos, cada mes
+# era un sorteo independiente: el ingreso no tenia relacion con el
+# ingreso declarado, la nomina desaparecia meses al azar y la categoria
+# de gasto dominante cambiaba de un mes a otro.
+PROPORCION_FORMALES = 0.75
+TASA_PRESTAMO_PERSONAL = 0.28  # anual, la del catalogo de productos
+# Ocupaciones que se generan siempre como ingreso informal (depositos
+# irregulares) u siempre como formal (nomina o pension fija).
+OCUPACIONES_INFORMALES = {"Independiente", "Comerciante", "Estudiante"}
+OCUPACIONES_FORMALES = {"Empleado", "Jubilado"}
 
 
 # Datos por ciudad para domicilio y telefono: estado, clave de estado
@@ -369,6 +382,10 @@ def generar_cuentas(clientes_df: pd.DataFrame, fecha_ref: date) -> list[dict]:
     cuentas = []
     contador = 1
     for _, cliente in clientes_df.iterrows():
+        # Saldos, limites y prestamos escalan con el ingreso declarado, como
+        # los otorgaria un banco: sin esto, un cliente de 8,000 al mes podia
+        # tener una linea de 120,000 y cuotas mayores que su ingreso.
+        ingreso = float(cliente["ingreso_mensual_declarado"])
         # Toda persona tiene cuenta digital
         cuentas.append(
             {
@@ -376,7 +393,7 @@ def generar_cuentas(clientes_df: pd.DataFrame, fecha_ref: date) -> list[dict]:
                 "cliente_id": cliente["cliente_id"],
                 "tipo_cuenta": TIPOS_CUENTA[0],
                 "fecha_apertura": cliente["fecha_alta"],
-                "saldo_actual": round(float(np.random.uniform(500, 50000)), 2),
+                "saldo_actual": round(float(ingreso * np.random.uniform(0.2, 2.0)), 2),
                 "moneda": "MXN",
                 "estatus": "activa",
             }
@@ -385,7 +402,10 @@ def generar_cuentas(clientes_df: pd.DataFrame, fecha_ref: date) -> list[dict]:
 
         # 55% tiene tarjeta de crédito
         if random.random() < 0.55:
-            limite = round(float(np.random.uniform(5000, 120000)), -2)
+            # Linea de 1 a 3 veces el ingreso mensual, minimo 5,000.
+            limite = max(
+                5000.0, round(float(ingreso * np.random.uniform(1.0, 3.0)), -2)
+            )
             cuentas.append(
                 {
                     "cuenta_id": f"CTA-{contador:06d}",
@@ -404,7 +424,13 @@ def generar_cuentas(clientes_df: pd.DataFrame, fecha_ref: date) -> list[dict]:
 
         # 30% tiene préstamo personal
         if random.random() < 0.30:
-            monto = round(float(np.random.uniform(10000, 200000)), -2)
+            # Monto tal que la cuota quede entre 10 % y 30 % del ingreso (el
+            # tope que usaria un analista de credito), para el plazo elegido.
+            plazo = random.choice([12, 24, 36, 48])
+            cuota_objetivo = ingreso * np.random.uniform(0.10, 0.30)
+            tasa_mensual = TASA_PRESTAMO_PERSONAL / 12
+            monto = cuota_objetivo * (1 - (1 + tasa_mensual) ** -plazo) / tasa_mensual
+            monto = max(10000.0, round(float(monto), -2))
             cuentas.append(
                 {
                     "cuenta_id": f"CTA-{contador:06d}",
@@ -417,7 +443,7 @@ def generar_cuentas(clientes_df: pd.DataFrame, fecha_ref: date) -> list[dict]:
                         float(monto * np.random.uniform(0.3, 1.0)), 2
                     ),
                     "monto_original": monto,
-                    "plazo_meses": random.choice([12, 24, 36, 48]),
+                    "plazo_meses": plazo,
                     "moneda": "MXN",
                     "estatus": "activa",
                 }
@@ -467,10 +493,100 @@ def generar_cetes_inversiones(cuentas: list[dict]) -> pd.DataFrame:
     return pd.DataFrame(registros)
 
 
-def generar_transacciones_mes(cuentas: list[dict], anio: int, mes: int) -> pd.DataFrame:
+def _cuota_prestamo(monto: float, plazo_meses: int) -> float:
+    """Pago mensual fijo de un prestamo (amortizacion francesa)."""
+    tasa_mensual = TASA_PRESTAMO_PERSONAL / 12
+    return monto * tasa_mensual / (1 - (1 + tasa_mensual) ** -plazo_meses)
+
+
+def generar_perfiles(
+    clientes_df: pd.DataFrame, cuentas: list[dict], semilla: int
+) -> dict[str, dict]:
+    """Rasgos financieros estables de cada cliente.
+
+    Usa un generador propio, derivado de la semilla de la sesion, en vez del
+    estado global de random/NumPy: asi agregar los perfiles no cambia ni un
+    valor de clientes, cuentas o CETES, y el perfil de un cliente no depende
+    del mes que se este generando.
+
+    Rasgos:
+      formal          nomina quincenal fija (True) o depositos irregulares
+      ingreso_base    ingreso mensual esperado, anclado al declarado
+      volatilidad     dispersion mes a mes del ingreso (0 si es formal)
+      tasa_gasto      fraccion del ingreso que se va en compras
+      pesos_categoria preferencia estable por categoria de gasto
+      puntualidad     probabilidad de pagar cada deuda en un mes dado
+      cuotas          pago mensual fijo por cuenta de deuda
+    """
+    rng = np.random.default_rng(int(semilla_mes(semilla, 0, 0)))
+    deudas_por_cliente: dict[str, list[dict]] = {}
+    for c in cuentas:
+        if c["tipo_cuenta"] in ("tarjeta_credito", "prestamo_personal"):
+            deudas_por_cliente.setdefault(c["cliente_id"], []).append(c)
+
+    perfiles = {}
+    for _, cliente in clientes_df.iterrows():
+        declarado = float(cliente["ingreso_mensual_declarado"])
+        if cliente["ocupacion"] in OCUPACIONES_FORMALES:
+            formal = True
+        elif cliente["ocupacion"] in OCUPACIONES_INFORMALES:
+            formal = False
+        else:
+            formal = bool(rng.random() < PROPORCION_FORMALES)
+
+        # La gente tiende a declarar algo de mas: lo observado queda entre
+        # 80 % y 105 % de lo declarado, un poco menos para informales.
+        ingreso_base = declarado * (
+            rng.uniform(0.85, 1.05) if formal else rng.uniform(0.75, 1.0)
+        )
+        # Un 15 % de los clientes gasta de forma cronica mas de lo que gana:
+        # es el segmento que el riesgo deberia poder distinguir.
+        if rng.random() < 0.15:
+            tasa_gasto = rng.uniform(0.95, 1.20)
+        else:
+            tasa_gasto = rng.uniform(0.45, 0.85)
+        # Puntualidad: casi todos pagan casi siempre; un 12 % es irregular.
+        if rng.random() < 0.12:
+            puntualidad = rng.uniform(0.50, 0.80)
+        else:
+            puntualidad = rng.uniform(0.95, 1.0)
+
+        cuotas = {}
+        for deuda in deudas_por_cliente.get(cliente["cliente_id"], []):
+            if deuda["tipo_cuenta"] == "prestamo_personal":
+                cuota = _cuota_prestamo(deuda["monto_original"], deuda["plazo_meses"])
+            else:  # tarjeta: paga una fraccion estable de su saldo
+                cuota = max(300.0, deuda["saldo_actual"] * rng.uniform(0.04, 0.12))
+            cuotas[deuda["cuenta_id"]] = round(float(cuota), 2)
+
+        perfiles[cliente["cliente_id"]] = {
+            "formal": formal,
+            "ingreso_base": ingreso_base,
+            "volatilidad": 0.0 if formal else float(rng.uniform(0.20, 0.45)),
+            "tasa_gasto": float(tasa_gasto),
+            # Dirichlet con alfa < 1: cada cliente concentra su gasto en
+            # pocas categorias, y esas categorias se mantienen.
+            "pesos_categoria": rng.dirichlet(np.full(len(CATEGORIAS_GASTO), 0.7)),
+            "puntualidad": float(puntualidad),
+            "cuotas": cuotas,
+        }
+    return perfiles
+
+
+def _montos_que_suman(total: float, n: int) -> np.ndarray:
+    """Reparte un total en n montos positivos y desiguales."""
+    proporciones = np.random.dirichlet(np.ones(n))
+    return np.maximum(np.round(total * proporciones, 2), 20.0)
+
+
+def generar_transacciones_mes(
+    cuentas: list[dict], anio: int, mes: int, perfiles: dict[str, dict]
+) -> pd.DataFrame:
     """
     Genera transacciones de un mes específico para todas las cuentas activas.
-    Simula: nómina quincenal, gasto variable por categoría, P2P, pagos recurrentes.
+    Simula: ingreso (nómina quincenal o depósitos irregulares), gasto por
+    categoría, P2P, pagos de deuda y retiros. Los montos salen del perfil
+    estable de cada cliente (generar_perfiles) más el ruido propio del mes.
     """
     registros = []
     tx_id = 1
@@ -485,125 +601,122 @@ def generar_transacciones_mes(cuentas: list[dict], anio: int, mes: int) -> pd.Da
         cliente_id = cuenta["cliente_id"]
         cuenta_id = cuenta["cuenta_id"]
 
-        # Nómina quincenal (día 15 y último día del mes) - no todos son empleados formales
-        if random.random() < 0.75:
-            ultimo_dia = calendar.monthrange(anio, mes)[1]
-            # Mismo monto en ambas quincenas del mes: un empleado con
-            # salario fijo no cobra un monto distinto cada quincena.
-            monto_nomina = round(float(np.random.uniform(4000, 25000)), 2)
-            for dia_pago in [15, ultimo_dia]:
-                fecha = date(anio, mes, dia_pago)
-                registros.append(
-                    {
-                        "transaccion_id": f"TX-{anio}{mes:02d}-{tx_id:07d}",
-                        "cuenta_id": cuenta_id,
-                        "cliente_id": cliente_id,
-                        "fecha": fecha.isoformat(),
-                        "tipo_transaccion": "nomina",
-                        "categoria": "ingreso",
-                        "monto": monto_nomina,
-                        "contraparte": "Depósito de Nómina",
-                    }
-                )
-                tx_id += 1
+        perfil = perfiles[cliente_id]
+        ultimo_dia = calendar.monthrange(anio, mes)[1]
 
-        # Gasto variable: entre 8 y 25 transacciones al mes por cuenta
-        n_transacciones = random.randint(8, 25)
-        for _ in range(n_transacciones):
-            dia = random.randint(1, 28)
-            fecha = date(anio, mes, dia)
-            categoria = random.choice(CATEGORIAS_GASTO)
-            comercio = random.choice(COMERCIOS_POR_CATEGORIA[categoria])
-
-            # Suscripciones y servicios tienen montos más estables (menos ruido)
-            if categoria in ("suscripciones", "servicios"):
-                monto = round(float(np.random.uniform(100, 800)), 2)
-            else:
-                monto = round(float(np.random.uniform(50, 3000)), 2)
-
+        def agregar(fecha_mov, tipo, categoria, monto, contraparte, **extra):
+            nonlocal tx_id
             registros.append(
                 {
                     "transaccion_id": f"TX-{anio}{mes:02d}-{tx_id:07d}",
                     "cuenta_id": cuenta_id,
                     "cliente_id": cliente_id,
-                    "fecha": fecha.isoformat(),
-                    "tipo_transaccion": "compra",
+                    "fecha": fecha_mov.isoformat(),
+                    "tipo_transaccion": tipo,
                     "categoria": categoria,
-                    "monto": -monto,  # negativo = salida de dinero
-                    "contraparte": comercio,
+                    "monto": monto,
+                    "contraparte": contraparte,
+                    **extra,
                 }
             )
             tx_id += 1
+
+        # Ingreso. Formal: misma nomina las dos quincenas, todos los meses.
+        # Informal: el ingreso del mes varia alrededor del base (lognormal con
+        # media 1) y llega en 2 a 6 depositos; algun mes puede no llegar nada.
+        if perfil["formal"]:
+            quincena = round(perfil["ingreso_base"] / 2, 2)
+            for dia_pago in [15, ultimo_dia]:
+                agregar(
+                    date(anio, mes, dia_pago),
+                    "nomina",
+                    "ingreso",
+                    quincena,
+                    "Depósito de Nómina",
+                )
+        elif random.random() > 0.06:
+            sigma = perfil["volatilidad"]
+            ingreso_mes = perfil["ingreso_base"] * np.random.lognormal(
+                -(sigma**2) / 2, sigma
+            )
+            n_depositos = random.randint(2, 6)
+            for monto in _montos_que_suman(ingreso_mes, n_depositos):
+                agregar(
+                    date(anio, mes, random.randint(1, ultimo_dia)),
+                    "deposito",
+                    "ingreso",
+                    float(monto),
+                    random.choice(["Depósito en efectivo", "Transferencia de cliente"]),
+                )
+
+        # Gasto: el total del mes es una fraccion estable del ingreso base,
+        # con +-15 % de ruido y un repunte en diciembre; las categorias salen
+        # de las preferencias del cliente.
+        estacional = 1.15 if mes == 12 else 1.0
+        gasto_mes = (
+            perfil["ingreso_base"]
+            * perfil["tasa_gasto"]
+            * estacional
+            * np.random.uniform(0.85, 1.15)
+        )
+        n_transacciones = random.randint(8, 25)
+        categorias = np.random.choice(
+            CATEGORIAS_GASTO, size=n_transacciones, p=perfil["pesos_categoria"]
+        )
+        for categoria, monto in zip(
+            categorias, _montos_que_suman(gasto_mes, n_transacciones)
+        ):
+            agregar(
+                date(anio, mes, random.randint(1, 28)),
+                "compra",
+                str(categoria),
+                -float(monto),  # negativo = salida de dinero
+                random.choice(COMERCIOS_POR_CATEGORIA[categoria]),
+            )
 
         # P2P ocasional (tipo SPEI entre personas)
         if random.random() < 0.4:
-            dia = random.randint(1, 28)
-            fecha = date(anio, mes, dia)
             monto_p2p = round(float(np.random.uniform(100, 2000)), 2)
             enviado = random.random() < 0.5
-            registros.append(
-                {
-                    "transaccion_id": f"TX-{anio}{mes:02d}-{tx_id:07d}",
-                    "cuenta_id": cuenta_id,
-                    "cliente_id": cliente_id,
-                    "fecha": fecha.isoformat(),
-                    "tipo_transaccion": "p2p_enviado" if enviado else "p2p_recibido",
-                    "categoria": "transferencia_personal",
-                    "monto": -monto_p2p if enviado else monto_p2p,
-                    # contraparte describe el movimiento (nunca una persona);
-                    # el nombre de la otra persona va aparte porque es PII
-                    # de alguien que ni siquiera es cliente.
-                    "contraparte": "Transferencia SPEI",
-                    "contraparte_persona": fake.name(),
-                }
+            agregar(
+                date(anio, mes, random.randint(1, 28)),
+                "p2p_enviado" if enviado else "p2p_recibido",
+                "transferencia_personal",
+                -monto_p2p if enviado else monto_p2p,
+                # contraparte describe el movimiento (nunca una persona);
+                # el nombre de la otra persona va aparte porque es PII
+                # de alguien que ni siquiera es cliente.
+                "Transferencia SPEI",
+                contraparte_persona=fake.name(),
             )
-            tx_id += 1
 
-        # Pago recurrente: pago automático mensual hacia deudas propias del cliente
+        # Pago de deudas: la cuota es fija por cuenta (perfil); que se pague
+        # o no en un mes depende de la puntualidad del cliente. Un cliente
+        # impuntual deja huella en los datos, no solo en la etiqueta.
         for deuda in deudas_por_cliente.get(cliente_id, []):
-            if random.random() < 0.85:
-                dia = random.choice([5, 10, 20])
-                fecha = date(anio, mes, dia)
-                if deuda["tipo_cuenta"] == "tarjeta_credito":
-                    monto_pago = round(
-                        float(np.random.uniform(300, deuda["limite_credito"] * 0.15)), 2
-                    )
-                    contraparte = "Pago Tarjeta de Crédito"
-                else:  # prestamo_personal
-                    monto_pago = round(float(np.random.uniform(500, 4000)), 2)
-                    contraparte = "Pago Préstamo Personal"
-                registros.append(
-                    {
-                        "transaccion_id": f"TX-{anio}{mes:02d}-{tx_id:07d}",
-                        "cuenta_id": cuenta_id,
-                        "cliente_id": cliente_id,
-                        "fecha": fecha.isoformat(),
-                        "tipo_transaccion": "pago_recurrente",
-                        "categoria": "pago_deuda",
-                        "monto": -monto_pago,
-                        "contraparte": contraparte,
-                    }
+            if random.random() < perfil["puntualidad"]:
+                agregar(
+                    date(anio, mes, random.choice([5, 10, 20])),
+                    "pago_recurrente",
+                    "pago_deuda",
+                    -perfil["cuotas"][deuda["cuenta_id"]],
+                    (
+                        "Pago Tarjeta de Crédito"
+                        if deuda["tipo_cuenta"] == "tarjeta_credito"
+                        else "Pago Préstamo Personal"
+                    ),
                 )
-                tx_id += 1
 
-        # Retiro de efectivo ocasional
+        # Retiro de efectivo ocasional, proporcional al ingreso
         if random.random() < 0.2:
-            dia = random.randint(1, 28)
-            fecha = date(anio, mes, dia)
-            monto_retiro = round(float(np.random.uniform(200, 3000)), 2)
-            registros.append(
-                {
-                    "transaccion_id": f"TX-{anio}{mes:02d}-{tx_id:07d}",
-                    "cuenta_id": cuenta_id,
-                    "cliente_id": cliente_id,
-                    "fecha": fecha.isoformat(),
-                    "tipo_transaccion": "retiro",
-                    "categoria": "efectivo",
-                    "monto": -monto_retiro,
-                    "contraparte": "Retiro Cajero",
-                }
+            monto_retiro = perfil["ingreso_base"] * np.random.uniform(0.02, 0.10)
+            agregar(
+                date(anio, mes, random.randint(1, 28)),
+                "retiro",
+                "efectivo",
+                -round(float(max(200.0, monto_retiro)), 2),
+                "Retiro Cajero",
             )
-            tx_id += 1
 
     return pd.DataFrame(registros)
 
@@ -667,6 +780,8 @@ def generar_fuentes(out_dir: Path, parametros: dict) -> dict:
     cetes_df = generar_cetes_inversiones(cuentas)
     cetes_df.to_csv(out_dir / "cetes_inversiones.csv", index=False)
 
+    perfiles = generar_perfiles(clientes_df, cuentas, parametros["semilla"])
+
     print(f"Generando transacciones para {total_meses} meses (corte {corte})...")
     total_tx = 0
     for anio, mes in meses_a_generar(corte, total_meses):
@@ -674,7 +789,7 @@ def generar_fuentes(out_dir: Path, parametros: dict) -> dict:
         random.seed(semilla)
         np.random.seed(semilla)
         Faker.seed(semilla)  # contraparte_persona (P2P) usa Faker
-        tx_df = generar_transacciones_mes(cuentas, anio, mes)
+        tx_df = generar_transacciones_mes(cuentas, anio, mes, perfiles)
         archivo = out_dir / "transacciones" / f"transacciones_{anio}_{mes:02d}.csv"
         tx_df.to_csv(archivo, index=False)
         total_tx += len(tx_df)

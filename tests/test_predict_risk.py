@@ -88,3 +88,28 @@ def test_parquet_atomico_no_deja_temporales(tmp_path):
     assert destino.exists()
     assert list(tmp_path.glob("*.tmp")) == []
     pd.testing.assert_frame_equal(pd.read_parquet(destino), predicciones)
+
+
+class _ModeloFijo:
+    """Devuelve 0.99 para todos: simula un modelo que vio las etiquetas."""
+
+    def predict_proba(self, x):
+        import numpy as np
+
+        return np.column_stack([np.full(len(x), 0.01), np.full(len(x), 0.99)])
+
+
+def test_clientes_con_etiqueta_usan_la_probabilidad_fuera_de_pliegue():
+    from predict_risk import predecir
+
+    features = pd.DataFrame(
+        {"a": [1.0, 2.0, 3.0]}, index=["CLI-1", "CLI-2", "CLI-NUEVO"]
+    )
+    oof = pd.DataFrame({"cliente_id": ["CLI-1", "CLI-2"], "probabilidad": [0.10, 0.40]})
+
+    resultado = predecir(_ModeloFijo(), features, oof).set_index("cliente_id")
+
+    assert resultado.loc["CLI-1", "valor_numerico"] == pytest.approx(0.10)
+    assert resultado.loc["CLI-2", "valor_numerico"] == pytest.approx(0.40)
+    # Un cliente sin etiqueta (alta nueva) se predice con el modelo final
+    assert resultado.loc["CLI-NUEVO", "valor_numerico"] == pytest.approx(0.99)
