@@ -118,7 +118,9 @@ services:
     restart: unless-stopped
 
   minio:
-    image: minio/minio:latest
+    # Fijada por digest: es la imagen que corria en la instancia verificada
+    # (2026-10-16, docker image inspect minio/minio:latest).
+    image: minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: "${MINIO_ROOT_USER:?Corre bash setup.sh}"
@@ -138,7 +140,8 @@ services:
     restart: unless-stopped
 
   minio-createbucket:
-    image: minio/mc:latest
+    # Fijada por digest, igual que minio (2026-10-16, docker image inspect minio/mc).
+    image: minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
     environment:
       MINIO_ROOT_USER: "${MINIO_ROOT_USER:?Corre bash setup.sh}"
       MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:?Corre bash setup.sh}"

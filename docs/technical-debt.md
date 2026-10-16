@@ -212,21 +212,6 @@ DockerOperator y en el servicio `worker`). Requiere mover el cache de
 Ivy con los JARs de Delta a una ruta legible por cualquier usuario,
 porque hoy vive en el home de root dentro de la imagen.
 
-### Imagenes sin version fija (MinIO y worker)
-
-**Que pasa:** `docker-compose.yml` usa `minio/minio:latest` y
-`minio/mc:latest`; el `Dockerfile` del worker parte de `python:3.11-slim`
-(sin version de parche) y copia `uv` desde `ghcr.io/astral-sh/uv:latest`.
-Un build futuro puede traer una version con cambios incompatibles, y no
-hay forma de saber que version corrio una demo. Senalado tambien en la
-auditoria del 2026-10-14 (hallazgo 6).
-
-**Posible fix:** fijar las cuatro a la version que ya corre en la
-instancia verificada (tag exacto o digest `@sha256:`, tomado de
-`docker image inspect`), igual que Airflow (`2.10.3`) y Postgres
-(`16-alpine`). No se fija desde el repo sin esa verificacion: un tag
-inventado rompe el build.
-
 ### Las entregas nuevas solo agregan transacciones
 
 **Que pasa:** una entrega mensual (`demo.sh nueva-entrega`) trae un mes
@@ -254,6 +239,29 @@ _corrupt_record y registrarla como incidencia estructural.
 
 ## Resueltos
 
+### Imagenes sin version fija (MinIO y worker)
+
+Senalado en la auditoria del 2026-10-14 (hallazgo 6). Resuelto en
+`fix/auditoria-oct` el 2026-10-16: las cuatro imagenes quedan fijas a lo que ya
+corria en la instancia verificada.
+
+| Imagen | Antes | Ahora | De donde sale el valor |
+|---|---|---|---|
+| `minio/minio` | `:latest` | `@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e` | `docker image inspect`; es la imagen del contenedor `minio` en ejecucion (mismo id) |
+| `minio/mc` | `:latest` | `@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727` | `docker image inspect`; es la imagen de `minio-createbucket` (mismo id) |
+| `python` (base del worker) | `3.11-slim` | `3.11-slim@sha256:e88e9763f943ec1834f992a4b51e0f24500486803e8bc534e5767af9ea65f6ce` | `docker pull` del 2026-10-16; sus 4 capas son el inicio de las 12 del worker en ejecucion, asi que es la misma base |
+| `uv` (copiado al worker) | `:latest` | `:0.13.0` | `uv --version` dentro del worker en ejecucion. El `latest` de ese dia ya era 0.13.1; se fijo la version que corria, no la mas nueva |
+
+Verificacion: el worker se reconstruyo con estas fijaciones bajo una etiqueta
+temporal (sin tocar `gemelo-worker:local`) y termino bien: `uv 0.13.0`, Python
+3.11.17, XGBoost 3.2.0 y PySpark 4.1.1.
+
+Para actualizar una imagen: bajar la nueva, tomar su digest o version con
+`docker image inspect` o `--version`, reconstruir y correr el smoke test. Un tag
+inventado rompe el build, por eso no se fija sin esa verificacion. Airflow
+(`2.10.3`) y Postgres (`16-alpine`) ya estaban fijados por tag. Queda sin fijar
+la version de `uv` que instala el CI con `astral-sh/setup-uv@v3`.
+
 ### Auditoria tecnica del 2026-10-14
 
 Revision estatica del repositorio con siete hallazgos. Resueltos en
@@ -279,8 +287,8 @@ fallida no se revierten (son registro de lo que paso, no la capa que lee
 Gold). Si una fecha corrupta en el futuro llega a Bronze, la fecha de corte
 derivada se mueve con ella; `--fecha-corte` fija el valor cuando se necesite.
 
-Siguen abiertos el 5 (ver "Corrupcion estructural de archivos no se detecta
-en Bronze") y el 6 (ver "Imagenes sin version fija").
+Sigue abierto el 5 (ver "Corrupcion estructural de archivos no se detecta
+en Bronze"). El 6 se resolvio: ver "Imagenes sin version fija" mas arriba.
 
 Fuera de la auditoria, mismo patron que el hallazgo 3: `pipeline_summary.py`
 convertia cualquier error de lectura en 0 filas y podia reportar "Sin
