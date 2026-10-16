@@ -1,0 +1,21 @@
+# config/dashboard.yaml
+#
+# Parametros de presentacion del dashboard (dashboard/app.py). No cambian
+# ningun dato de Gold: solo como se agrupan y se muestran.
+
+# Rutas de lectura. El dashboard solo lee: abre DuckDB en modo solo
+# lectura y nunca escribe en data/.
+gold_duckdb: data/gold/kpis.duckdb
+logs: data/logs
+
+# Bandas de riesgo sobre probabilidad_impago. Son una decision de
+# operacion (a partir de que probabilidad se revisa a un cliente), no una
+# salida del modelo. Limite inferior incluido: una probabilidad de 0.10
+# cae en "medio".
+bandas_riesgo:
+  - nombre: bajo
+    desde: 0.0
+  - nombre: medio
+    desde: 0.10
+  - nombre: alto
+    desde: 0.30

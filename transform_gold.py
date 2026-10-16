@@ -31,6 +31,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from src.common.spark_session import get_spark_session  # noqa: E402
 from src.common.logging_utils import PipelineRunLogger  # noqa: E402
 from src.gold.kpi_definitions import KPI_REGISTRY  # noqa: E402
+from src.gold.movimientos import (  # noqa: E402
+    TABLA_MOVIMIENTOS,
+    movimientos_mensuales,
+)
 
 
 def cargar_silver_context(spark, silver_path: str) -> dict:
@@ -115,10 +119,15 @@ def main():
         # (replacement scan sobre el frame de Python) - no es un uso normal
         # de Python, asi que flake8 no lo detecta y la marca como no usada.
         tabla_final = pd.concat(resultados, ignore_index=True)  # noqa: F841
+        movimientos = movimientos_mensuales(  # noqa: F841
+            silver_context["transacciones"]
+        )
 
         # CREATE OR REPLACE dentro de una transaccion: si la creacion falla,
         # gold_kpis conserva la corrida anterior. Antes se hacia DROP y luego
         # CREATE, y un fallo entre ambos dejaba la base analitica sin tabla.
+        # Las dos tablas van en la misma transaccion: o se publican ambas de
+        # esta corrida, o ninguna.
         con = duckdb.connect(args.out)
         try:
             con.execute("BEGIN TRANSACTION")
@@ -126,17 +135,25 @@ def main():
                 con.execute(
                     "CREATE OR REPLACE TABLE gold_kpis AS SELECT * FROM tabla_final"
                 )
+                con.execute(
+                    f"CREATE OR REPLACE TABLE {TABLA_MOVIMIENTOS} "
+                    "AS SELECT * FROM movimientos"
+                )
                 con.execute("COMMIT")
             except Exception:
                 con.execute("ROLLBACK")
                 raise
             total_filas = con.execute("SELECT COUNT(*) FROM gold_kpis").fetchone()[0]
+            filas_movimientos = con.execute(
+                f"SELECT COUNT(*) FROM {TABLA_MOVIMIENTOS}"
+            ).fetchone()[0]
         finally:
             con.close()
 
         print(
             f"\nGold escrito en {args.out}: {total_filas} filas "
-            f"({len(catalogo)} KPIs x clientes)"
+            f"({len(catalogo)} KPIs x clientes); {TABLA_MOVIMIENTOS}: "
+            f"{filas_movimientos} filas"
         )
 
     except Exception as e:
