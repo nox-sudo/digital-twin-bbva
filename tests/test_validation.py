@@ -160,3 +160,30 @@ def test_unique_con_nulos_duplicados_no_desaparece(spark):
     assert reporte.filas_validas == 3
     assert reporte.filas_cuarentena == 0
     assert valido.count() == 3
+
+
+def test_fecha_futura_se_mide_contra_la_fecha_de_corte(spark):
+    """Con fecha de corte, "futuro" depende de los datos y no del dia en
+    que corre la prueba: el mismo DataFrame da el mismo resultado hoy y
+    dentro de un ano."""
+    from datetime import date
+
+    reglas = {
+        "primary_key": "cliente_id",
+        "date_not_future": ["fecha_alta"],
+    }
+    df = spark.createDataFrame(
+        [
+            ("CLI-000001", "2026-10-31"),  # el dia de corte: valida
+            ("CLI-000002", "2026-11-01"),  # un dia despues: futura
+            ("CLI-000003", "2025-03-15"),
+        ],
+        ["cliente_id", "fecha_alta"],
+    )
+
+    _, cuarentena, reporte = validate_entity(
+        df, "clientes", reglas, fecha_corte=date(2026, 10, 31)
+    )
+
+    assert reporte.filas_cuarentena == 1
+    assert cuarentena.collect()[0]["cliente_id"] == "CLI-000002"

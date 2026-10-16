@@ -32,11 +32,26 @@ from src.common.spark_session import get_spark_session  # noqa: E402
 ENTIDADES = ["clientes", "cuentas", "cetes_inversiones", "transacciones"]
 
 
-def contar_filas(spark, path: str, entidad: str) -> int:
-    try:
-        return spark.read.format("delta").load(f"{path}/{entidad}").count()
-    except Exception:
+def contar_filas(spark, path: str, entidad: str) -> int | None:
+    """0 si la tabla no existe (normal: una corrida limpia no deja
+    cuarentena). None si existe pero no se pudo leer: eso es un error y el
+    reporte lo muestra, en vez de contarlo como 0 y marcar "Sin errores"."""
+    ruta = Path(path) / entidad
+    if not ruta.exists():
         return 0
+    try:
+        return spark.read.format("delta").load(str(ruta)).count()
+    except Exception as error:
+        print(f"No se pudo leer {ruta}: {error}")
+        return None
+
+
+def _total(conteos: dict) -> int:
+    return sum(v for v in conteos.values() if v is not None)
+
+
+def _celda(valor: int | None) -> str:
+    return "error de lectura" if valor is None else f"{valor:,}"
 
 
 def cargar_ultimo_log(log_dir: str, prefijo: str) -> dict | None:
@@ -54,20 +69,29 @@ def generar_html(datos: dict, out_path: str):
         silver_n = datos["silver"].get(entidad, 0)
         cuarentena_n = datos["cuarentena"].get(entidad, 0)
         estado_color = "#2E7D32" if cuarentena_n == 0 else "#C62828"
+        cuarentena_txt = _celda(cuarentena_n)
         filas_entidades += f"""
         <tr>
             <td class="entidad">{entidad}</td>
-            <td class="num">{bronze_n:,}</td>
-            <td class="num">{silver_n:,}</td>
-            <td class="num" style="color:{estado_color}; font-weight:600;">{cuarentena_n:,}</td>
+            <td class="num">{_celda(bronze_n)}</td>
+            <td class="num">{_celda(silver_n)}</td>
+            <td class="num" style="color:{estado_color}; font-weight:600;">{cuarentena_txt}</td>
         </tr>"""
 
     silver_log = datos.get("silver_log") or {}
     bronze_log = datos.get("bronze_log") or {}
 
-    sin_errores = sum(datos["cuarentena"].values()) == 0
+    lectura_incompleta = any(
+        v is None
+        for capa in ("bronze", "silver", "cuarentena")
+        for v in datos[capa].values()
+    )
+    sin_errores = not lectura_incompleta and _total(datos["cuarentena"]) == 0
     estado_clase = "estado-ok" if sin_errores else "estado-mal"
-    estado_texto = "Sin errores" if sin_errores else "Con cuarentena"
+    if lectura_incompleta:
+        estado_texto = "Lectura incompleta"
+    else:
+        estado_texto = "Sin errores" if sin_errores else "Con cuarentena"
 
     html = f"""<!DOCTYPE html>
 <html lang="es">
@@ -157,11 +181,11 @@ def generar_html(datos: dict, out_path: str):
         <div class="caja fuentes">Fuentes<span class="num">sintéticas</span></div>
         <div class="flecha">→</div>
         <div class="caja bronze">
-            Bronze<span class="num">{sum(datos['bronze'].values()):,}</span>
+            Bronze<span class="num">{_total(datos['bronze']):,}</span>
         </div>
         <div class="flecha">→</div>
         <div class="caja silver">
-            Silver<span class="num">{sum(datos['silver'].values()):,}</span>
+            Silver<span class="num">{_total(datos['silver']):,}</span>
         </div>
     </div>
 

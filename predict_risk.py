@@ -20,6 +20,7 @@ Uso:
 
 import argparse
 import logging
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -69,10 +70,20 @@ def actualizar_gold(gold_duckdb_path: str, predicciones: pd.DataFrame) -> None:
         ]
     ]
 
+    # DELETE e INSERT van en una sola transaccion: si el INSERT falla, el
+    # ROLLBACK deja gold_kpis exactamente como estaba. Sin ella, un fallo
+    # entre los dos pasos dejaba a todos los clientes sin probabilidad_impago.
     con = duckdb.connect(gold_duckdb_path)
     try:
-        con.execute("DELETE FROM gold_kpis WHERE kpi_id = 'probabilidad_impago'")
-        con.execute("INSERT INTO gold_kpis SELECT * FROM tabla_actualizada")
+        con.register("tabla_actualizada", tabla_actualizada)
+        con.execute("BEGIN TRANSACTION")
+        try:
+            con.execute("DELETE FROM gold_kpis WHERE kpi_id = 'probabilidad_impago'")
+            con.execute("INSERT INTO gold_kpis SELECT * FROM tabla_actualizada")
+            con.execute("COMMIT")
+        except Exception:
+            con.execute("ROLLBACK")
+            raise
         n_filas = con.execute(
             "SELECT COUNT(*) FROM gold_kpis WHERE kpi_id = 'probabilidad_impago'"
         ).fetchone()[0]
@@ -82,6 +93,16 @@ def actualizar_gold(gold_duckdb_path: str, predicciones: pd.DataFrame) -> None:
         )
     finally:
         con.close()
+
+
+def escribir_parquet_atomico(predicciones: pd.DataFrame, out_path: Path) -> None:
+    """Escribe a un archivo temporal en la misma carpeta y lo renombra.
+    os.replace es atomico dentro del mismo sistema de archivos: quien lea
+    el Parquet ve la version anterior completa o la nueva completa, nunca
+    un archivo a medio escribir."""
+    temporal = out_path.with_suffix(".parquet.tmp")
+    predicciones.to_parquet(temporal, index=False)
+    os.replace(temporal, out_path)
 
 
 def main():
@@ -102,15 +123,18 @@ def main():
         )
         predicciones = predecir(modelo, features)
 
+        # DuckDB primero: es la fuente que leen el dashboard y el asistente.
+        # El Parquet es la copia de exportacion y solo se escribe si Gold
+        # ya quedo actualizado, para que nunca vaya adelante de DuckDB.
+        actualizar_gold(args.gold, predicciones)
+
         out_dir = Path(args.out)
         out_dir.mkdir(parents=True, exist_ok=True)
         out_path = out_dir / "probabilidad_impago.parquet"
-        predicciones.to_parquet(out_path, index=False)
+        escribir_parquet_atomico(predicciones, out_path)
         logger.info(
             "Predicciones escritas en %s: %d clientes", out_path, len(predicciones)
         )
-
-        actualizar_gold(args.gold, predicciones)
 
         promedio = predicciones["valor_numerico"].mean()
         logger.info(

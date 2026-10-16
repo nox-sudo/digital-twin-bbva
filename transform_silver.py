@@ -36,9 +36,11 @@ por setup.sh).
 import argparse
 import shutil
 import sys
+from datetime import date
 from pathlib import Path
 
 import yaml
+from delta.tables import DeltaTable
 from pyspark.sql import DataFrame, functions as F, Window
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -98,6 +100,7 @@ def process_entity(
     sal_pii: str,
     calidad_path: str,
     run_id: str,
+    fecha_corte: date | None = None,
 ) -> DataFrame:
     logger.start_entity(entity_name)
 
@@ -131,7 +134,7 @@ def process_entity(
     )
 
     df_valido, df_cuarentena, reporte = validate_entity(
-        df, entity_name, rules.get(entity_name, {}), silver_context
+        df, entity_name, rules.get(entity_name, {}), silver_context, fecha_corte
     )
 
     politica = politica_pii.get(entity_name)
@@ -184,6 +187,52 @@ def process_entity(
     return df_valido
 
 
+def fecha_corte_de_bronze(spark, bronze_path: str) -> date | None:
+    """Fecha de corte de los datos: el dia del movimiento mas reciente en
+    Bronze. Es la misma definicion que usa Gold (risk_features.py), asi que
+    "no futuro" significa lo mismo en ambas capas. try_to_date ignora
+    fechas ilegibles en vez de detener la corrida; esas filas las marca
+    despues la validacion de tipos."""
+    try:
+        transacciones = spark.read.format("delta").load(f"{bronze_path}/transacciones")
+    except Exception:
+        return None
+    return transacciones.agg(F.max(F.try_to_date(F.col("fecha")))).first()[0]
+
+
+def versiones_actuales(spark, silver_path: str, entidades: list[str]) -> dict:
+    """Version Delta vigente de cada tabla Silver antes de la corrida.
+    None significa que la tabla todavia no existe (primera corrida)."""
+    versiones = {}
+    for entidad in entidades:
+        ruta = f"{silver_path}/{entidad}"
+        if DeltaTable.isDeltaTable(spark, ruta):
+            ultima = DeltaTable.forPath(spark, ruta).history(1).select("version")
+            versiones[entidad] = ultima.first()[0]
+        else:
+            versiones[entidad] = None
+    return versiones
+
+
+def restaurar_silver(spark, silver_path: str, versiones: dict, escritas: list[str]):
+    """Deshace una corrida fallida: cada tabla que esta corrida alcanzo a
+    escribir vuelve a su version anterior con el time travel de Delta, y
+    las que no existian antes se borran. Asi Silver nunca queda mezclado
+    entre dos corridas (unas entidades nuevas, otras viejas)."""
+    for entidad in escritas:
+        ruta = f"{silver_path}/{entidad}"
+        version = versiones.get(entidad)
+        if version is None:
+            shutil.rmtree(ruta, ignore_errors=True)
+            print(f"[Silver] {entidad}: tabla nueva de la corrida fallida, eliminada")
+        else:
+            tabla = DeltaTable.forPath(spark, ruta)
+            if tabla.history(1).select("version").first()[0] == version:
+                continue  # fallo antes de escribir: no hay nada que deshacer
+            tabla.restoreToVersion(version)
+            print(f"[Silver] {entidad}: restaurada a la version {version}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Transformacion Bronze -> Silver")
     parser.add_argument("--bronze", default="data/bronze")
@@ -193,6 +242,13 @@ def main():
     parser.add_argument("--politica-pii", default="config/politica_pii.yaml")
     parser.add_argument("--logs", default="data/logs")
     parser.add_argument("--calidad", default="data/calidad")
+    parser.add_argument(
+        "--fecha-corte",
+        type=date.fromisoformat,
+        default=None,
+        help="Fecha contra la que se valida que una fecha no este en el futuro "
+        "(AAAA-MM-DD). Por default, el movimiento mas reciente en Bronze.",
+    )
     args = parser.parse_args()
 
     with open(args.rules, encoding="utf-8") as f:
@@ -207,6 +263,12 @@ def main():
     logger = PipelineRunLogger(layer="silver", log_dir=args.logs)
     run_id = nuevo_run_id("silver")
     print(f"[Silver] run_id: {run_id}")
+
+    fecha_corte = args.fecha_corte or fecha_corte_de_bronze(spark, args.bronze)
+    print(f"[Silver] fecha de corte para validar fechas: {fecha_corte}")
+
+    versiones_previas = versiones_actuales(spark, args.silver, PROCESSING_ORDER)
+    escritas: list[str] = []
 
     silver_context: dict[str, DataFrame] = {}
     status = "SUCCESS"
@@ -225,10 +287,21 @@ def main():
                 sal_pii,
                 args.calidad,
                 run_id,
+                fecha_corte,
             )
+            escritas.append(entity_name)
             silver_context[entity_name] = df_valido
     except Exception as e:
         status = f"FAILED: {e}"
+        # La entidad que fallo pudo quedar escrita a medias: se incluye.
+        pendiente = [ent for ent in PROCESSING_ORDER if ent not in escritas][:1]
+        try:
+            restaurar_silver(
+                spark, args.silver, versiones_previas, escritas + pendiente
+            )
+        except Exception as error_restauracion:
+            # El error que importa es el original; este solo se reporta.
+            print(f"[Silver] No se pudo restaurar Silver: {error_restauracion}")
         raise
     finally:
         logger.write(status=status)

@@ -4,7 +4,7 @@ Registro de gaps conocidos que no bloquean el estado actual del pipeline,
 pero que un futuro colaborador (o evaluador) deberia poder encontrar aca,
 sin tener que preguntar directamente.
 
-Ultima verificacion: 2026-10-13 (rama fix/guardas-etiquetas)
+Ultima verificacion: 2026-10-16 (rama fix/auditoria-oct)
 
 ## Abiertos
 
@@ -212,15 +212,6 @@ DockerOperator y en el servicio `worker`). Requiere mover el cache de
 Ivy con los JARs de Delta a una ruta legible por cualquier usuario,
 porque hoy vive en el home de root dentro de la imagen.
 
-### Imagenes de MinIO sin version fija
-
-**Que pasa:** `docker-compose.yml` usa `minio/minio:latest` y
-`minio/mc:latest`. Un build futuro puede traer una version con cambios
-incompatibles, y no hay forma de saber que version corrio una demo.
-
-**Posible fix:** fijar ambas a un tag `RELEASE.*` verificado, igual que
-Airflow (`2.10.3`) y Postgres (`16-alpine`).
-
 ### Las entregas nuevas solo agregan transacciones
 
 **Que pasa:** una entrega mensual (`demo.sh nueva-entrega`) trae un mes
@@ -247,6 +238,62 @@ columnNameOfCorruptRecord, para conservar la linea original en
 _corrupt_record y registrarla como incidencia estructural.
 
 ## Resueltos
+
+### Imagenes sin version fija (MinIO y worker)
+
+Senalado en la auditoria del 2026-10-14 (hallazgo 6). Resuelto en
+`fix/auditoria-oct` el 2026-10-16: las cuatro imagenes quedan fijas a lo que ya
+corria en la instancia verificada.
+
+| Imagen | Antes | Ahora | De donde sale el valor |
+|---|---|---|---|
+| `minio/minio` | `:latest` | `@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e` | `docker image inspect`; es la imagen del contenedor `minio` en ejecucion (mismo id) |
+| `minio/mc` | `:latest` | `@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727` | `docker image inspect`; es la imagen de `minio-createbucket` (mismo id) |
+| `python` (base del worker) | `3.11-slim` | `3.11-slim@sha256:e88e9763f943ec1834f992a4b51e0f24500486803e8bc534e5767af9ea65f6ce` | `docker pull` del 2026-10-16; sus 4 capas son el inicio de las 12 del worker en ejecucion, asi que es la misma base |
+| `uv` (copiado al worker) | `:latest` | `:0.13.0` | `uv --version` dentro del worker en ejecucion. El `latest` de ese dia ya era 0.13.1; se fijo la version que corria, no la mas nueva |
+
+Verificacion: el worker se reconstruyo con estas fijaciones bajo una etiqueta
+temporal (sin tocar `gemelo-worker:local`) y termino bien: `uv 0.13.0`, Python
+3.11.17, XGBoost 3.2.0 y PySpark 4.1.1.
+
+Para actualizar una imagen: bajar la nueva, tomar su digest o version con
+`docker image inspect` o `--version`, reconstruir y correr el smoke test. Un tag
+inventado rompe el build, por eso no se fija sin esa verificacion. Airflow
+(`2.10.3`) y Postgres (`16-alpine`) ya estaban fijados por tag. Queda sin fijar
+la version de `uv` que instala el CI con `astral-sh/setup-uv@v3`.
+
+### Auditoria tecnica del 2026-10-14
+
+Revision estatica del repositorio con siete hallazgos. Resueltos en
+`fix/auditoria-oct`:
+
+| Hallazgo | Antes | Ahora |
+|---|---|---|
+| 1. Escrituras no atomicas en Gold | `predict_risk.py` hacia DELETE y luego INSERT; `transform_gold.py` hacia DROP y luego CREATE. Un fallo entre ambos dejaba Gold sin `probabilidad_impago` o sin `gold_kpis` | Ambos en una transaccion de DuckDB con ROLLBACK. El Parquet de predicciones se escribe despues de DuckDB, a un temporal que se renombra |
+| 2. Validacion de fechas contra el reloj | `date_not_future` comparaba contra `current_date()` | Compara contra la fecha de corte: el movimiento mas reciente en Bronze, o `--fecha-corte`. Sin fecha de corte (uso directo del motor) conserva el comportamiento anterior |
+| 3. Inferencia con relleno permisivo | `reindex(fill_value=0)` rellenaba cualquier columna ausente, incluidas features numericas | Solo las columnas one-hot (`categoria_dominante_*`) se rellenan con 0; una feature numerica ausente lanza `ValueError` con su nombre |
+| 4. Silver parcial ante un fallo | Cada entidad se sobrescribia por separado; un fallo a la mitad dejaba la capa mezclada | Antes de la corrida se guarda la version Delta de cada tabla; si algo falla, las tablas escritas vuelven a esa version (`restoreToVersion`) y las que no existian se borran |
+| 7. Borde de inferencia sin pruebas | Solo carga del modelo y rango de `predict_proba` | `tests/test_predict_risk.py`: reemplazo de nulos, ROLLBACK ante un INSERT fallido y Parquet sin temporales |
+
+Verificacion: 147 pruebas pasan. La prueba de ROLLBACK falla si se quita la
+transaccion (verificado con mutacion). La reversion de Silver con Delta real
+no se pudo correr fuera de Docker o del CI; la cubre el paso nuevo del smoke
+test "Verificar que una corrida fallida de Silver se revierte", que corre
+Silver sin la entidad transacciones y exige que clientes, cuentas y CETES
+terminen en una operacion RESTORE con el mismo contenido.
+
+Limites conocidos: la cuarentena y el registro de calidad de una corrida
+fallida no se revierten (son registro de lo que paso, no la capa que lee
+Gold). Si una fecha corrupta en el futuro llega a Bronze, la fecha de corte
+derivada se mueve con ella; `--fecha-corte` fija el valor cuando se necesite.
+
+Sigue abierto el 5 (ver "Corrupcion estructural de archivos no se detecta
+en Bronze"). El 6 se resolvio: ver "Imagenes sin version fija" mas arriba.
+
+Fuera de la auditoria, mismo patron que el hallazgo 3: `pipeline_summary.py`
+convertia cualquier error de lectura en 0 filas y podia reportar "Sin
+errores". Ahora distingue tabla inexistente (0) de error de lectura, que se
+muestra como tal y cambia el estado a "Lectura incompleta".
 
 ### Etiquetas de impago: entradas y configuraciones sin guarda
 

@@ -9,7 +9,11 @@
 # contenedor. Si mas adelante el procesamiento requiere mas CPU/memoria,
 # este contenedor escala independiente del orquestador.
 
-FROM python:3.11-slim
+# Base fijada por digest (python:3.11-slim al 2026-10-16). Es la misma base del
+# worker que corre en la instancia verificada: sus capas son el inicio de las
+# del worker. Para actualizarla: docker pull python:3.11-slim, tomar el digest
+# de docker image inspect y reconstruir.
+FROM python:3.11-slim@sha256:e88e9763f943ec1834f992a4b51e0f24500486803e8bc534e5767af9ea65f6ce
 
 # Java 21. (python:3.11-slim paso su base a Debian trixie, que ya no
 # ofrece el paquete openjdk-17-jre-headless -- solo openjdk-21-*. En tu
@@ -36,7 +40,9 @@ ENV PATH="${JAVA_HOME}/bin:${PATH}"
 
 # uv, mismo gestor de dependencias que usas en local — asi el
 # comportamiento de instalacion es identico dentro y fuera de Docker.
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
+# uv fijado a la version que ya traia el worker verificado (uv --version dentro
+# de la imagen: 0.13.0). Antes: :latest.
+COPY --from=ghcr.io/astral-sh/uv:0.13.0 /uv /uvx /usr/local/bin/
 
 WORKDIR /opt/lakehouse
 
