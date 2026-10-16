@@ -233,6 +233,51 @@ jobs:
           "
           uv run python quality_report.py
 
+      # Atomicidad de Silver: una corrida que falla a la mitad no deja la
+      # capa mezclada entre dos corridas. Trabaja sobre copias, para no
+      # alterar lo que verifican los pasos siguientes. A la copia de Bronze
+      # le falta transacciones: Silver escribe clientes, cuentas y cetes,
+      # falla al leer transacciones y debe devolver las tres a su version
+      # anterior con el time travel de Delta.
+      - name: Verificar que una corrida fallida de Silver se revierte
+        run: |
+          rm -rf /tmp/bronze_incompleto /tmp/silver_copia
+          cp -r data/bronze /tmp/bronze_incompleto
+          rm -rf /tmp/bronze_incompleto/transacciones
+          cp -r data/silver /tmp/silver_copia
+
+          if uv run python transform_silver.py \
+              --bronze /tmp/bronze_incompleto --silver /tmp/silver_copia \
+              --quarantine /tmp/cuarentena_fallo --logs /tmp/logs_fallo \
+              --calidad /tmp/calidad_fallo; then
+            echo "ERROR: Silver debio fallar sin la entidad transacciones"
+            exit 1
+          fi
+
+          uv run python -c "
+          import sys
+          from delta.tables import DeltaTable
+          from src.common.spark_session import get_spark_session
+
+          spark = get_spark_session('verificar_rollback_silver')
+          errores = []
+          for entidad in ['clientes', 'cuentas', 'cetes_inversiones', 'transacciones']:
+              original = spark.read.format('delta').load(f'data/silver/{entidad}')
+              copia = spark.read.format('delta').load(f'/tmp/silver_copia/{entidad}')
+              if original.exceptAll(copia).count() or copia.exceptAll(original).count():
+                  errores.append(f'{entidad}: contenido distinto al de la corrida buena')
+          for entidad in ['clientes', 'cuentas', 'cetes_inversiones']:
+              ultima = DeltaTable.forPath(spark, f'/tmp/silver_copia/{entidad}').history(1)
+              operacion = ultima.select('operation').first()[0]
+              if operacion != 'RESTORE':
+                  errores.append(f'{entidad}: ultima operacion {operacion}, se esperaba RESTORE')
+          spark.stop()
+          if errores:
+              print('ERROR:', errores)
+              sys.exit(1)
+          print('Corrida fallida revertida: Silver identico a la ultima corrida buena')
+          "
+
       - name: Transformacion Gold
         run: |
           uv run python transform_gold.py \

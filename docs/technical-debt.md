@@ -4,7 +4,7 @@ Registro de gaps conocidos que no bloquean el estado actual del pipeline,
 pero que un futuro colaborador (o evaluador) deberia poder encontrar aca,
 sin tener que preguntar directamente.
 
-Ultima verificacion: 2026-10-13 (rama fix/guardas-etiquetas)
+Ultima verificacion: 2026-10-16 (rama fix/auditoria-oct)
 
 ## Abiertos
 
@@ -212,14 +212,20 @@ DockerOperator y en el servicio `worker`). Requiere mover el cache de
 Ivy con los JARs de Delta a una ruta legible por cualquier usuario,
 porque hoy vive en el home de root dentro de la imagen.
 
-### Imagenes de MinIO sin version fija
+### Imagenes sin version fija (MinIO y worker)
 
 **Que pasa:** `docker-compose.yml` usa `minio/minio:latest` y
-`minio/mc:latest`. Un build futuro puede traer una version con cambios
-incompatibles, y no hay forma de saber que version corrio una demo.
+`minio/mc:latest`; el `Dockerfile` del worker parte de `python:3.11-slim`
+(sin version de parche) y copia `uv` desde `ghcr.io/astral-sh/uv:latest`.
+Un build futuro puede traer una version con cambios incompatibles, y no
+hay forma de saber que version corrio una demo. Senalado tambien en la
+auditoria del 2026-10-14 (hallazgo 6).
 
-**Posible fix:** fijar ambas a un tag `RELEASE.*` verificado, igual que
-Airflow (`2.10.3`) y Postgres (`16-alpine`).
+**Posible fix:** fijar las cuatro a la version que ya corre en la
+instancia verificada (tag exacto o digest `@sha256:`, tomado de
+`docker image inspect`), igual que Airflow (`2.10.3`) y Postgres
+(`16-alpine`). No se fija desde el repo sin esa verificacion: un tag
+inventado rompe el build.
 
 ### Las entregas nuevas solo agregan transacciones
 
@@ -247,6 +253,39 @@ columnNameOfCorruptRecord, para conservar la linea original en
 _corrupt_record y registrarla como incidencia estructural.
 
 ## Resueltos
+
+### Auditoria tecnica del 2026-10-14
+
+Revision estatica del repositorio con siete hallazgos. Resueltos en
+`fix/auditoria-oct`:
+
+| Hallazgo | Antes | Ahora |
+|---|---|---|
+| 1. Escrituras no atomicas en Gold | `predict_risk.py` hacia DELETE y luego INSERT; `transform_gold.py` hacia DROP y luego CREATE. Un fallo entre ambos dejaba Gold sin `probabilidad_impago` o sin `gold_kpis` | Ambos en una transaccion de DuckDB con ROLLBACK. El Parquet de predicciones se escribe despues de DuckDB, a un temporal que se renombra |
+| 2. Validacion de fechas contra el reloj | `date_not_future` comparaba contra `current_date()` | Compara contra la fecha de corte: el movimiento mas reciente en Bronze, o `--fecha-corte`. Sin fecha de corte (uso directo del motor) conserva el comportamiento anterior |
+| 3. Inferencia con relleno permisivo | `reindex(fill_value=0)` rellenaba cualquier columna ausente, incluidas features numericas | Solo las columnas one-hot (`categoria_dominante_*`) se rellenan con 0; una feature numerica ausente lanza `ValueError` con su nombre |
+| 4. Silver parcial ante un fallo | Cada entidad se sobrescribia por separado; un fallo a la mitad dejaba la capa mezclada | Antes de la corrida se guarda la version Delta de cada tabla; si algo falla, las tablas escritas vuelven a esa version (`restoreToVersion`) y las que no existian se borran |
+| 7. Borde de inferencia sin pruebas | Solo carga del modelo y rango de `predict_proba` | `tests/test_predict_risk.py`: reemplazo de nulos, ROLLBACK ante un INSERT fallido y Parquet sin temporales |
+
+Verificacion: 147 pruebas pasan. La prueba de ROLLBACK falla si se quita la
+transaccion (verificado con mutacion). La reversion de Silver con Delta real
+no se pudo correr fuera de Docker o del CI; la cubre el paso nuevo del smoke
+test "Verificar que una corrida fallida de Silver se revierte", que corre
+Silver sin la entidad transacciones y exige que clientes, cuentas y CETES
+terminen en una operacion RESTORE con el mismo contenido.
+
+Limites conocidos: la cuarentena y el registro de calidad de una corrida
+fallida no se revierten (son registro de lo que paso, no la capa que lee
+Gold). Si una fecha corrupta en el futuro llega a Bronze, la fecha de corte
+derivada se mueve con ella; `--fecha-corte` fija el valor cuando se necesite.
+
+Siguen abiertos el 5 (ver "Corrupcion estructural de archivos no se detecta
+en Bronze") y el 6 (ver "Imagenes sin version fija").
+
+Fuera de la auditoria, mismo patron que el hallazgo 3: `pipeline_summary.py`
+convertia cualquier error de lectura en 0 filas y podia reportar "Sin
+errores". Ahora distingue tabla inexistente (0) de error de lectura, que se
+muestra como tal y cambia el estado a "Lectura incompleta".
 
 ### Etiquetas de impago: entradas y configuraciones sin guarda
 

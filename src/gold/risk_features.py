@@ -56,6 +56,10 @@ KPIS_NUMERICOS = [
     "actividad_p2p",
 ]
 KPI_CATEGORICO = "categoria_gasto_dominante"
+# Prefijo de las columnas one-hot de KPI_CATEGORICO. Es la unica familia
+# de columnas que preparar_para_modelo() puede rellenar con 0 en
+# prediccion: ahi un 0 significa "el cliente no es de esa categoria".
+PREFIJO_ONEHOT = "categoria_dominante"
 
 # Ausencia de estos dos KPIs significa que el cliente no tiene ese
 # producto (tarjeta de credito o prestamo), no un dato faltante.
@@ -223,15 +227,43 @@ def preparar_para_modelo(
 
     En entrenamiento (columnas_modelo=None) las columnas salen de los
     datos. En prediccion se pasan las columnas con las que se entreno el
-    modelo (modelo.feature_names_in_): si en los datos nuevos aparece
-    una categoria que el modelo no vio, se descarta; si falta una que si
-    vio, se rellena con 0. Sin esto, el modelo falla o, peor, recibe
-    columnas en otro orden.
+    modelo (modelo.feature_names_in_) y la matriz se alinea a ellas, en
+    el mismo orden. La alineacion distingue dos casos:
+
+    - Columna one-hot ausente (una categoria que el modelo vio pero que
+      no aparece en este lote): se rellena con 0, que es su valor
+      correcto. Una categoria nueva que el modelo no vio se descarta.
+    - Cualquier otra columna ausente (una feature numerica): se lanza
+      ValueError. Rellenarla con 0 haria que el modelo prediga con un
+      dato inventado (edad 0, ingreso 0) sin que nada falle.
+
+    Un valor nulo dentro de una columna que si existe no es error:
+    XGBoost lo trata como faltante de forma nativa.
     """
     matriz = features.drop(columns=COLUMNAS_METADATA, errors="ignore")
     matriz = pd.get_dummies(
-        matriz, columns=[KPI_CATEGORICO], prefix="categoria_dominante", dummy_na=False
+        matriz, columns=[KPI_CATEGORICO], prefix=PREFIJO_ONEHOT, dummy_na=False
     )
-    if columnas_modelo is not None:
-        matriz = matriz.reindex(columns=list(columnas_modelo), fill_value=0)
-    return matriz
+    if columnas_modelo is None:
+        return matriz
+
+    columnas_modelo = list(columnas_modelo)
+    ausentes = [c for c in columnas_modelo if c not in matriz.columns]
+    ausentes_no_onehot = [c for c in ausentes if not c.startswith(f"{PREFIJO_ONEHOT}_")]
+    if ausentes_no_onehot:
+        raise ValueError(
+            "Faltan features que el modelo necesita y que no se pueden "
+            f"rellenar: {sorted(ausentes_no_onehot)}. Revisa build_features.py "
+            "o vuelve a entrenar el modelo si las features cambiaron a proposito."
+        )
+
+    sobrantes = [c for c in matriz.columns if c not in columnas_modelo]
+    if ausentes or sobrantes:
+        logger.info(
+            "Alineacion al modelo: %d categorias rellenadas con 0, "
+            "%d columnas descartadas %s",
+            len(ausentes),
+            len(sobrantes),
+            sorted(sobrantes),
+        )
+    return matriz.reindex(columns=columnas_modelo, fill_value=0)

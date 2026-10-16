@@ -116,11 +116,23 @@ def main():
         # de Python, asi que flake8 no lo detecta y la marca como no usada.
         tabla_final = pd.concat(resultados, ignore_index=True)  # noqa: F841
 
+        # CREATE OR REPLACE dentro de una transaccion: si la creacion falla,
+        # gold_kpis conserva la corrida anterior. Antes se hacia DROP y luego
+        # CREATE, y un fallo entre ambos dejaba la base analitica sin tabla.
         con = duckdb.connect(args.out)
-        con.execute("DROP TABLE IF EXISTS gold_kpis")
-        con.execute("CREATE TABLE gold_kpis AS SELECT * FROM tabla_final")
-        total_filas = con.execute("SELECT COUNT(*) FROM gold_kpis").fetchone()[0]
-        con.close()
+        try:
+            con.execute("BEGIN TRANSACTION")
+            try:
+                con.execute(
+                    "CREATE OR REPLACE TABLE gold_kpis AS SELECT * FROM tabla_final"
+                )
+                con.execute("COMMIT")
+            except Exception:
+                con.execute("ROLLBACK")
+                raise
+            total_filas = con.execute("SELECT COUNT(*) FROM gold_kpis").fetchone()[0]
+        finally:
+            con.close()
 
         print(
             f"\nGold escrito en {args.out}: {total_filas} filas "

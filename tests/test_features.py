@@ -127,3 +127,19 @@ def test_preparar_alinea_a_columnas_del_modelo(features_legibles):
     assert list(matriz.columns) == columnas_modelo
     assert "categoria_dominante_restaurantes" not in matriz.columns
     assert (matriz["categoria_dominante_entretenimiento"] == 0).all()
+
+
+def test_preparar_falla_si_falta_una_feature_numerica(features_legibles):
+    """Una feature numerica que el modelo espera y no llega no se
+    rellena con 0: la prediccion se detiene con un error que la nombra."""
+    columnas_modelo = [
+        "categoria_dominante_supermercado",
+        "edad_anios",
+        "ingreso_mensual_promedio",
+        "numero_productos",
+        "ratio_endeudamiento",
+    ]
+    sin_edad = features_legibles.drop(columns=["edad_anios"])
+
+    with pytest.raises(ValueError, match="edad_anios"):
+        preparar_para_modelo(sin_edad, columnas_modelo=columnas_modelo)

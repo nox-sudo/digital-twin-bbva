@@ -17,6 +17,7 @@ flujo principal).
 """
 
 from dataclasses import dataclass, field
+from datetime import date
 
 from pyspark.sql import DataFrame, Window, functions as F
 
@@ -172,11 +173,18 @@ def _check_numeric_not_zero(df: DataFrame, columns: list[str]) -> DataFrame:
     return df
 
 
-def _check_date_not_future(df: DataFrame, columns: list[str]) -> DataFrame:
+def _check_date_not_future(
+    df: DataFrame, columns: list[str], fecha_corte: date | None = None
+) -> DataFrame:
+    """ "Futuro" se mide contra la fecha de corte de los datos, no contra el
+    reloj de la maquina: asi la misma sesion produce el mismo resultado
+    cualquier dia. Sin fecha de corte (pruebas unitarias, uso directo del
+    motor) se usa la fecha actual, que era el comportamiento anterior."""
+    limite = F.lit(fecha_corte) if fecha_corte is not None else F.current_date()
     for col in columns:
         df = df.withColumn(
             f"_viol_futuredate_{col}",
-            F.to_date(F.col(col)) > F.current_date(),
+            F.to_date(F.col(col)) > limite,
         )
     return df
 
@@ -270,6 +278,7 @@ def validate_entity(
     entity_name: str,
     rules: dict,
     silver_context: dict | None = None,
+    fecha_corte: date | None = None,
 ) -> tuple[DataFrame, DataFrame, ValidationReport]:
     """Aplica todas las reglas declaradas para una entidad.
 
@@ -298,7 +307,7 @@ def validate_entity(
     if "numeric_not_zero" in rules:
         df = _check_numeric_not_zero(df, rules["numeric_not_zero"])
     if "date_not_future" in rules:
-        df = _check_date_not_future(df, rules["date_not_future"])
+        df = _check_date_not_future(df, rules["date_not_future"], fecha_corte)
     if "conditional_not_null" in rules:
         df = _check_conditional_not_null(df, rules["conditional_not_null"])
     if "patterns" in rules:
