@@ -157,5 +157,11 @@ Se revisaron las 34 entradas del historial en todas las ramas, incluida
 - **Escaneo de secretos en CI.** `detect-secrets` en cada PR: cubre lo
   que la proteccion de push no reconoce (contrasenas genericas, cadenas
   de alta entropia) y no depende de la configuracion del repositorio.
-- **Reglas de proteccion** en `main` y `develop` (Settings > Branches):
-  PR obligatorio y CI en verde para mergear.
+- **Ruleset `proteccion-develop-main`** (Settings > Rules > Rulesets),
+  activo desde el 2026-10-16 sobre `main` y `develop`: PR obligatorio
+  (0 aprobaciones), los 4 jobs del CI en verde para mergear (lint y
+  escaneo de secretos, validacion de `docker-compose.yml`, pruebas
+  unitarias y smoke test del pipeline), sin borrado ni force push. Hasta
+  esa fecha este documento afirmaba una proteccion que no
+  estaba configurada; se verifica con
+  `GET /repos/nox-sudo/digital-twin-bbva/rules/branches/<rama>`.
