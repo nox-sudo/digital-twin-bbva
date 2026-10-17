@@ -46,7 +46,7 @@ import random
 import shutil
 import sys
 import tempfile
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import numpy as np
@@ -107,10 +107,19 @@ def fecha_entre(fecha_ref: date, desde: relativedelta, hasta: relativedelta) -> 
     Reemplaza a fake.date_between(start_date="-3y", ...) y a
     fake.date_of_birth(), que calculan contra la fecha del sistema: con
     ellos, la misma semilla producia datos distintos cada dia.
+
+    La fecha se interpreta en UTC (tzinfo explicito). Sin el, Faker convierte
+    el instante sorteado a la zona horaria del proceso, y para fechas
+    anteriores a 1970 (timestamp negativo) el resultado cambia segun la zona:
+    la misma sesion generada en una Mac en UTC-7 y en el worker en UTC
+    diferia en la fecha de nacimiento de 34 de 500 clientes (y su CURP y
+    RFC). El sorteo es el mismo; solo cambia como se lee.
     """
-    return fake.date_between_dates(
-        date_start=fecha_ref - desde, date_end=fecha_ref - hasta
-    )
+    return fake.date_time_between_dates(
+        datetime_start=fecha_ref - desde,
+        datetime_end=fecha_ref - hasta,
+        tzinfo=timezone.utc,
+    ).date()
 
 
 def semilla_mes(semilla: int, anio: int, mes: int) -> int:

@@ -134,3 +134,45 @@ def test_activar_no_borra_una_carpeta_ajena(tmp_path):
     with pytest.raises(RuntimeError, match="no parece una carpeta de fuentes"):
         activar_sesion(sesion, ajena)
     assert (ajena / "notas_importantes.txt").exists()
+
+
+def test_misma_sesion_en_cualquier_zona_horaria(tmp_path):
+    """La sesion no depende de la zona horaria del proceso. Antes, Faker
+    convertia las fechas anteriores a 1970 con la zona local, y una sesion
+    generada en una Mac (UTC-7) y en el worker (UTC) diferia en fechas de
+    nacimiento, CURP y RFC. Cada generacion corre en su propio proceso
+    porque la zona se lee al arrancar."""
+    import subprocess
+
+    raiz = Path(__file__).resolve().parents[1]
+    archivos = {}
+    for zona in ("UTC", "America/Mazatlan", "Asia/Tokyo"):
+        destino = tmp_path / zona.replace("/", "_")
+        subprocess.run(
+            [
+                sys.executable,
+                "generate_synthetic_sources.py",
+                "--clientes",
+                "60",
+                "--meses",
+                "1",
+                "--fecha-referencia",
+                "2026-09-30",
+                "--config",
+                str(tmp_path / "no-existe.yaml"),
+                "--sesiones-dir",
+                str(destino / "sesiones"),
+                "--out",
+                str(destino / "activa"),
+            ],
+            cwd=raiz,
+            env={**__import__("os").environ, "TZ": zona},
+            check=True,
+            capture_output=True,
+        )
+        archivos[zona] = checksums(destino / "sesiones" / "s42_20260930_60c_1m")
+        clientes = pd.read_csv(destino / "activa" / "clientes.csv")
+
+    # La prueba solo sirve si hay fechas anteriores a 1970 (timestamp negativo).
+    assert (pd.to_datetime(clientes["fecha_nacimiento"]) < "1970-01-01").any()
+    assert archivos["UTC"] == archivos["America/Mazatlan"] == archivos["Asia/Tokyo"]
