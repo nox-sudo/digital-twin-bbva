@@ -278,6 +278,31 @@ _corrupt_record y registrarla como incidencia estructural.
 
 ## Resueltos
 
+### Sesiones distintas segun la zona horaria de la maquina
+
+Encontrado el 2026-10-16 al correr la primera entrega con escenario de
+deriva: la regla de continuacion del generador
+(`verificar_continuacion`) se nego a activar la entrega porque
+`clientes.csv` cambiaba. La causa no era el escenario: `fecha_entre()` usaba
+`fake.date_between_dates()`, que convierte el instante sorteado a la zona
+horaria del proceso, y para fechas anteriores a 1970 (timestamp negativo)
+el resultado depende de esa zona. La sesion base, generada en una Mac en
+UTC-7, y la misma sesion generada en el worker (UTC) diferian en la fecha de
+nacimiento de 34 de 500 clientes, un dia antes en UTC, y por lo tanto en su
+CURP (34) y RFC (27). Las corridas anteriores del DAG no lo notaban porque
+reutilizaban la sesion ya generada. El CI tampoco, porque genera dos veces
+en la misma maquina.
+
+Sin la regla de continuacion, la entrega habria publicado un `clientes.csv`
+distinto y Silver se habria quedado con las fechas y CURP nuevas sin aviso.
+
+Fix: `fecha_entre()` interpreta la fecha en UTC (`tzinfo` explicito). El
+sorteo es el mismo, asi que solo cambian esas 34 fechas respecto a una
+sesion generada en UTC-7; la salida es identica a la que ya producia el
+worker. `test_misma_sesion_en_cualquier_zona_horaria` genera la misma
+sesion en tres zonas (UTC, America/Mazatlan, Asia/Tokyo) en procesos
+separados y exige archivos identicos; con el codigo anterior falla.
+
 ### Imagenes sin version fija (MinIO y worker)
 
 Senalado en la auditoria del 2026-10-14 (hallazgo 6). Resuelto en
