@@ -234,8 +234,11 @@ ultimos meses se diluye en el promedio y el PSI tarda mucho en verlo. Con
 un deterioro de 5 % de ingreso al mes en el 40 % de los clientes, el PSI del
 ingreso promedio seguia en 0.037 (estable) tras 12 entregas, mientras que el
 del gasto de los ultimos 3 meses, la unica feature de ventana reciente,
-llegaba a 0.081 con los mismos datos. Valores aproximados con los CSV, no
-con el pipeline; detalle y parametros en `docs/monitoreo-deriva.md`.
+llegaba a 0.081 con los mismos datos. Esos valores son aproximados con los CSV; con el
+pipeline y el escenario de ejemplo (60 % / -10 % / +8 %, 6 entregas,
+2026-10-18) el ingreso promedio quedo en 0.036 y el gasto de los ultimos 3
+meses en 0.186, las mismas cifras que la aproximacion. Detalle en
+`docs/monitoreo-deriva.md`.
 
 Es una limitacion del detector, no del escenario: una cartera que se
 deteriora mes a mes pasaria meses sin alerta.
@@ -246,6 +249,38 @@ y no solo sobre las del modelo. Se cruza con el rediseno de la ventana de
 features de la etiqueta: si las features del modelo pasan a una ventana
 movil, el mismo PSI reacciona antes. Requiere nuevos KPIs en Gold y una
 referencia nueva (`monitor_drift.py --nueva-referencia`).
+
+### Features que dependen del tiempo derivan sin cambio de poblacion
+
+**Que pasa:** encontrado al medir el escenario de deriva con el pipeline
+(2026-10-18, 6 entregas). Contra la referencia congelada, `antiguedad_dias`
+llego a PSI 1.007 y `proporcion_retiros` a 0.556, las dos en "reentrenar",
+sin que el escenario las toque:
+
+- `antiguedad_dias` se mide contra la fecha de corte, que avanza un mes por
+  entrega: toda la distribucion se desplaza ~30 dias por mes.
+- `proporcion_retiros` se calcula sobre todo el historial y se concentra al
+  acumular meses (clientes con cero retiros: 42 en la base, 12 tras 6
+  entregas). Con y sin escenario da el mismo 0.556.
+
+El PSI del score (0.351) mezcla esta deriva con la del escenario. En una
+cartera real, una referencia congelada contra estas variables alertaria
+aunque la poblacion no cambiara: falsos positivos que restan credibilidad a
+las alertas verdaderas.
+
+**Posible fix:** cualquiera de estas, o una combinacion:
+
+- Medir las variables de antiguedad descontando el tiempo transcurrido desde
+  la referencia (antiguedad a la fecha de corte de la referencia), o en
+  meses desde el alta agrupados en tramos que no cambian con el corte.
+- Calcular las proporciones y promedios sobre una ventana fija (por ejemplo,
+  los ultimos 12 meses) en vez de todo el historial. Ataca tambien la
+  dilucion ("El PSI reacciona tarde a una deriva reciente").
+- Marcar en la configuracion las variables que dependen del tiempo y
+  reportarlas aparte, sin alerta, mientras no se redisenen.
+
+Cambiar las features del modelo afecta al entrenamiento y a la referencia,
+asi que va junto con el rediseno de la ventana de features.
 
 ### Las entregas nuevas solo agregan transacciones
 
