@@ -10,6 +10,7 @@ import pandas as pd
 import streamlit as st
 
 from dashboard import comun
+from src.monitoreo.psi import TEMPORAL
 from src.monitoreo.psi import cargar_config as cargar_config_psi
 
 st.title("Observabilidad del pipeline")
@@ -155,8 +156,16 @@ if historico_psi.empty:
     )
 else:
     cfg_psi = cargar_config_psi(cfg["monitoreo_psi"])
-    temporales = set(getattr(cfg_psi, "variables_temporales", ()))
+    temporales = set(cfg_psi.variables_temporales)
     tendencia = comun.datos.tendencia_psi(historico_psi)
+    # El estado se guarda con la configuracion vigente en cada corrida. Las
+    # variables que hoy son temporales se muestran como tales tambien en
+    # corridas anteriores, para que el conteo y los paneles sigan la
+    # configuracion actual; el historico no se modifica.
+    reclasificadas = (tendencia["tipo"] == "feature") & tendencia["variable"].isin(
+        temporales
+    )
+    tendencia.loc[reclasificadas, "estado"] = TEMPORAL
     ultimo_corte = tendencia["fecha_corte"].max()
     ultima = tendencia[tendencia["fecha_corte"] == ultimo_corte]
     conteo = ultima["estado"].value_counts()
@@ -166,6 +175,12 @@ else:
         f"{tendencia['fecha_corte'].nunique()} cortes medidos, el último al "
         f"{comun.fecha(ultimo_corte)}. Cada variable se compara con los deciles "
         "congelados de la población de entrenamiento del modelo base."
+        + (
+            " Las variables temporales se muestran con la configuración actual "
+            "aunque la corrida las haya clasificado de otra forma."
+            if reclasificadas.any()
+            else ""
+        )
     )
     columnas_estado = st.columns(4)
     for columna, (estado, etiqueta) in zip(
