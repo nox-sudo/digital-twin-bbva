@@ -94,13 +94,22 @@ def _pivotear_kpis_gold(gold_duckdb_path: str) -> pd.DataFrame:
     return ancho
 
 
-def _variables_comportamiento_silver(spark, silver_path: str) -> pd.DataFrame:
+def _variables_comportamiento_silver(
+    spark, silver_path: str, ventana_meses: int | None = None
+) -> pd.DataFrame:
     """Variables de comportamiento que no viven en el catalogo de
     KPIs de Gold: edad, antiguedad como cliente, ingreso declarado,
-    numero de productos, y proporcion de retiros en efectivo."""
+    numero de productos, y proporcion de retiros en efectivo.
+
+    La proporcion de retiros se calcula sobre la misma ventana que los KPIs
+    de flujo (config/features.yaml): sobre todo el historial se concentraba
+    al acumular meses y derivaba sin que cambiara la poblacion. Edad y
+    antiguedad se miden contra la fecha de corte y no usan ventana."""
     # Import local: solo build_features.py necesita Spark. Asi train_model.py
     # y predict_risk.py pueden importar este modulo sin cargar PySpark.
     from pyspark.sql import functions as F
+
+    from src.gold.kpi_definitions import transacciones_en_ventana
 
     clientes = spark.read.format("delta").load(f"{silver_path}/clientes")
     cuentas = spark.read.format("delta").load(f"{silver_path}/cuentas")
@@ -132,11 +141,15 @@ def _variables_comportamiento_silver(spark, silver_path: str) -> pd.DataFrame:
         ),
     )
 
-    conteos_tx = transacciones.groupBy("cliente_id").agg(
-        F.count("transaccion_id").alias("total_transacciones"),
-        F.sum((F.col("tipo_transaccion") == "retiro").cast("int")).alias(
-            "total_retiros"
-        ),
+    conteos_tx = (
+        transacciones_en_ventana(transacciones, ventana_meses)
+        .groupBy("cliente_id")
+        .agg(
+            F.count("transaccion_id").alias("total_transacciones"),
+            F.sum((F.col("tipo_transaccion") == "retiro").cast("int")).alias(
+                "total_retiros"
+            ),
+        )
     )
     comportamiento_tx = conteos_tx.withColumn(
         "proporcion_retiros", F.col("total_retiros") / F.col("total_transacciones")
@@ -150,7 +163,9 @@ def _variables_comportamiento_silver(spark, silver_path: str) -> pd.DataFrame:
     return comportamiento_pd
 
 
-def construir_features(spark, silver_path: str, gold_duckdb_path: str) -> pd.DataFrame:
+def construir_features(
+    spark, silver_path: str, gold_duckdb_path: str, ventana_meses: int | None = None
+) -> pd.DataFrame:
     """Arma la tabla de features por cliente: los 11 KPIs de Gold
     (todos menos probabilidad_impago) mas variables de comportamiento
     de Silver. Devuelve un DataFrame de pandas indexado por cliente_id,
@@ -160,7 +175,7 @@ def construir_features(spark, silver_path: str, gold_duckdb_path: str) -> pd.Dat
     kpis = _pivotear_kpis_gold(gold_duckdb_path)
 
     logger.info("Armando variables de comportamiento desde Silver (%s)", silver_path)
-    comportamiento = _variables_comportamiento_silver(spark, silver_path)
+    comportamiento = _variables_comportamiento_silver(spark, silver_path, ventana_meses)
 
     features = kpis.join(comportamiento, how="left")
 

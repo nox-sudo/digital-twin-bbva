@@ -11,6 +11,8 @@ from dashboard import comun
 
 st.title("Portafolio")
 
+cfg = comun.config()
+
 if comun.gold_disponible():
     version = comun.version_gold()
     df = comun.portafolio(version)
@@ -26,13 +28,15 @@ if comun.gold_disponible():
     c2.metric(
         "Ingreso mensual mediano",
         comun.pesos(resumen["ingreso_mediano"]),
-        help="Mediana del promedio mensual de nómina por cliente.",
+        help="Mediana por cliente del ingreso mensual (nómina y depósitos), "
+        f"promediado en los últimos {cfg['ventana_meses']} meses.",
     )
     c3.metric(
         "Gastan más de lo que ganan",
         comun.porcentaje(resumen["pct_ahorro_negativo"]),
-        help="Clientes con capacidad de ahorro negativa: sus compras, pagos de "
-        "deuda y retiros superan en promedio a su ingreso.",
+        help="Clientes con capacidad de ahorro negativa: en los últimos "
+        f"{cfg['ventana_meses']} meses sus compras, pagos de deuda y retiros "
+        "superan en promedio a su ingreso.",
     )
     c4.metric(
         "Probabilidad media de impago",

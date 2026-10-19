@@ -1,0 +1,16 @@
+# config/features.yaml
+#
+# Ventana de tiempo de las features de comportamiento (KPIs de flujo en Gold
+# y proporcion de retiros en el feature store). Cada una se calcula sobre los
+# ultimos ventana_meses meses completos hasta la fecha de corte (el movimiento
+# mas reciente), no sobre todo el historial.
+#
+# Por que: promediar todo el historial diluye un cambio reciente (el PSI del
+# ingreso seguia en 0.049 tras 7 entregas de deterioro) y hace que algunas
+# variables deriven solo por acumular meses (proporcion de retiros). Medido el
+# 2026-10-19 sobre las sesiones de la instancia; ver docs/monitoreo-deriva.md.
+#
+# 12 = los meses de la sesion base: con 12 meses o menos de historial la
+# ventana es el historial completo, asi que la sesion base, el modelo
+# entrenado sobre ella y la referencia del PSI no cambian.
+ventana_meses: 12

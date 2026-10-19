@@ -30,7 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from src.common.spark_session import get_spark_session  # noqa: E402
 from src.common.logging_utils import PipelineRunLogger  # noqa: E402
-from src.gold.kpi_definitions import KPI_REGISTRY  # noqa: E402
+from src.gold.kpi_definitions import KPI_REGISTRY, cargar_ventana  # noqa: E402
 from src.gold.movimientos import (  # noqa: E402
     TABLA_MOVIMIENTOS,
     movimientos_mensuales,
@@ -85,10 +85,16 @@ def main():
     parser.add_argument("--out", default="data/gold/kpis.duckdb")
     parser.add_argument("--catalog", default="config/kpi_catalog.yaml")
     parser.add_argument("--logs", default="data/logs")
+    parser.add_argument(
+        "--features-config",
+        default="config/features.yaml",
+        help="Ventana de meses de los KPIs de flujo",
+    )
     args = parser.parse_args()
 
     with open(args.catalog, encoding="utf-8") as f:
         catalogo = yaml.safe_load(f)
+    ventana_meses = cargar_ventana(args.features_config)
 
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
 
@@ -98,6 +104,8 @@ def main():
     status = "SUCCESS"
     try:
         silver_context = cargar_silver_context(spark, args.silver)
+        silver_context["ventana_meses"] = ventana_meses
+        print(f"[Gold] KPIs de flujo sobre los ultimos {ventana_meses} meses")
 
         resultados = []
         for kpi_id, metadata in catalogo.items():

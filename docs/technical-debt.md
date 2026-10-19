@@ -225,6 +225,25 @@ casi no deberia cambiar), o calibrar despues (`CalibratedClassifierCV`, isotonic
 sobre las probabilidades fuera de pliegue. Cambia un hiperparametro fijado el
 2026-10-09, asi que la evaluacion se vuelve a correr y se reporta junto a la actual.
 
+### Las entregas nuevas solo agregan transacciones
+
+**Que pasa:** una entrega mensual (`demo.sh nueva-entrega`) trae un mes
+mas de transacciones, pero los snapshots de clientes, cuentas y CETES
+son identicos a la entrega base: no hay clientes nuevos, bajas ni
+saldos que cambien. Silver y Bronze ya soportan esos cambios (Bronze
+acumula versiones, Silver toma la mas reciente por llave), pero el
+generador no los produce.
+
+**Posible fix:** en cada mes adicional, agregar algunos clientes nuevos
+(al final, para no alterar los existentes) y recalcular saldo_actual a
+partir de los movimientos del mes. Ojo: el generador hoy se niega a
+activar una entrega que cambie cualquier archivo ya entregado
+(`verificar_continuacion` en `src/common/sesiones.py`), y eso incluye
+`clientes.csv` y `cuentas.json`. Si estas entidades pasan a cambiar entre
+entregas, hay que decidir de forma explicita como versionarlas.
+
+## Resueltos
+
 ### El PSI reacciona tarde a una deriva reciente
 
 **Que pasa:** encontrado al construir el escenario de deriva del generador
@@ -249,6 +268,14 @@ y no solo sobre las del modelo. Se cruza con el rediseno de la ventana de
 features de la etiqueta: si las features del modelo pasan a una ventana
 movil, el mismo PSI reacciona antes. Requiere nuevos KPIs en Gold y una
 referencia nueva (`monitor_drift.py --nueva-referencia`).
+
+**Resuelto en buena parte (2026-10-19):** los KPIs de flujo y la proporcion de
+retiros se calculan sobre una ventana de 12 meses hasta la fecha de corte
+(`config/features.yaml`). Con la aproximacion sobre las sesiones de la
+instancia, en la entrega 7 el ingreso pasa de 0.049 a 0.113 y la capacidad de
+ahorro de 0.311 a 0.654. La ventana tambien diluye, pero en 12 meses y no en
+todo el historial. Las cifras con el pipeline van en `docs/monitoreo-deriva.md`
+cuando se mida la instancia reconstruida.
 
 ### Features que dependen del tiempo derivan sin cambio de poblacion
 
@@ -287,24 +314,13 @@ asi que va junto con el rediseno de la ventana de features.
 (`config/monitoreo_psi.yaml`); su PSI se guarda con estado `temporal`, sin
 alerta. Sigue abierto el fix de fondo (ventana fija).
 
-### Las entregas nuevas solo agregan transacciones
-
-**Que pasa:** una entrega mensual (`demo.sh nueva-entrega`) trae un mes
-mas de transacciones, pero los snapshots de clientes, cuentas y CETES
-son identicos a la entrega base: no hay clientes nuevos, bajas ni
-saldos que cambien. Silver y Bronze ya soportan esos cambios (Bronze
-acumula versiones, Silver toma la mas reciente por llave), pero el
-generador no los produce.
-
-**Posible fix:** en cada mes adicional, agregar algunos clientes nuevos
-(al final, para no alterar los existentes) y recalcular saldo_actual a
-partir de los movimientos del mes. Ojo: el generador hoy se niega a
-activar una entrega que cambie cualquier archivo ya entregado
-(`verificar_continuacion` en `src/common/sesiones.py`), y eso incluye
-`clientes.csv` y `cuentas.json`. Si estas entidades pasan a cambiar entre
-entregas, hay que decidir de forma explicita como versionarlas.
-
-## Resueltos
+**Resuelto para la proporcion de retiros (2026-10-19):** con la ventana de 12
+meses deja de concentrarse al acumular historial (aproximacion en la entrega 7:
+0.930 sobre todo el historial, 0.047 con la ventana) y salio de
+`variables_temporales`. Sigue abierto para `antiguedad_dias` y `edad_anios`,
+que se miden contra la fecha de corte por definicion: quedan como `temporal`.
+Si hiciera falta medirlas, la opcion es la primera de arriba (tramos que no
+cambian con el corte).
 
 ### Corrupcion estructural de archivos no se detecta en Bronze
 

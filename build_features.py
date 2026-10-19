@@ -22,6 +22,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from src.common.spark_session import get_spark_session  # noqa: E402
+from src.gold.kpi_definitions import cargar_ventana  # noqa: E402
 from src.gold.risk_features import (  # noqa: E402
     TABLA_FEATURES,
     construir_features,
@@ -38,11 +39,17 @@ def main():
     )
     parser.add_argument("--silver", default="data/silver")
     parser.add_argument("--gold", default="data/gold/kpis.duckdb")
+    parser.add_argument(
+        "--features-config",
+        default="config/features.yaml",
+        help="Ventana de meses de la proporcion de retiros",
+    )
     args = parser.parse_args()
+    ventana_meses = cargar_ventana(args.features_config)
 
     spark = get_spark_session("construir_features")
     try:
-        features = construir_features(spark, args.silver, args.gold)
+        features = construir_features(spark, args.silver, args.gold, ventana_meses)
     except Exception:
         logger.exception("Fallo la construccion de features")
         raise
