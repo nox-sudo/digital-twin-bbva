@@ -520,7 +520,7 @@ cmd_limpiar() {
     # se borran desde un contenedor para no necesitar sudo en Linux.
     docker compose run --rm --entrypoint sh worker -c \
         "find /opt/lakehouse/data -mindepth 1 -maxdepth 1 ${filtro} -exec rm -rf {} + ;
-         rm -f /opt/lakehouse/models/*.joblib /opt/lakehouse/models/*.png;
+         rm -f /opt/lakehouse/models/*.joblib /opt/lakehouse/models/*.png /opt/lakehouse/models/*.parquet;
          ${borrar_referencia}"
     docker compose down -v
     echo "Listo."

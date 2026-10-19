@@ -25,6 +25,9 @@ import yaml
 ESTABLE = "estable"
 VIGILAR = "vigilar"
 REENTRENAR = "reentrenar"
+# Variables que derivan por el paso del tiempo (config variables_temporales):
+# su PSI se reporta pero no se clasifica ni alerta.
+TEMPORAL = "temporal"
 
 
 @dataclass(frozen=True)
@@ -35,6 +38,7 @@ class ConfigPSI:
     umbral_reentrenar: float
     ruta_referencias: str
     ruta_historico: str
+    variables_temporales: tuple[str, ...] = ()
 
 
 def cargar_config(ruta: str | Path = "config/monitoreo_psi.yaml") -> ConfigPSI:
@@ -52,9 +56,13 @@ def cargar_config(ruta: str | Path = "config/monitoreo_psi.yaml") -> ConfigPSI:
             umbral_reentrenar=float(crudo["umbrales"]["reentrenar"]),
             ruta_referencias=str(crudo["rutas"]["referencias"]),
             ruta_historico=str(crudo["rutas"]["historico"]),
+            variables_temporales=tuple(crudo.get("variables_temporales") or ()),
         )
     except KeyError as faltante:
         raise ValueError(f"{ruta}: falta la llave {faltante}") from None
+
+    if not all(isinstance(v, str) and v for v in cfg.variables_temporales):
+        raise ValueError(f"{ruta}: variables_temporales debe ser una lista de nombres")
 
     if cfg.bins < 2:
         raise ValueError(f"{ruta}: bins debe ser >= 2")
