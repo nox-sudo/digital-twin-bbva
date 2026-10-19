@@ -363,8 +363,11 @@ temporal (sin tocar `gemelo-worker:local`) y termino bien: `uv 0.13.0`, Python
 Para actualizar una imagen: bajar la nueva, tomar su digest o version con
 `docker image inspect` o `--version`, reconstruir y correr el smoke test. Un tag
 inventado rompe el build, por eso no se fija sin esa verificacion. Airflow
-(`2.10.3`) y Postgres (`16-alpine`) ya estaban fijados por tag. Queda sin fijar
-la version de `uv` que instala el CI con `astral-sh/setup-uv@v3`.
+(`2.10.3`) queda fijado por version. Postgres usaba `16-alpine`, una etiqueta
+que se mueve con cada version menor; desde el 2026-10-19 va por digest
+(`postgres:16-alpine@sha256:57c72fd2...`), la imagen del contenedor en
+ejecucion (PostgreSQL 16.14, mismo id en `docker image inspect`). Queda sin
+fijar la version de `uv` que instala el CI con `astral-sh/setup-uv@v3`.
 
 ### Datos sinteticos sin perfil por cliente
 

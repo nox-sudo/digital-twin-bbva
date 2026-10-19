@@ -9,7 +9,7 @@ el DAG de punta a punta y deja los resultados en `data/` y `models/`.
 | Requisito | Detalle |
 |---|---|
 | Docker | Docker Desktop (Mac/Windows) o Docker Engine + Compose v2 (Linux) |
-| Memoria asignada a Docker | 6 GB recomendados (Spark + Airflow) |
+| Memoria asignada a Docker | 6 GB recomendados (Spark + Airflow). `demo.sh` solo avisa si hay menos; no se detiene |
 | Disco libre | ~6 GB (imagenes de Airflow, Postgres, MinIO y worker) |
 | Puertos libres | 8080 (Airflow), 9000 y 9001 (MinIO) |
 | Red | Docker Hub, PyPI y Maven Central, solo durante el primer build |
@@ -29,7 +29,10 @@ bash demo.sh
 
 `demo.sh` hace, en orden:
 
-1. Verifica que Docker este instalado, corriendo, y con memoria suficiente.
+1. Verifica que Docker este instalado y corriendo, y avisa si tiene menos
+   de 6 GB de memoria asignada. Es solo un aviso: la corrida sigue, y con
+   menos memoria una tarea de Spark puede morir con codigo 137 (ver
+   [Problemas comunes](#problemas-comunes)).
 2. Genera `.env` con los valores de esta maquina (`setup.sh`): ruta del
    proyecto, UID del usuario y, en Linux, el grupo del socket de Docker.
 3. Construye la imagen del worker y levanta Postgres, Airflow y MinIO.
@@ -52,6 +55,7 @@ los siguientes reutilizan el cache de Docker.
 | Logs de cada corrida | `data/logs/` |
 | Sesion de datos usada, con parametros y checksums | `data/sesiones/<id>/manifest.json` |
 | Resumen visual Bronze/Silver | `bash demo.sh reporte` genera `data/reporte_pipeline.html` |
+| Deriva de datos (PSI) por corrida | `data/calidad/deriva_psi/`; tendencia en el dashboard, vista Observabilidad ([monitoreo-deriva.md](monitoreo-deriva.md)) |
 
 Consulta rapida a Gold sin instalar nada:
 
@@ -68,16 +72,16 @@ print(con.sql('SELECT kpi_id, COUNT(*) AS clientes FROM gold_kpis GROUP BY 1 ORD
 | Comando | Uso |
 |---|---|
 | `bash demo.sh` | Levanta todo y corre el pipeline (igual a `levantar`) |
-| `bash demo.sh pipeline` | Corre los 8 pasos directo en el worker, sin Airflow. Mas rapido; util si solo interesa ver el procesamiento de datos |
+| `bash demo.sh pipeline` | Corre los 9 pasos directo en el worker, sin Airflow. Mas rapido; util si solo interesa ver el procesamiento de datos |
 | `bash demo.sh reporte` | Genera el reporte HTML de conteos y tiempos |
 | `bash demo.sh estado` | Lista las corridas del DAG |
 | `bash demo.sh bajar` | Detiene los contenedores, conserva datos |
 | `bash demo.sh nueva-entrega` | Simula que llega el siguiente mes: genera la entrega, la publica en MinIO y Bronze ingiere solo lo nuevo |
 | `bash demo.sh calidad` | Reporte de calidad: filas rechazadas por regla y columna, nulos por columna y tendencia entre corridas |
 | `bash demo.sh sesiones` | Lista las sesiones de datos guardadas |
-| `bash demo.sh limpiar` | Borra capas, modelo y volumenes; conserva las sesiones (pide confirmacion) |
-| `bash demo.sh limpiar todo` | Igual, pero borra tambien las sesiones |
-| `bash demo.sh respaldar [destino]` | Copia sesiones, landing zone (MinIO) e historico de calidad fuera del repo, con manifiesto SHA-256 (ver [Respaldo y restauracion](#respaldo-y-restauracion)) |
+| `bash demo.sh limpiar` | Borra capas, modelo y volumenes; conserva las sesiones y la referencia de deriva (pide confirmacion) |
+| `bash demo.sh limpiar todo` | Igual, pero borra tambien las sesiones y la referencia de deriva |
+| `bash demo.sh respaldar [destino]` | Copia sesiones, landing zone (MinIO), historico de calidad y referencia de deriva fuera del repo, con manifiesto SHA-256 (ver [Respaldo y restauracion](#respaldo-y-restauracion)) |
 | `bash demo.sh restaurar <respaldo>` | Verifica el respaldo y lo restaura en `data/`; despues `bash demo.sh` reconstruye todo lo demas |
 
 ## Respaldo y restauracion
@@ -89,7 +93,8 @@ puede regenerar es lo siguiente, y por eso es lo unico que se respalda:
 |---|---|
 | `data/sesiones/` | Las sesiones de datos, con manifest y checksums |
 | `data/minio/` | La landing zone: el historico inmutable de entregas |
-| `data/calidad/` | El historico de calidad entre corridas (la tendencia no se recalcula) |
+| `data/calidad/` | El historico de calidad entre corridas (la tendencia no se recalcula), incluido el de deriva (`deriva_psi/`) |
+| `models/referencia_psi/` | La linea base congelada del monitoreo de deriva: un modelo reentrenado daria otra (ver [monitoreo-deriva.md](monitoreo-deriva.md)) |
 
 ```bash
 bash demo.sh respaldar                       # a ~/respaldos-gemelo/<fecha_hora>/
@@ -126,6 +131,26 @@ permisos 700). Ver [docs/seguridad.md](seguridad.md#clasificacion-de-datos-por-c
 
 Lo que **no** se restaura, por ser derivado: las capas Bronze, Silver y Gold,
 el modelo y el historial de corridas y logs de Airflow.
+
+## Limitaciones conocidas
+
+Lo que conviene saber antes de operar la instancia. El detalle, con fecha de
+verificacion y posibles soluciones, esta en
+[docs/technical-debt.md](technical-debt.md).
+
+- **Bronze acepta CSV mal formados.** Una linea con comillas sin cerrar o con
+  columnas de mas o de menos se lee en modo permisivo: los campos de mas se
+  descartan sin aviso.
+- **Las entregas solo agregan transacciones.** `nueva-entrega` no trae clientes
+  nuevos, bajas ni saldos que cambien.
+- **El escenario de deriva no se cambia despues de entregar.** Con
+  `escenario_deriva` activo, el generador se niega a activar una entrega que
+  cambie meses ya entregados; volver atras exige `limpiar todo` y restaurar.
+- **El PSI reacciona tarde.** Casi todas las features promedian todo el
+  historial; antiguedad, edad y proporcion de retiros derivan por el paso del
+  tiempo y se reportan como `temporal`, sin alerta.
+- **La probabilidad de impago esta descalibrada** por `scale_pos_weight`: la
+  media publicada (0.205) es mayor que la tasa real (0.164).
 
 ## Sesiones de datos
 
