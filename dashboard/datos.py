@@ -275,3 +275,52 @@ def consistencia_gold(ruta_duckdb: str) -> pd.DataFrame:
             for nombre, obs, esp in chequeos
         ]
     )
+
+
+# ---------------------------------------------------------------------------
+# Deriva de datos (PSI)
+# ---------------------------------------------------------------------------
+
+COLUMNAS_DERIVA = [
+    "run_id",
+    "fecha_corrida",
+    "fecha_corte",
+    "referencia_id",
+    "variable",
+    "tipo",
+    "psi",
+    "estado",
+]
+
+
+def deriva_psi(ruta_historico: str) -> pd.DataFrame:
+    """Historico del monitoreo de deriva (monitor_drift.py): un Parquet por
+    corrida en data/calidad/deriva_psi/. Vacio si todavia no hay corridas."""
+    if not list(Path(ruta_historico).glob("*.parquet")):
+        return pd.DataFrame(columns=COLUMNAS_DERIVA)
+    patron = str(Path(ruta_historico) / "*.parquet")
+    return duckdb.sql(
+        f"SELECT {', '.join(COLUMNAS_DERIVA)} FROM read_parquet('{patron}')"
+    ).df()
+
+
+def tendencia_psi(historico: pd.DataFrame) -> pd.DataFrame:
+    """Una fila por variable y fecha de corte, contra la referencia activa.
+
+    La referencia activa es la de la corrida mas reciente: las corridas
+    contra una referencia anterior miden contra otra linea base y no se
+    mezclan en la misma tendencia. Si una fecha de corte se midio varias
+    veces (por ejemplo, el DAG y demo.sh pipeline sobre la misma entrega),
+    queda la ultima corrida."""
+    if historico.empty:
+        return historico
+    ultima = historico.sort_values("fecha_corrida").iloc[-1]
+    activa = historico[historico["referencia_id"] == ultima["referencia_id"]]
+    ultimas_corridas = (
+        activa.sort_values("fecha_corrida").groupby("fecha_corte")["run_id"].last()
+    )
+    return (
+        activa[activa["run_id"].isin(ultimas_corridas)]
+        .sort_values(["variable", "fecha_corte"])
+        .reset_index(drop=True)
+    )

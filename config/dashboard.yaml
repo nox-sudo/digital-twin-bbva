@@ -7,6 +7,10 @@
 # lectura y nunca escribe en data/.
 gold_duckdb: data/gold/kpis.duckdb
 logs: data/logs
+# Historico del monitoreo de deriva (monitor_drift.py) y su configuracion,
+# de donde salen los umbrales y las variables temporales.
+deriva_psi: data/calidad/deriva_psi
+monitoreo_psi: config/monitoreo_psi.yaml
 
 # Bandas de riesgo sobre probabilidad_impago. Son una decision de
 # operacion (a partir de que probabilidad se revisa a un cliente), no una
