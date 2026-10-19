@@ -304,19 +304,38 @@ activar una entrega que cambie cualquier archivo ya entregado
 `clientes.csv` y `cuentas.json`. Si estas entidades pasan a cambiar entre
 entregas, hay que decidir de forma explicita como versionarlas.
 
+## Resueltos
+
 ### Corrupcion estructural de archivos no se detecta en Bronze
 
-**Que pasa:** el registro de calidad cubre valores invalidos dentro de
-filas bien formadas. Una linea de CSV mal formada (comillas sin cerrar,
-mas o menos columnas que el encabezado) la interpreta Spark en modo
-permisivo: los campos faltantes quedan NULL (y si se detectan despues,
-como not_null o tipo) pero los campos de mas se descartan sin aviso.
+Hallazgo 5 de la auditoria del 2026-10-14. Una linea de CSV mal formada
+(comillas sin cerrar, mas o menos columnas que el encabezado) la leia Spark
+en modo permisivo: los campos faltantes quedaban NULL, los de mas se
+descartaban sin aviso y una comilla sin cerrar se mezclaba con el campo
+siguiente.
 
-**Posible fix:** leer los CSV de Bronze con esquema explicito y
-columnNameOfCorruptRecord, para conservar la linea original en
-_corrupt_record y registrarla como incidencia estructural.
+Resuelto el 2026-10-19: `ingest_bronze.leer_csv` lee los CSV con un esquema de
+texto tomado del encabezado de cada archivo, mas `_corrupt_record`, en modo
+`PERMISSIVE`. Las columnas salen del encabezado y no del codigo, asi que una
+columna nueva del origen sigue entrando por `mergeSchema`; archivos con
+encabezados distintos se leen por separado y se unen por nombre. Bronze
+guarda la linea original (es la zona autorizada a tener PII en claro) y el log
+de ingesta cuenta las lineas mal formadas por archivo. En Silver,
+`marcar_estructura` la convierte en la violacion `estructura` y descarta
+`_corrupt_record` antes de cualquier escritura: la fila va a cuarentena y el
+registro de calidad guarda regla, llave y archivo, nunca el valor.
 
-## Resueltos
+Verificado con Spark 4.1.1 y Delta en el worker: una linea con una columna de
+mas en un CSV de transacciones queda en Bronze con su texto, las otras 10,533
+filas del archivo intactas, y Silver la deja en cuarentena con motivo
+`estructura_registro` sin `_corrupt_record` en Silver ni en la cuarentena.
+Pruebas: `tests/test_bronze_estructura.py` y un paso del smoke test.
+
+Limites: un encabezado mal formado no se detecta asi, porque es la base del
+esquema; si le falta una columna, la detiene `SchemaValidationError` en
+Silver. Cambio de comportamiento: una fila truncada a la que le falta una
+columna opcional (por ejemplo `email`) ahora va a cuarentena; un campo vacio
+con su separador sigue siendo valido.
 
 ### Sesiones distintas segun la zona horaria de la maquina
 
@@ -463,8 +482,9 @@ fallida no se revierten (son registro de lo que paso, no la capa que lee
 Gold). Si una fecha corrupta en el futuro llega a Bronze, la fecha de corte
 derivada se mueve con ella; `--fecha-corte` fija el valor cuando se necesite.
 
-Sigue abierto el 5 (ver "Corrupcion estructural de archivos no se detecta
-en Bronze"). El 6 se resolvio: ver "Imagenes sin version fija" mas arriba.
+El 5 se resolvio el 2026-10-19 y el 6 el 2026-10-16 (Postgres el 2026-10-19):
+ver "Corrupcion estructural de archivos no se detecta en Bronze" e "Imagenes sin
+version fija" mas arriba.
 
 Fuera de la auditoria, mismo patron que el hallazgo 3: `pipeline_summary.py`
 convertia cualquier error de lectura en 0 filas y podia reportar "Sin

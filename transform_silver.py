@@ -51,6 +51,7 @@ from src.common.secretos import obtener_secreto  # noqa: E402
 from src.calidad.registro import (  # noqa: E402
     escribir_registro,
     incidencias,
+    marcar_estructura,
     nuevo_run_id,
     perfil_columnas,
     tipar_con_control,
@@ -118,6 +119,11 @@ def process_entity(
             f"Bronze para esta entidad se haya completado antes de "
             f"correr Silver. Error original: {e}"
         ) from e
+
+    # Lineas de CSV mal formadas (columnas de mas o de menos, comillas sin
+    # cerrar): violacion "estructura", y la linea original se descarta aqui
+    # porque trae PII en claro.
+    df = marcar_estructura(df)
 
     # Tipado con control: los valores que no se pueden convertir quedan
     # marcados como violacion "tipo" en vez de volverse NULL en silencio.

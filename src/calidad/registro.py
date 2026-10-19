@@ -49,6 +49,7 @@ REGLAS = [
     "ident",
     "fk",
     "tipo",
+    "estructura",
 ]
 
 ESQUEMA_INCIDENCIAS = StructType(
@@ -119,6 +120,23 @@ def tipar_con_control(df: DataFrame, typing_fn) -> DataFrame:
                 & F.col(c).isNull(),
             )
     return tipado.drop(*respaldo.values())
+
+
+def marcar_estructura(
+    df: DataFrame, columna_corrupta: str = "_corrupt_record"
+) -> DataFrame:
+    """Convierte las lineas mal formadas que Bronze guardo en
+    columna_corrupta (ingest_bronze.leer_csv) en la violacion
+    _viol_estructura_registro, y descarta esa columna en el acto: trae la
+    linea original en claro, con PII, y no puede llegar ni a Silver ni a la
+    cuarentena. La fila va a cuarentena con motivo estructura_registro; el
+    registro de calidad guarda la regla, no el valor. Una tabla de Bronze sin
+    la columna (CSV ingeridos antes de este control, o JSON) pasa igual."""
+    if columna_corrupta not in df.columns:
+        return df
+    return df.withColumn(
+        "_viol_estructura_registro", F.col(columna_corrupta).isNotNull()
+    ).drop(columna_corrupta)
 
 
 def perfil_columnas(df: DataFrame, entidad: str, run_id: str) -> DataFrame:
