@@ -49,6 +49,7 @@ from src.gold.risk_features import (  # noqa: E402
 )
 from src.monitoreo.psi import (  # noqa: E402
     REENTRENAR,
+    TEMPORAL,
     ConfigPSI,
     cargar_config,
     clasificar,
@@ -116,7 +117,9 @@ def crear_desde_modelo_actual(
 def medir(
     cfg: ConfigPSI, referencia: dict, modelo_base, features: pd.DataFrame
 ) -> pd.DataFrame:
-    """PSI y estado por variable, con los cortes guardados en la referencia."""
+    """PSI y estado por variable, con los cortes guardados en la referencia.
+    Las variables de cfg.variables_temporales quedan en estado "temporal": su
+    PSI se guarda, pero no se compara con los umbrales ni genera alerta."""
     matriz, score = _score(modelo_base, features)
     filas = []
     for variable, ref in referencia["variables"].items():
@@ -133,7 +136,16 @@ def medir(
     filas.append({"variable": ref_score["variable"], "tipo": "score", "psi": valor})
 
     resultados = pd.DataFrame(filas)
-    resultados["estado"] = resultados["psi"].map(lambda v: clasificar(v, cfg))
+    resultados["estado"] = [
+        (
+            TEMPORAL
+            if v in cfg.variables_temporales and t == "feature"
+            else clasificar(p, cfg)
+        )
+        for v, t, p in zip(
+            resultados["variable"], resultados["tipo"], resultados["psi"]
+        )
+    ]
     return resultados
 
 
@@ -190,6 +202,15 @@ def main():
 
         referencia, ruta_modelo_base = cargar_activa(cfg.ruta_referencias)
         modelo_base = joblib.load(ruta_modelo_base)
+        desconocidas = sorted(
+            set(cfg.variables_temporales) - set(referencia["variables"])
+        )
+        if desconocidas:
+            logger.warning(
+                "variables_temporales sin PSI en la referencia %s (revisa el nombre): %s",
+                referencia["id"],
+                desconocidas,
+            )
 
         run_logger.start_entity("deriva_psi")
         ahora = datetime.now()
@@ -213,6 +234,7 @@ def main():
             estables=int(por_estado.get("estable", 0)),
             vigilar=int(por_estado.get("vigilar", 0)),
             reentrenar=int(por_estado.get(REENTRENAR, 0)),
+            temporales=int(por_estado.get(TEMPORAL, 0)),
             psi_score=round(float(score["psi"]), 4),
             alertas=alertas["variable"].tolist(),
         )

@@ -22,6 +22,7 @@ poblacion actual.
 | < 0.10 | estable | Sin cambio relevante |
 | 0.10 a 0.25 | vigilar | Cambio moderado: revisar la variable |
 | > 0.25 | reentrenar | La poblacion ya no se parece a la de entrenamiento |
+| cualquiera | temporal | Variable que deriva por el paso del tiempo (`variables_temporales`); se reporta sin alerta |
 
 Los umbrales son los de uso comun en riesgo de credito, no se derivaron de
 estos datos, y se cambian en el YAML. Un intervalo vacio toma la proporcion
@@ -257,5 +258,18 @@ cada una.
 
 En una cartera real pasaria lo mismo: una referencia congelada contra
 variables que dependen de la fecha de corte alerta aunque no haya cambiado
-nada. Las opciones (no implementadas) estan en `docs/technical-debt.md`,
-"Features que dependen del tiempo derivan sin cambio de poblacion".
+nada.
+
+**Tratamiento.** `antiguedad_dias`, `edad_anios` y `proporcion_retiros` estan
+en `variables_temporales` (`config/monitoreo_psi.yaml`). Su PSI se sigue
+calculando y guardando en el historico, pero con estado `temporal`: no se
+compara con los umbrales ni genera alerta en el log. Una variable listada que
+no exista en la referencia produce un aviso, para que un error en el nombre
+no la deje fuera sin que se note. El score nunca es temporal. La tabla de
+arriba se midio antes de este cambio; con el, esas dos variables aparecen
+como `temporal` y quedan una alerta `reentrenar` (el score) y tres `vigilar`.
+
+Es una mitigacion: oculta la alerta falsa, pero no hace que esas variables
+midan algo util. La solucion de fondo, calcularlas sobre una ventana fija,
+esta en `docs/technical-debt.md` ("Features que dependen del tiempo derivan
+sin cambio de poblacion").

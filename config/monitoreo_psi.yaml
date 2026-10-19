@@ -22,6 +22,19 @@ umbrales:
   vigilar: 0.10
   reentrenar: 0.25
 
+# Variables que derivan solo por el paso del tiempo, aunque la poblacion no
+# cambie: la antiguedad y la edad se miden contra la fecha de corte, que
+# avanza con cada entrega, y la proporcion de retiros se calcula sobre todo el
+# historial y se concentra al acumular meses (medido el 2026-10-18; ver
+# docs/monitoreo-deriva.md). Su PSI se calcula y se guarda igual, pero con
+# estado "temporal": no se clasifica contra los umbrales ni genera alerta.
+# Es una mitigacion; la solucion de fondo es calcularlas sobre una ventana
+# fija (docs/technical-debt.md).
+variables_temporales:
+  - antiguedad_dias
+  - edad_anios
+  - proporcion_retiros
+
 rutas:
   # Referencias (una carpeta por referencia, nunca se sobrescriben) y
   # marcador de la activa. Se respalda con demo.sh respaldar.
