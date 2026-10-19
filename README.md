@@ -245,7 +245,7 @@ Dos reportes, para preguntas distintas:
 | `pipeline_summary.py` | ¿Cuántas filas hay en cada capa en la última corrida? (HTML) | `uv run python pipeline_summary.py` |
 | `quality_report.py` | ¿Qué se rechazó, por qué regla, y cómo cambia entre corridas? | `uv run python main.py calidad` |
 
-**Dashboard.** Tres vistas sobre Gold: portafolio (dónde se concentra el riesgo y quién revisar), cliente (perfil, flujo de efectivo mes a mes y a dónde se va el dinero) y observabilidad (última corrida por capa, calidad en Silver y coherencia entre las tablas de Gold). Solo lee: abre DuckDB en modo solo lectura y los logs de `data/logs/`, sin Spark ni servicios de Docker. Streamlit vive en su propio grupo de dependencias, así que la imagen del worker no lo instala:
+**Dashboard.** Tres vistas sobre Gold: portafolio (dónde se concentra el riesgo y quién revisar), cliente (perfil, flujo de efectivo mes a mes y a dónde se va el dinero) y observabilidad (última corrida por capa, calidad en Silver, coherencia entre las tablas de Gold y tendencia de la deriva de datos con PSI). Solo lee: abre DuckDB en modo solo lectura, los logs de `data/logs/` y el histórico de `data/calidad/deriva_psi/`, sin Spark ni servicios de Docker. Streamlit vive en su propio grupo de dependencias, así que la imagen del worker no lo instala:
 
 ```bash
 uv run --group dashboard streamlit run dashboard/app.py
@@ -276,7 +276,7 @@ El workflow de GitHub Actions (`.github/workflows/ci.yml`) corre en cada Pull Re
 |---|---|
 | `lint` | flake8, black y escaneo de secretos y de archivos de datos versionados (`detect-secrets`) |
 | `docker-compose-validate` | Sintaxis de `docker-compose.yml` con un `.env` generado por `setup.sh`, y shellcheck de `setup.sh`/`demo.sh` |
-| `unit-tests` | 220 pruebas (pytest): motor de validación, CURP/RFC y PII, sesiones, landing zone, registro de calidad, feature store, modelo, monitoreo de deriva (PSI), escenario de deriva del generador, CLI y respaldo/restauración de `demo.sh` |
+| `unit-tests` | 222 pruebas (pytest): motor de validación, CURP/RFC y PII, sesiones, landing zone, registro de calidad, feature store, modelo, monitoreo de deriva (PSI), escenario de deriva del generador, CLI y respaldo/restauración de `demo.sh` |
 | `pipeline-smoke-test` | Pipeline completo Bronze → Silver → Gold → modelo de riesgo con volumen reducido (100 clientes, 2 meses), parametrizable vía `workflow_dispatch`; verifica la reproducibilidad de la sesión, la ingesta incremental de Bronze, Silver sin cuarentena inesperada ni PII en claro, que una corrida fallida de Silver se revierta a la anterior, el registro de calidad, los 12 KPIs, el feature store, y que `probabilidad_impago` tenga valor en [0, 1] para todos los clientes |
 
 ---

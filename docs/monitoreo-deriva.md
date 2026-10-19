@@ -89,6 +89,12 @@ FROM read_parquet('data/calidad/deriva_psi/*.parquet')
 ORDER BY fecha_corrida, psi DESC;
 ```
 
+El dashboard lo muestra en Observabilidad, seccion "Deriva de datos (PSI)":
+el conteo por estado del ultimo corte, un panel por variable con la
+tendencia contra la referencia activa y las bandas de 0.10 y 0.25, y la
+tabla de la ultima corrida. Si un corte se midio varias veces, toma la
+ultima corrida; las corridas contra referencias anteriores no se mezclan.
+
 Una variable en estado `reentrenar` se registra en el log de la tarea como
 `ALERTA deriva`, y el resumen de la corrida queda en
 `data/logs/monitoreo_run_*.json`. El pipeline no falla por deriva.

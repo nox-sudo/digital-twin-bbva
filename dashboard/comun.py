@@ -41,6 +41,8 @@ def config() -> dict:
     cfg = datos.cargar_config(str(RAIZ / "config" / "dashboard.yaml"))
     cfg["gold_duckdb"] = str(RAIZ / cfg["gold_duckdb"])
     cfg["logs"] = str(RAIZ / cfg["logs"])
+    cfg["deriva_psi"] = str(RAIZ / cfg["deriva_psi"])
+    cfg["monitoreo_psi"] = str(RAIZ / cfg["monitoreo_psi"])
     return cfg
 
 

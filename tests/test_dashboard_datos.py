@@ -146,3 +146,43 @@ def test_corridas_normaliza_los_dos_formatos_de_log(tmp_path):
 
     entidades = datos.entidades_ultima_corrida(str(tmp_path), "silver")
     assert entidades.iloc[0]["reglas_violadas"] == "notnull_curp (2)"
+
+
+def _corrida_psi(
+    carpeta: Path, run_id: str, corrida: str, corte: str, ref: str, psi: float
+):
+    carpeta.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        {
+            "run_id": [run_id] * 2,
+            "fecha_corrida": [pd.Timestamp(corrida)] * 2,
+            "fecha_corte": [dt.date.fromisoformat(corte)] * 2,
+            "referencia_id": [ref] * 2,
+            "variable": ["capacidad_ahorro", "probabilidad_impago"],
+            "tipo": ["feature", "score"],
+            "psi": [psi, psi / 2],
+            "estado": ["estable", "estable"],
+            "n_referencia": [500] * 2,
+            "n_actual": [500] * 2,
+        }
+    ).to_parquet(carpeta / f"{run_id}.parquet", index=False)
+
+
+def test_deriva_psi_vacio_sin_corridas(tmp_path):
+    assert datos.deriva_psi(str(tmp_path / "no-existe")).empty
+    assert list(datos.deriva_psi(str(tmp_path)).columns) == datos.COLUMNAS_DERIVA
+
+
+def test_tendencia_usa_la_referencia_activa_y_la_ultima_corrida_por_corte(tmp_path):
+    h = tmp_path / "deriva_psi"
+    _corrida_psi(h, "r0", "2026-10-01 10:00", "2026-09-30", "ref_vieja", 0.9)
+    _corrida_psi(h, "r1", "2026-10-02 10:00", "2026-09-30", "ref_nueva", 0.0)
+    _corrida_psi(h, "r2", "2026-10-02 11:00", "2026-09-30", "ref_nueva", 0.01)
+    _corrida_psi(h, "r3", "2026-11-02 10:00", "2026-10-31", "ref_nueva", 0.2)
+
+    tendencia = datos.tendencia_psi(datos.deriva_psi(str(h)))
+
+    assert set(tendencia["referencia_id"]) == {"ref_nueva"}
+    assert set(tendencia["run_id"]) == {"r2", "r3"}
+    capacidad = tendencia[tendencia["variable"] == "capacidad_ahorro"]
+    assert capacidad["psi"].tolist() == [0.01, 0.2]
