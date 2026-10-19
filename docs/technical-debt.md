@@ -282,6 +282,11 @@ las alertas verdaderas.
 Cambiar las features del modelo afecta al entrenamiento y a la referencia,
 asi que va junto con el rediseno de la ventana de features.
 
+**Mitigacion aplicada (2026-10-19):** la tercera opcion. `antiguedad_dias`,
+`edad_anios` y `proporcion_retiros` estan en `variables_temporales`
+(`config/monitoreo_psi.yaml`); su PSI se guarda con estado `temporal`, sin
+alerta. Sigue abierto el fix de fondo (ventana fija).
+
 ### Las entregas nuevas solo agregan transacciones
 
 **Que pasa:** una entrega mensual (`demo.sh nueva-entrega`) trae un mes

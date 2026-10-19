@@ -420,3 +420,61 @@ def test_una_referencia_solo_con_faltantes_mide_el_cambio_de_nulos():
         )
         > 0.25
     )
+
+
+def test_variables_temporales_se_reportan_sin_alerta(entorno, caplog):
+    """Una variable marcada como temporal guarda su PSI aunque sea alto, pero
+    queda en estado "temporal" y no genera alerta."""
+    config = entorno["tmp"] / "monitoreo_psi.yaml"
+    config.write_text(
+        config.read_text(encoding="utf-8")
+        + "variables_temporales: [ingreso_mensual_promedio]\n",
+        encoding="utf-8",
+    )
+    entorno["correr"]()
+    _escribir_features(entorno["gold"], _features(semilla=1, desplazamiento=8000))
+    with caplog.at_level(logging.WARNING):
+        entorno["correr"]()
+
+    ultima = (
+        _historico(entorno["tmp"]).query("run_id == run_id.max()").set_index("variable")
+    )
+    assert ultima.loc["ingreso_mensual_promedio", "estado"] == "temporal"
+    assert ultima.loc["ingreso_mensual_promedio", "psi"] > 0.25
+    assert "ALERTA deriva: ingreso_mensual_promedio" not in caplog.text
+    # El score nunca es temporal, aunque se llame como una variable listada.
+    assert ultima.loc["probabilidad_impago", "estado"] != "temporal"
+
+
+def test_variable_temporal_inexistente_avisa(entorno, caplog):
+    config = entorno["tmp"] / "monitoreo_psi.yaml"
+    config.write_text(
+        config.read_text(encoding="utf-8") + "variables_temporales: [antiguedad_dia]\n",
+        encoding="utf-8",
+    )
+    with caplog.at_level(logging.WARNING):
+        entorno["correr"]()
+    assert "antiguedad_dia" in caplog.text and "revisa el nombre" in caplog.text
+
+
+def test_config_del_repo_marca_las_variables_temporales():
+    cfg = cargar_config(
+        Path(__file__).resolve().parents[1] / "config/monitoreo_psi.yaml"
+    )
+
+    assert set(cfg.variables_temporales) == {
+        "antiguedad_dias",
+        "edad_anios",
+        "proporcion_retiros",
+    }
+
+
+def test_config_rechaza_variables_temporales_invalidas(tmp_path):
+    ruta = tmp_path / "psi.yaml"
+    ruta.write_text(
+        "bins: 10\nepsilon: 0.0001\numbrales: {vigilar: 0.10, reentrenar: 0.25}\n"
+        "rutas: {referencias: r, historico: h}\nvariables_temporales: [1, '']\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="variables_temporales"):
+        cargar_config(ruta)
