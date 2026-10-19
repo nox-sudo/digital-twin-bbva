@@ -276,7 +276,7 @@ El workflow de GitHub Actions (`.github/workflows/ci.yml`) corre en cada Pull Re
 |---|---|
 | `lint` | flake8, black y escaneo de secretos y de archivos de datos versionados (`detect-secrets`) |
 | `docker-compose-validate` | Sintaxis de `docker-compose.yml` con un `.env` generado por `setup.sh`, y shellcheck de `setup.sh`/`demo.sh` |
-| `unit-tests` | 222 pruebas (pytest): motor de validación, CURP/RFC y PII, sesiones, landing zone, registro de calidad, feature store, modelo, monitoreo de deriva (PSI), escenario de deriva del generador, CLI y respaldo/restauración de `demo.sh` |
+| `unit-tests` | 229 pruebas (pytest): motor de validación, CURP/RFC y PII, sesiones, landing zone, registro de calidad, feature store, modelo, monitoreo de deriva (PSI), escenario de deriva del generador, CSV mal formados en Bronze, CLI y respaldo/restauración de `demo.sh` |
 | `pipeline-smoke-test` | Pipeline completo Bronze → Silver → Gold → modelo de riesgo con volumen reducido (100 clientes, 2 meses), parametrizable vía `workflow_dispatch`; verifica la reproducibilidad de la sesión, la ingesta incremental de Bronze, Silver sin cuarentena inesperada ni PII en claro, que una corrida fallida de Silver se revierta a la anterior, el registro de calidad, los 12 KPIs, el feature store, y que `probabilidad_impago` tenga valor en [0, 1] para todos los clientes |
 
 ---
@@ -307,7 +307,7 @@ Catálogo de 12 KPIs en 5 categorías (ingresos, gastos, ahorro y liquidez, ries
 - [x] Infraestructura Docker Compose — Airflow, Postgres, MinIO, worker
 - [x] DAG de Airflow corriendo end-to-end de forma automatizada
 - [x] CI/CD — 4 jobs, lint + tests + validación de infraestructura + smoke test
-- [x] Pruebas de robustez con inyección deliberada de datos sucios: 5 brechas, 3 con cambios de código; solo 2 casos tienen prueba automatizada directa (detalle en [docs/pruebas-robustez.md](docs/pruebas-robustez.md))
+- [x] Pruebas de robustez con inyección deliberada de datos sucios: 5 brechas, 4 con cambios de código; 3 casos tienen prueba automatizada directa (detalle en [docs/pruebas-robustez.md](docs/pruebas-robustez.md))
 - [x] Capa Gold — catálogo de 12 KPIs en DuckDB
 - [x] Diccionario de datos formal
 - [x] Modelo predictivo de riesgo crediticio (XGBoost + SHAP), entrenado dentro del DAG

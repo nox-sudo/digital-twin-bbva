@@ -170,6 +170,42 @@ jobs:
           print(f'Incremental OK: {tx} transacciones y {cl} clientes, sin duplicados')
           "
 
+      # Lineas de CSV mal formadas con Delta real, aparte del flujo principal:
+      # una copia de las fuentes (sin manifest, para que cuente como entrega
+      # local nueva) con una linea con columna de mas en transacciones. Bronze
+      # debe guardarla en _corrupt_record y dejar intactas las demas.
+      - name: Verificar que Bronze conserva las lineas mal formadas
+        run: |
+          rm -rf /tmp/fuente_corrupta /tmp/bronze_corrupto
+          cp -R data/raw_sources /tmp/fuente_corrupta
+          rm /tmp/fuente_corrupta/manifest.json
+          ARCHIVO=$(ls /tmp/fuente_corrupta/transacciones/*.csv | head -n 1)
+          LINEAS=$(($(wc -l < "$ARCHIVO") - 1))
+          echo "TX-MALFORMADA,CTA-X,CLI-X,2026-09-01,compra,comida,-10.0,Tienda,,EXTRA" >> "$ARCHIVO"
+          uv run python ingest_bronze.py --source /tmp/fuente_corrupta --out /tmp/bronze_corrupto \
+            | tee /tmp/ingesta_corrupta.log
+          grep -q "linea(s) mal formada(s)" /tmp/ingesta_corrupta.log
+          uv run python -c "
+          import sys
+          from pyspark.sql import functions as F
+          from src.common.spark_session import get_spark_session
+
+          spark = get_spark_session('verificar_corruptos')
+          tx = spark.read.format('delta').load('/tmp/bronze_corrupto/transacciones').cache()
+          archivo = '$(basename "$ARCHIVO")'
+          del_archivo = tx.filter(F.col('_source_file') == archivo)
+          corruptas = del_archivo.filter(F.col('_corrupt_record').isNotNull()).collect()
+          total = del_archivo.count()
+          spark.stop()
+          if len(corruptas) != 1 or 'TX-MALFORMADA' not in corruptas[0]['_corrupt_record']:
+              print(f'ERROR: se esperaba 1 linea mal formada en {archivo}, hay {len(corruptas)}')
+              sys.exit(1)
+          if total != $LINEAS + 1:
+              print(f'ERROR: {archivo} tiene {total} filas en Bronze, se esperaban $LINEAS + 1')
+              sys.exit(1)
+          print(f'Bronze conserva la linea mal formada de {archivo}; {total - 1} filas bien formadas')
+          "
+
       - name: Transformacion Silver
         run: |
           uv run python transform_silver.py \

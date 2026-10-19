@@ -15,6 +15,10 @@ Responsabilidad de este script (y SOLO esta):
 
 Principio clave del patron Medallion: Bronze es inmutable y auditable.
 Si algo llega "sucio" del origen, se queda sucio en Bronze a proposito.
+Eso incluye las lineas de CSV mal formadas (columnas de mas o de menos,
+comillas sin cerrar): se guardan con la linea original en
+_corrupt_record, en vez de recortarse o rellenarse en silencio, y Silver
+las manda a cuarentena con la regla "estructura".
 Y es acumulativo: cada version de clientes.csv que llego queda en Bronze
 con su timestamp; Silver se queda con la mas reciente por llave.
 
@@ -29,6 +33,7 @@ Salida (Delta Lake):
 """
 
 import argparse
+import csv
 import json
 import sys
 from datetime import datetime
@@ -143,6 +148,53 @@ def con_metadata_ingesta(df, formato_origen: str, entrega_id: str):
     )
 
 
+# Columna donde Spark deja la linea original de un CSV mal formado. Solo
+# existe en Bronze: Silver la convierte en una violacion y la descarta,
+# porque trae la linea en claro (con PII).
+COLUMNA_CORRUPTA = "_corrupt_record"
+
+
+def encabezado_csv(ruta: Path) -> tuple[str, ...]:
+    with open(ruta, encoding="utf-8", newline="") as f:
+        return tuple(next(csv.reader(f), []))
+
+
+def leer_csv(spark: SparkSession, rutas: list[Path]):
+    """Lee CSV como texto con un esquema tomado del encabezado de cada
+    archivo, mas COLUMNA_CORRUPTA.
+
+    Sin esquema, Spark lee en modo permisivo sin avisar: descarta los campos
+    de mas, rellena con NULL los que faltan y mezcla una comilla sin cerrar
+    con el campo siguiente. Con el esquema explicito, esas lineas conservan
+    su texto original en COLUMNA_CORRUPTA. Las columnas salen del
+    encabezado, no del codigo, para que una columna nueva del origen siga
+    entrando como hasta ahora (mergeSchema en Bronze). Archivos con
+    encabezados distintos se leen por separado y se unen por nombre."""
+    por_encabezado: dict[tuple[str, ...], list[str]] = {}
+    for ruta in rutas:
+        por_encabezado.setdefault(encabezado_csv(ruta), []).append(str(ruta))
+
+    partes = []
+    for columnas, grupo in por_encabezado.items():
+        if not columnas:
+            raise ValueError(f"CSV sin encabezado: {grupo}")
+        esquema = StructType(
+            [StructField(c, StringType()) for c in columnas]
+            + [StructField(COLUMNA_CORRUPTA, StringType())]
+        )
+        partes.append(
+            spark.read.option("header", True)
+            .option("mode", "PERMISSIVE")
+            .option("columnNameOfCorruptRecord", COLUMNA_CORRUPTA)
+            .schema(esquema)
+            .csv(grupo)
+        )
+    df = partes[0]
+    for parte in partes[1:]:
+        df = df.unionByName(parte, allowMissingColumns=True)
+    return df
+
+
 def leer_entidad(spark: SparkSession, entidad: str, rutas: list[Path]):
     """Lee los archivos de una entidad como texto (sin inferir tipos) y
     devuelve el DataFrame con su formato de origen."""
@@ -162,8 +214,7 @@ def leer_entidad(spark: SparkSession, entidad: str, rutas: list[Path]):
         df = spark.read.option("multiLine", True).schema(SCHEMA_CUENTAS).json(rutas_str)
         return df, "json"
     # clientes, cetes_inversiones, transacciones: CSV como texto.
-    df = spark.read.option("header", True).option("inferSchema", False).csv(rutas_str)
-    return df, "csv"
+    return leer_csv(spark, rutas), "csv"
 
 
 def escribir_bronze(df, entidad: str, out_dir: Path) -> None:
@@ -215,11 +266,14 @@ def entregas_desde_landing(staging: Path, ingeridos: set) -> list[Entrega]:
     return entregas
 
 
-def ingerir(spark, pendientes: list[ArchivoPendiente], out_dir: Path) -> dict:
+def ingerir(
+    spark, pendientes: list[ArchivoPendiente], out_dir: Path
+) -> tuple[dict, dict]:
     """Ingiere los pendientes, agrupados por entrega y entidad (una
     escritura Delta por grupo). Anota cada grupo en el registro de
     control en cuanto Spark confirma su escritura."""
     resumen = {}
+    corruptas: dict[str, int] = {}
     grupos: dict[tuple[str, str], list[ArchivoPendiente]] = {}
     for p in pendientes:
         grupos.setdefault((p.entrega_id, p.entidad), []).append(p)
@@ -235,6 +289,21 @@ def ingerir(spark, pendientes: list[ArchivoPendiente], out_dir: Path) -> dict:
             fila["_source_file"]: fila["count"]
             for fila in df.groupBy("_source_file").count().collect()
         }
+        # Sobre el DataFrame en cache: Spark no permite consultar el CSV
+        # crudo cuando solo se referencia la columna de registros corruptos.
+        if COLUMNA_CORRUPTA in df.columns:
+            for fila in (
+                df.filter(F.col(COLUMNA_CORRUPTA).isNotNull())
+                .groupBy("_source_file")
+                .count()
+                .collect()
+            ):
+                corruptas[fila["_source_file"]] = fila["count"]
+                print(
+                    f"[Bronze] AVISO: {fila['_source_file']} trae {fila['count']} "
+                    "linea(s) mal formada(s); se guardan en _corrupt_record y "
+                    "Silver las manda a cuarentena (regla estructura)"
+                )
         escribir_bronze(df, entidad, out_dir)
         df.unpersist()
         anotar_ingeridos(out_dir, archivos, filas_por_archivo)
@@ -245,7 +314,7 @@ def ingerir(spark, pendientes: list[ArchivoPendiente], out_dir: Path) -> dict:
         print(
             f"[Bronze] {entrega_id} / {entidad}: {len(archivos)} archivo(s), {filas} filas"
         )
-    return resumen
+    return resumen, corruptas
 
 
 def escribir_log_ingesta(out_dir: Path, resumen: dict):
@@ -303,6 +372,7 @@ def main():
     pendientes = planear_ingesta(entregas, ingeridos)
     inicio = datetime.now()
     resumen = {}
+    corruptas = {}
     estatus = "SUCCESS"
 
     if not pendientes:
@@ -314,7 +384,7 @@ def main():
         spark = get_spark_session()
         spark.sparkContext.setLogLevel("WARN")
         try:
-            resumen = ingerir(spark, pendientes, out_dir)
+            resumen, corruptas = ingerir(spark, pendientes, out_dir)
         except Exception as e:
             estatus = f"FAILED: {e}"
             raise
@@ -332,6 +402,7 @@ def main():
                     "entregas": [e.entrega_id for e in entregas],
                     "archivos_ingeridos": len(pendientes),
                     "filas_por_entidad": resumen,
+                    "lineas_mal_formadas_por_archivo": corruptas,
                     "out_dir": str(out_dir),
                 },
             )

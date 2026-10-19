@@ -2,8 +2,8 @@
 
 Ademas de las pruebas unitarias del motor de Silver (`tests/test_validation.py`),
 se probaron 5 brechas con inyeccion deliberada de datos sucios. 3 de las 5
-terminaron en cambios de codigo; las otras 2 confirmaron que el diseno ya era
-correcto. El detalle completo (metodo, resultado y razonamiento) esta en el
+terminaron en cambios de codigo en su momento; la 1 se corrigio despues
+(2026-10-19, ver la tabla), y la 3 confirmo que el diseno ya era correcto. El detalle completo (metodo, resultado y razonamiento) esta en el
 reporte tecnico del proyecto, fuera del repositorio; este documento resume lo
 verificable y dice cuanto de eso esta cubierto hoy por pruebas automatizadas.
 
@@ -12,7 +12,7 @@ de referencia de entonces (115,797 transacciones).
 
 | Brecha | Que se probo | Hallazgo | Resultado | Prueba automatizada en el repo |
 |---|---|---|---|---|
-| 1. Archivos mal formados | CSV real de clientes con filas a las que les faltan columnas al final | Spark rellena con NULL sin error y Bronze acepta el archivo. Silver aisla en cuarentena las filas a las que les falta una columna con regla `not_null` (de 8 filas, 7 validas y 1 en cuarentena). Una fila a la que solo le falta `email` pasa como valida, porque `email` no tiene `not_null` | Sin cambio de codigo; `email` se mantiene opcional por decision | No |
+| 1. Archivos mal formados | CSV real de clientes con filas a las que les faltan columnas al final | Spark rellena con NULL sin error y Bronze acepta el archivo. Silver aisla en cuarentena las filas a las que les falta una columna con regla `not_null` (de 8 filas, 7 validas y 1 en cuarentena). Una fila a la que solo le falta `email` pasa como valida, porque `email` no tiene `not_null` | En su momento, sin cambio de codigo. Corregido el 2026-10-19 (hallazgo 5 de la auditoria): Bronze lee los CSV con un esquema tomado del encabezado y guarda la linea original de toda fila con columnas de mas o de menos, o con comillas sin cerrar, en `_corrupt_record`; Silver la manda a cuarentena con la regla `estructura` y descarta esa columna (trae PII en claro). Cambio de comportamiento: una fila truncada a la que le falta `email` ahora va a cuarentena; un `email` vacio con su separador (`,,`) sigue siendo valido | Si: `tests/test_bronze_estructura.py` y el paso del smoke test "Verificar que Bronze conserva las lineas mal formadas" |
 | 2. Corrupcion de esquema | CSV sin la columna `ciudad` | Antes del fix, Spark lanzaba `AnalysisException` (`UNRESOLVED_COLUMN`) y detenia el pipeline sin contexto | Fix: `SchemaValidationError` con la entidad y las columnas faltantes, antes de aplicar reglas (`src/silver/validation.py`) | Si: `test_columna_faltante_lanza_schema_validation_error` |
 | 3. Idempotencia | Correr la ingesta dos veces sobre la misma fuente, y un `cliente_id` duplicado a proposito con distinto timestamp | 500 filas en ambas corridas; `deduplicate()` conservo la version mas reciente | Sin cambio de codigo. Hoy la idempotencia viene del registro de control de Bronze (`_control_ingesta.jsonl`), no de `overwrite`; se verifico de nuevo el 2026-10-08 (volver a correr `demo.sh` sobre una instancia poblada ingiere 0 archivos) | Parcial: `test_landing.py` cubre el registro de control |
 | 4. Entidad faltante | Silver contra un Bronze al que le falta una entidad completa | El error de Spark era legible, pero el log no tenia entrada para la entidad que fallo | Fix: estatus `FAILED` en el log y `RuntimeError` con el nombre de la entidad (`transform_silver.py`) | No |
@@ -28,6 +28,6 @@ siempre acompana `unique` con `not_null` en la misma columna. Cubierta por
 **Limites que conviene tener presentes**
 - Las pruebas de volumen corrieron en modo local (`local[*]`) en una sola maquina;
   no hay evidencia de comportamiento en un cluster.
-- De las 5 brechas, solo la 2 y la correccion de nulos de la 5 tienen una prueba
-  automatizada que corre en cada Pull Request. Las demas se hicieron a mano y
+- De las 5 brechas, la 1, la 2 y la correccion de nulos de la 5 tienen una
+  prueba automatizada que corre en cada Pull Request. Las demas se hicieron a mano y
   estan documentadas, pero hoy no protegen contra regresiones.

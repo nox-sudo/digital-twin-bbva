@@ -138,9 +138,6 @@ Lo que conviene saber antes de operar la instancia. El detalle, con fecha de
 verificacion y posibles soluciones, esta en
 [docs/technical-debt.md](technical-debt.md).
 
-- **Bronze acepta CSV mal formados.** Una linea con comillas sin cerrar o con
-  columnas de mas o de menos se lee en modo permisivo: los campos de mas se
-  descartan sin aviso.
 - **Las entregas solo agregan transacciones.** `nueva-entrega` no trae clientes
   nuevos, bajas ni saldos que cambien.
 - **El escenario de deriva no se cambia despues de entregar.** Con
