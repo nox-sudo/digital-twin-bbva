@@ -143,9 +143,10 @@ verificacion y posibles soluciones, esta en
 - **El escenario de deriva no se cambia despues de entregar.** Con
   `escenario_deriva` activo, el generador se niega a activar una entrega que
   cambie meses ya entregados; volver atras exige `limpiar todo` y restaurar.
-- **El PSI reacciona tarde.** Casi todas las features promedian todo el
-  historial; antiguedad, edad y proporcion de retiros derivan por el paso del
-  tiempo y se reportan como `temporal`, sin alerta.
+- **Antiguedad y edad derivan por el paso del tiempo.** Se miden contra la
+  fecha de corte; el monitoreo las reporta como `temporal`, sin alerta. Las
+  demas features de flujo usan una ventana de 12 meses
+  (`config/features.yaml`).
 - **La probabilidad de impago esta descalibrada** por `scale_pos_weight`: la
   media publicada (0.205) es mayor que la tasa real (0.164).
 

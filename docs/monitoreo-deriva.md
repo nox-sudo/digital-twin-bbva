@@ -115,19 +115,13 @@ Una variable en estado `reentrenar` se registra en el log de la tarea como
 
 ## Limitaciones conocidas
 
-**Dilucion por promediar sobre todo el historial.** Casi todas las features
-se promedian sobre la rejilla completa cliente x mes
-(`src/gold/kpi_definitions.py`). Con 24 meses acumulados, un cambio en los
-ultimos 3 apenas mueve el promedio, y el PSI lo detecta tarde aunque el
-calculo sea correcto. Solo `gasto_promedio_3_meses` mira una ventana
-reciente. El escenario de deriva lo confirmo con el pipeline (seccion
-"Medicion con el pipeline"):
-es el hallazgo principal de esta prueba, registrado en
-`docs/technical-debt.md` ("El PSI reacciona tarde a una deriva reciente").
-Corregirlo pasa por medir tambien features de ventana reciente y se cruza
-con el rediseno de la etiqueta: la ventana de features deberia ser movil
-(por ejemplo, los 6 o 12 meses previos a la fecha de corte), alineada con la
-fecha de observacion de la etiqueta, y no todo el historial.
+**Dilucion por promediar.** Hasta el 2026-10-19 las features de flujo se
+promediaban sobre todo el historial, y un cambio en los ultimos meses apenas
+movia el promedio: el escenario de deriva lo mostro con el pipeline (seccion
+"Medicion con el pipeline"). Desde entonces se calculan sobre una ventana de
+12 meses (`config/features.yaml`; seccion "Ventana de 12 meses"). La ventana
+tambien diluye, pero mucho menos: un deterioro que lleva 7 de los 12 meses
+pesa casi 60 % del promedio, no 7 de 19.
 
 **La alerta es informativa.** El DAG reentrena cada corrida sin
 condiciones, asi que una alerta `reentrenar` no dispara nada que no fuera a
@@ -237,8 +231,9 @@ Lo que muestra la tabla:
 
 ## Deriva que viene del paso del tiempo
 
-`antiguedad_dias` y `proporcion_retiros` derivan aunque la poblacion no
-cambie:
+Medido el 2026-10-18, con las features sobre todo el historial.
+`antiguedad_dias` y `proporcion_retiros` derivaban aunque la poblacion no
+cambiara:
 
 - **`antiguedad_dias`** se mide contra la fecha de corte, que avanza un mes
   en cada entrega: todos los clientes suman unos 30 dias por entrega. Contra
@@ -260,8 +255,10 @@ En una cartera real pasaria lo mismo: una referencia congelada contra
 variables que dependen de la fecha de corte alerta aunque no haya cambiado
 nada.
 
-**Tratamiento.** `antiguedad_dias`, `edad_anios` y `proporcion_retiros` estan
-en `variables_temporales` (`config/monitoreo_psi.yaml`). Su PSI se sigue
+**Tratamiento.** La proporcion de retiros dejo de derivar al pasar a la
+ventana de 12 meses (seccion siguiente) y salio de la lista. `antiguedad_dias`
+y `edad_anios` miden el tiempo por definicion y siguen en
+`variables_temporales` (`config/monitoreo_psi.yaml`). Su PSI se sigue
 calculando y guardando en el historico, pero con estado `temporal`: no se
 compara con los umbrales ni genera alerta en el log. Una variable listada que
 no exista en la referencia produce un aviso, para que un error en el nombre
@@ -269,7 +266,52 @@ no la deje fuera sin que se note. El score nunca es temporal. La tabla de
 arriba se midio antes de este cambio; con el, esas dos variables aparecen
 como `temporal` y quedan una alerta `reentrenar` (el score) y tres `vigilar`.
 
-Es una mitigacion: oculta la alerta falsa, pero no hace que esas variables
-midan algo util. La solucion de fondo, calcularlas sobre una ventana fija,
-esta en `docs/technical-debt.md` ("Features que dependen del tiempo derivan
-sin cambio de poblacion").
+Para antiguedad y edad es una mitigacion: oculta la alerta falsa, pero esas
+variables siguen cambiando con el corte (`docs/technical-debt.md`, "Features
+que dependen del tiempo derivan sin cambio de poblacion").
+
+## Ventana de 12 meses
+
+Desde el 2026-10-19 los KPIs de flujo (ingreso, estabilidad, gasto, capacidad
+de ahorro, ratio de endeudamiento por su ingreso, frecuencia, P2P y categoria
+dominante) y la proporcion de retiros se calculan sobre los ultimos 12 meses
+completos hasta la fecha de corte (`config/features.yaml`). 12 son los meses
+de la sesion base: con ese historial la ventana es el historial completo, asi
+que las features de la base, el modelo entrenado sobre ellas, el AUC (0.741)
+y la referencia del PSI no cambian. Lo que cambia es la lectura de las
+entregas.
+
+Efecto medido antes de implementarlo, con las 8 sesiones de la instancia
+(base y entregas 1 a 7, escenario de ejemplo) y las definiciones de los KPIs
+calculadas sobre los CSV; PSI contra los deciles de la base. Es una
+**aproximacion**: para las features de historial completo coincide con lo
+que midio el pipeline (capacidad de ahorro 0.311, estabilidad 0.177 y retiros
+0.930 en la entrega 7).
+
+| Variable | Definicion | e1 | e3 | e5 | e7 |
+|---|---|---|---|---|---|
+| `capacidad_ahorro` | historial completo | 0.012 | 0.058 | 0.144 | 0.311 |
+| | ventana de 12 meses | 0.011 | 0.082 | 0.241 | 0.654 |
+| `ingreso_mensual_promedio` | historial completo | 0.003 | 0.007 | 0.026 | 0.049 |
+| | ventana de 12 meses | 0.005 | 0.010 | 0.055 | 0.113 |
+| `estabilidad_ingreso` | historial completo | 0.003 | 0.015 | 0.116 | 0.177 |
+| | ventana de 12 meses | 0.002 | 0.037 | 0.155 | 0.249 |
+| `proporcion_retiros` | historial completo | 0.093 | 0.577 | 0.538 | 0.930 |
+| | ventana de 12 meses | 0.009 | 0.037 | 0.040 | 0.047 |
+
+La deriva real del escenario se ve entre 1.5 y 2 veces mas fuerte y la falsa
+de los retiros desaparece.
+
+Comprobado con el pipeline para la entrega 7: Gold y el feature store con la
+ventana, corridos en el worker sobre el Silver de la instancia (corte
+2027-04-30) y comparados contra la referencia `ref_20261018_203222`, dan
+exactamente la columna e7 de la tabla (0.654, 0.113, 0.249 y 0.047). Ademas,
+`actividad_p2p` baja de 0.118 a 0.014: su paso a "vigilar" en la entrega 7
+tambien venia de acumular historial, no del escenario (que no toca el P2P).
+Las columnas e1 a e5 y la tendencia del dashboard se miden reconstruyendo la
+instancia y repitiendo las entregas con la ventana.
+
+**Etiqueta de impago.** Sus coeficientes pre-registrados no cambian. Sus
+entradas observadas (capacidad de ahorro y ratio de endeudamiento) salen del
+feature store, asi que en las entregas pasan a usar la ventana. Es un cambio
+en la definicion de las features, no en los parametros de la etiqueta.

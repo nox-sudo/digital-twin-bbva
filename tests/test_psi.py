@@ -462,11 +462,8 @@ def test_config_del_repo_marca_las_variables_temporales():
         Path(__file__).resolve().parents[1] / "config/monitoreo_psi.yaml"
     )
 
-    assert set(cfg.variables_temporales) == {
-        "antiguedad_dias",
-        "edad_anios",
-        "proporcion_retiros",
-    }
+    # proporcion_retiros salio de la lista al calcularse sobre una ventana fija.
+    assert set(cfg.variables_temporales) == {"antiguedad_dias", "edad_anios"}
 
 
 def test_config_rechaza_variables_temporales_invalidas(tmp_path):

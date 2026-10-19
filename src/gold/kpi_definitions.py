@@ -14,8 +14,16 @@ categoria).
 
 Se opera sobre datos ya limpios y validados de Silver - ningun KPI se
 calcula directamente sobre Bronze.
+
+Ventana. Los KPIs de flujo (ingreso, gasto, ahorro, frecuencia, P2P,
+categoria dominante) se calculan sobre los ultimos ctx["ventana_meses"]
+meses hasta la fecha de corte (config/features.yaml), no sobre todo el
+historial. Sin ventana en el contexto, usan todo el historial.
 """
 
+from pathlib import Path
+
+import yaml
 from pyspark.sql import functions as F
 from pyspark.sql.window import Window
 
@@ -28,6 +36,39 @@ TIPOS_INGRESO = ["nomina", "deposito"]
 TIPOS_SALIDA = ["compra", "pago_recurrente", "retiro"]
 
 
+def cargar_ventana(ruta: str | Path = "config/features.yaml") -> int:
+    """ventana_meses de config/features.yaml, validada."""
+    with open(ruta, encoding="utf-8") as f:
+        crudo = yaml.safe_load(f) or {}
+    try:
+        ventana = crudo["ventana_meses"]
+    except KeyError:
+        raise ValueError(f"{ruta}: falta la llave 'ventana_meses'") from None
+    if isinstance(ventana, bool) or not isinstance(ventana, int) or ventana < 1:
+        raise ValueError(
+            f"{ruta}: ventana_meses debe ser un entero >= 1, no {ventana!r}"
+        )
+    return ventana
+
+
+def transacciones_en_ventana(transacciones, ventana_meses: int | None):
+    """Transacciones de los ultimos ventana_meses meses completos hasta el
+    mes del movimiento mas reciente (la fecha de corte). Con
+    ventana_meses=None devuelve todo el historial."""
+    if not ventana_meses:
+        return transacciones
+    inicio = transacciones.agg(
+        F.add_months(F.trunc(F.max(F.to_date("fecha")), "month"), -(ventana_meses - 1))
+    ).first()[0]
+    if inicio is None:
+        return transacciones
+    return transacciones.filter(F.to_date("fecha") >= F.lit(inicio))
+
+
+def _transacciones(ctx):
+    return transacciones_en_ventana(ctx["transacciones"], ctx.get("ventana_meses"))
+
+
 def _serie_mensual(ctx, tipos: list[str], desde=None):
     """Monto mensual por cliente sobre la rejilla completa cliente x mes.
 
@@ -37,7 +78,7 @@ def _serie_mensual(ctx, tipos: list[str], desde=None):
     ingreso de un mes bueno) y ocultaba esa irregularidad en la
     desviacion estandar. Devuelve cliente_id, mes, monto (valor absoluto).
     """
-    tx = ctx["transacciones"].withColumn("mes", F.date_format("fecha", "yyyy-MM"))
+    tx = _transacciones(ctx).withColumn("mes", F.date_format("fecha", "yyyy-MM"))
     if desde is not None:
         tx = tx.filter(F.col("fecha") >= desde)
     meses = tx.select("mes").distinct()
@@ -89,7 +130,7 @@ def kpi_gasto_promedio_3_meses(ctx):
 
 
 def kpi_categoria_gasto_dominante(ctx):
-    tx = ctx["transacciones"]
+    tx = _transacciones(ctx)
     compras = tx.filter(F.col("tipo_transaccion") == "compra")
     por_categoria = compras.groupBy("cliente_id", "categoria").agg(
         F.sum(F.abs("monto")).alias("total_categoria")
@@ -181,7 +222,7 @@ def kpi_probabilidad_impago(ctx):
 
 
 def kpi_frecuencia_transacciones(ctx):
-    tx = ctx["transacciones"]
+    tx = _transacciones(ctx)
     por_mes = (
         tx.withColumn("mes", F.date_format("fecha", "yyyy-MM"))
         .groupBy("cliente_id", "mes")

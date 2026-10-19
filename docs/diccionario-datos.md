@@ -172,18 +172,26 @@ que agregar un KPI no cambie el esquema.
 
 | `kpi_id` | Categoria | Unidad | Calculo |
 |---|---|---|---|
-| `ingreso_mensual_promedio` | ingresos | MXN | Promedio mensual de nomina y depositos, sobre todos los meses del periodo (un mes sin ingreso cuenta como 0) |
-| `estabilidad_ingreso` | ingresos | MXN | Desviacion estandar del ingreso mensual (nomina y depositos), con los meses sin ingreso en 0 |
-| `gasto_mensual_total` | gastos | MXN | Promedio mensual de compras, sobre todos los meses del periodo |
+| `ingreso_mensual_promedio` | ingresos | MXN | Promedio mensual de nomina y depositos en la ventana de features (un mes sin ingreso cuenta como 0) |
+| `estabilidad_ingreso` | ingresos | MXN | Desviacion estandar del ingreso mensual (nomina y depositos) en la ventana, con los meses sin ingreso en 0 |
+| `gasto_mensual_total` | gastos | MXN | Promedio mensual de compras en la ventana de features |
 | `gasto_promedio_3_meses` | gastos | MXN | Promedio mensual de compras de los 3 meses mas recientes |
-| `categoria_gasto_dominante` | gastos | categoria | Categoria con mayor gasto en compras |
-| `capacidad_ahorro` | ahorro_y_liquidez | MXN | Ingreso mensual promedio menos salidas mensuales promedio (compras, pagos de deuda y retiros). Las transferencias P2P no cuentan en ningun lado |
+| `categoria_gasto_dominante` | gastos | categoria | Categoria con mayor gasto en compras en la ventana |
+| `capacidad_ahorro` | ahorro_y_liquidez | MXN | Ingreso mensual promedio menos salidas mensuales promedio (compras, pagos de deuda y retiros), en la ventana. Las transferencias P2P no cuentan en ningun lado |
 | `saldo_liquido_disponible` | ahorro_y_liquidez | MXN | Saldo de la cuenta digital |
 | `ratio_endeudamiento` | riesgo_y_endeudamiento | ratio | Saldo de tarjeta y prestamo entre ingreso mensual promedio |
 | `uso_linea_credito` | riesgo_y_endeudamiento | ratio | Saldo de tarjeta entre limite de credito |
 | `probabilidad_impago` | riesgo_y_endeudamiento | probabilidad | Salida del modelo de riesgo (`predict_risk.py`) |
-| `frecuencia_transacciones` | comportamiento_transaccional | conteo mensual | Promedio de movimientos por mes |
-| `actividad_p2p` | comportamiento_transaccional | MXN | Promedio mensual del neto P2P (recibido menos enviado) |
+| `frecuencia_transacciones` | comportamiento_transaccional | conteo mensual | Promedio de movimientos por mes en la ventana |
+| `actividad_p2p` | comportamiento_transaccional | MXN | Promedio mensual del neto P2P (recibido menos enviado) en la ventana |
+
+**Ventana de features.** Los KPIs de flujo (los que dicen "en la ventana") y
+la `proporcion_retiros` del feature store se calculan sobre los ultimos
+`ventana_meses` meses completos hasta la fecha de corte (`config/features.yaml`,
+12 por defecto), no sobre todo el historial. `ratio_endeudamiento` usa el
+ingreso de la ventana. Con 12 meses o menos de historial la ventana es el
+historial completo. `gasto_promedio_3_meses` tiene su propia ventana de 3
+meses; saldo, uso de linea, edad y antiguedad no usan ventana.
 
 ## Gold: gold_features_cliente
 

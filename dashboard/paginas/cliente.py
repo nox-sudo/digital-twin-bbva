@@ -12,6 +12,8 @@ from dashboard import comun
 
 st.title("Cliente")
 
+cfg = comun.config()
+
 if comun.gold_disponible():
     version = comun.version_gold()
     df = comun.portafolio(version)
@@ -55,18 +57,21 @@ if comun.gold_disponible():
     c1.metric(
         "Ingreso mensual",
         comun.pesos(fila["ingreso_mensual_promedio"]),
-        help=contexto("ingreso_mensual_promedio"),
+        help=contexto("ingreso_mensual_promedio")
+        + f" Promedio de los últimos {cfg['ventana_meses']} meses.",
     )
     c2.metric(
         "Gasto mensual",
         comun.pesos(fila["gasto_mensual_total"]),
-        help=contexto("gasto_mensual_total"),
+        help=contexto("gasto_mensual_total")
+        + f" Promedio de los últimos {cfg['ventana_meses']} meses.",
     )
     c3.metric(
         "Capacidad de ahorro",
         comun.pesos(fila["capacidad_ahorro"]),
         help=contexto("capacidad_ahorro")
-        + " Ingreso menos compras, pagos de deuda y retiros, en promedio mensual.",
+        + " Ingreso menos compras, pagos de deuda y retiros, en promedio mensual"
+        + f" de los últimos {cfg['ventana_meses']} meses.",
     )
     c4.metric(
         "Saldo disponible",
