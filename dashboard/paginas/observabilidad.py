@@ -115,7 +115,14 @@ else:
         .mark_line(strokeWidth=2, point=alt.OverlayMarkDef(size=60, filled=True))
         .encode(
             x=alt.X("inicio:T", title=None, axis=alt.Axis(format="%d/%m %H:%M")),
-            y=alt.Y("duracion_segundos:Q", title="Segundos"),
+            # Escala logaritmica: una corrida congelada (por ejemplo, la Mac en
+            # reposo) tarda cien veces mas y en escala lineal aplastaba a las
+            # demas en una linea plana.
+            y=alt.Y(
+                "duracion_segundos:Q",
+                title="Segundos (escala logarítmica)",
+                scale=alt.Scale(type="log"),
+            ),
             color=alt.Color(
                 "capa:N",
                 scale=alt.Scale(
@@ -136,7 +143,9 @@ else:
     st.altair_chart(grafica, use_container_width=True)
     st.caption(
         "Una corrida que tarda mucho más que las anteriores con el mismo volumen "
-        "es la primera señal de un problema."
+        "es la primera señal de un problema. Eje en escala logarítmica: cada "
+        "marca es diez veces la anterior, para que se vean a la vez las "
+        "corridas normales y las que se salen."
     )
 
     with st.expander("Todas las corridas registradas"):
@@ -272,15 +281,25 @@ else:
             .encode(y=alt.datum(valor))
             for valor in (cfg_psi.umbral_vigilar, cfg_psi.umbral_reentrenar)
         ]
-        st.altair_chart(
-            alt.layer(linea, *umbrales, data=grafica_datos)
-            .properties(width=200, height=140)
-            .facet(
-                facet=alt.Facet("panel:N", title=None, sort=orden_paneles), columns=2
-            )
-            .resolve_scale(y="shared"),
-            use_container_width=False,
-        )
+        # Una grafica por panel en una cuadricula de Streamlit, a todo el ancho
+        # de su columna: 3 por fila en escritorio, apiladas en pantallas
+        # angostas. Un facet de Altair tiene ancho fijo y quedaba chico en
+        # escritorio o se salia de la pantalla en movil. El eje Y es el mismo
+        # en todos los paneles (techo_psi), para poder compararlos.
+        por_fila = 3
+        for inicio in range(0, len(orden_paneles), por_fila):
+            columnas_panel = st.columns(por_fila)
+            for columna, panel in zip(
+                columnas_panel, orden_paneles[inicio : inicio + por_fila]  # noqa: E203
+            ):
+                columna.altair_chart(
+                    alt.layer(
+                        linea,
+                        *umbrales,
+                        data=grafica_datos[grafica_datos["panel"] == panel],
+                    ).properties(height=170, title=panel),
+                    use_container_width=True,
+                )
         st.caption(
             f"Líneas punteadas: {cfg_psi.umbral_vigilar:.2f} (vigilar) y "
             f"{cfg_psi.umbral_reentrenar:.2f} (reentrenar). Las variables "

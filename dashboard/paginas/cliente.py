@@ -24,6 +24,7 @@ if comun.gold_disponible():
         "Cliente",
         clientes,
         index=clientes.index(preseleccionado) if preseleccionado in clientes else 0,
+        label_visibility="collapsed",
     )
     st.session_state["cliente_id"] = cliente_id
     fila = df.set_index("cliente_id").loc[cliente_id]
@@ -128,19 +129,32 @@ if comun.gold_disponible():
         .properties(height=280)
     )
     st.altair_chart(barras, use_container_width=True)
-    meses_negativos = int((flujo["neto"] < 0).sum())
-    st.caption(
-        f"Neto promedio: {comun.pesos(flujo['neto'].mean())} al mes. "
-        f"Meses con salidas mayores que entradas: {meses_negativos} de {len(flujo)}."
-    )
+    # El neto se resume sobre la misma ventana que las metricas de arriba;
+    # la grafica muestra todo el historial.
+    ventana = cfg["ventana_meses"]
+    if len(flujo):
+        desde = comun.datos.inicio_ventana(flujo["mes"].max(), ventana)
+        en_ventana = flujo[flujo["mes"] >= desde]
+        meses_negativos = int((en_ventana["neto"] < 0).sum())
+        st.caption(
+            f"Últimos {ventana} meses: neto promedio de "
+            f"{comun.pesos(en_ventana['neto'].mean())} al mes; salidas mayores que "
+            f"entradas en {meses_negativos} de {len(en_ventana)} meses. La gráfica "
+            f"muestra todo el historial ({len(flujo)} meses)."
+        )
 
     # --- Salidas por categoria -------------------------------------------
     st.subheader("A dónde se va el dinero")
     categorias = comun.salidas_categoria(version, cliente_id)
     categorias["etiqueta"] = categorias["proporcion"].map(lambda p: f"{p:.0%}")
+    categorias["categoria"] = categorias["categoria"].map(comun.nombre_categoria)
     base = alt.Chart(categorias).encode(
-        y=alt.Y("categoria:N", sort="-x", title=None),
-        x=alt.X("total:Q", title="Total del periodo (MXN)", axis=alt.Axis(format="~s")),
+        y=alt.Y("categoria:N", sort="-x", title=None, axis=alt.Axis(labelLimit=260)),
+        x=alt.X(
+            "total:Q",
+            title=f"Total de los últimos {cfg['ventana_meses']} meses (MXN)",
+            axis=alt.Axis(format="~s"),
+        ),
     )
     grafica = base.mark_bar(color=comun.AZUL, cornerRadiusEnd=4).encode(
         tooltip=[
@@ -151,6 +165,7 @@ if comun.gold_disponible():
     ) + base.mark_text(align="left", dx=6, color="#3d3d3a").encode(text="etiqueta:N")
     st.altair_chart(grafica.properties(height=alt.Step(26)), use_container_width=True)
     st.caption(
-        "Todas las salidas del periodo: compras por categoría, pagos de deuda, "
-        "retiros en efectivo y transferencias enviadas."
+        f"Todas las salidas de los últimos {cfg['ventana_meses']} meses: compras "
+        "por categoría, pagos de deuda, retiros en efectivo y transferencias "
+        "enviadas."
     )

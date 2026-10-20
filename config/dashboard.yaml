@@ -10,6 +10,9 @@ logs: data/logs
 # Historico del monitoreo de deriva (monitor_drift.py) y su configuracion,
 # de donde salen los umbrales y las variables temporales.
 deriva_psi: data/calidad/deriva_psi
+# Cifras de cabecera del portafolio por corte (predict_risk.py), para
+# comparar el corte actual contra la base.
+resumen_portafolio: data/calidad/resumen_portafolio
 monitoreo_psi: config/monitoreo_psi.yaml
 
 # Bandas de riesgo sobre probabilidad_impago. Son una decision de
