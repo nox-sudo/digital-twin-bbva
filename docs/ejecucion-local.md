@@ -183,6 +183,7 @@ rutas deben tener formato Linux. Por eso en Windows se corre desde WSL2:
 | Una tarea Spark muere sin error claro (codigo 137) | Docker sin memoria suficiente | Subir memoria en Docker Desktop a 6 GB o mas |
 | El build del worker falla al descargar Delta Lake | Sin acceso a Maven Central durante el build | Construir desde una red con acceso; despues el worker ya no lo necesita |
 | Se movio la carpeta del repo y el DAG falla al montar rutas | `.env` apunta a la ruta anterior | `rm .env && bash demo.sh` |
+| Una tarea tarda decenas de minutos, o `demo.sh` deja de esperar tras 1800 s, y el run termina bien despues | La Mac entro en reposo (por ejemplo, con bateria): los contenedores se congelan y siguen al despertar | Mantenerla despierta durante la corrida: `caffeinate -i bash demo.sh nueva-entrega`. El run de Airflow no se pierde; `bash demo.sh estado` muestra como termino |
 
 Para detalle de cualquier fallo: pestaña Logs de la tarea en la UI de
 Airflow, o `docker compose logs airflow-scheduler`.

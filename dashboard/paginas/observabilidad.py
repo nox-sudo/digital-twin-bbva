@@ -162,8 +162,10 @@ else:
     # variables que hoy son temporales se muestran como tales tambien en
     # corridas anteriores, para que el conteo y los paneles sigan la
     # configuracion actual; el historico no se modifica.
-    reclasificadas = (tendencia["tipo"] == "feature") & tendencia["variable"].isin(
-        temporales
+    reclasificadas = (
+        (tendencia["tipo"] == "feature")
+        & tendencia["variable"].isin(temporales)
+        & (tendencia["estado"] != TEMPORAL)
     )
     tendencia.loc[reclasificadas, "estado"] = TEMPORAL
     ultimo_corte = tendencia["fecha_corte"].max()

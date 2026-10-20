@@ -274,8 +274,9 @@ retiros se calculan sobre una ventana de 12 meses hasta la fecha de corte
 (`config/features.yaml`). Con la aproximacion sobre las sesiones de la
 instancia, en la entrega 7 el ingreso pasa de 0.049 a 0.113 y la capacidad de
 ahorro de 0.311 a 0.654. La ventana tambien diluye, pero en 12 meses y no en
-todo el historial. Las cifras con el pipeline van en `docs/monitoreo-deriva.md`
-cuando se mida la instancia reconstruida.
+todo el historial. Medido con el pipeline el 2026-10-20 sobre la instancia
+reconstruida con la ventana (7 entregas): mismas cifras; tabla completa en
+`docs/monitoreo-deriva.md`.
 
 ### Features que dependen del tiempo derivan sin cambio de poblacion
 
