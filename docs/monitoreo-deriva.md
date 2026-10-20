@@ -194,6 +194,9 @@ coinciden: la aproximacion dio 0.036 y 0.186 y el pipeline, 0.036 y 0.186.
 
 ## Medicion con el pipeline (2026-10-18)
 
+Medida con las features sobre todo el historial, antes de la ventana de 12
+meses; la medicion vigente esta en la seccion "Ventana de 12 meses".
+
 Instancia regenerada desde cero con la sesion base s42, fecha 2026-09-30, 500
 clientes, 12 meses (referencia `ref_20261018_203222`). Escenario de ejemplo
 activo (60 % de clientes, ingreso -10 %, gasto +8 %, puntualidad -5 puntos
@@ -302,14 +305,30 @@ que midio el pipeline (capacidad de ahorro 0.311, estabilidad 0.177 y retiros
 La deriva real del escenario se ve entre 1.5 y 2 veces mas fuerte y la falsa
 de los retiros desaparece.
 
-Comprobado con el pipeline para la entrega 7: Gold y el feature store con la
-ventana, corridos en el worker sobre el Silver de la instancia (corte
-2027-04-30) y comparados contra la referencia `ref_20261018_203222`, dan
-exactamente la columna e7 de la tabla (0.654, 0.113, 0.249 y 0.047). Ademas,
-`actividad_p2p` baja de 0.118 a 0.014: su paso a "vigilar" en la entrega 7
-tambien venia de acumular historial, no del escenario (que no toca el P2P).
-Las columnas e1 a e5 y la tendencia del dashboard se miden reconstruyendo la
-instancia y repitiendo las entregas con la ventana.
+**Medicion con el pipeline (2026-10-20).** Instancia reconstruida desde cero
+con la ventana: sesion base s42, fecha 2026-09-30, 500 clientes, 12 meses
+(referencia `ref_20261019_221201`; AUC 0.741 +- 0.040 y 82 positivos, igual
+que antes), escenario de ejemplo activo y 7 corridas de
+`bash demo.sh nueva-entrega`. PSI por fecha de corte
+(`data/calidad/deriva_psi/`):
+
+| Variable | 2026-10 | 2026-11 | 2026-12 | 2027-01 | 2027-02 | 2027-03 | 2027-04 | Estado final |
+|---|---|---|---|---|---|---|---|---|
+| `capacidad_ahorro` | 0.011 | 0.043 | 0.082 | 0.133 | 0.241 | 0.404 | 0.654 | reentrenar |
+| `probabilidad_impago` (score) | 0.117 | 0.210 | 0.263 | 0.358 | 0.390 | 0.495 | 0.574 | reentrenar |
+| `estabilidad_ingreso` | 0.002 | 0.007 | 0.037 | 0.102 | 0.155 | 0.183 | 0.249 | vigilar |
+| `gasto_promedio_3_meses` | 0.005 | 0.030 | 0.090 | 0.137 | 0.197 | 0.186 | 0.245 | vigilar |
+| `ingreso_mensual_promedio` | 0.005 | 0.011 | 0.010 | 0.025 | 0.055 | 0.075 | 0.113 | vigilar |
+| `gasto_mensual_total` | 0.003 | 0.007 | 0.015 | 0.012 | 0.023 | 0.052 | 0.065 | estable |
+| `proporcion_retiros` | 0.009 | 0.030 | 0.037 | 0.026 | 0.040 | 0.058 | 0.047 | estable |
+| `actividad_p2p` | 0.016 | 0.007 | 0.013 | 0.021 | 0.020 | 0.041 | 0.014 | estable |
+| `antiguedad_dias` | 0.032 | 0.115 | 0.334 | 0.828 | 0.860 | 1.007 | 1.658 | temporal |
+
+En el ultimo corte: 2 reentrenar, 3 vigilar, 11 estables y 2 temporales, y
+todas las alertas corresponden al escenario. Las cifras coinciden con la
+aproximacion sobre CSV de la tabla anterior. `actividad_p2p`, que con todo el
+historial llegaba a "vigilar" en la entrega 7 (0.118), queda estable: tambien
+derivaba por acumular historial, no por el escenario (que no toca el P2P).
 
 **Etiqueta de impago.** Sus coeficientes pre-registrados no cambian. Sus
 entradas observadas (capacidad de ahorro y ratio de endeudamiento) salen del
