@@ -77,6 +77,11 @@ def config() -> dict:
     cfg["ventana_meses"] = datos.cargar_config(str(RAIZ / "config" / "features.yaml"))[
         "ventana_meses"
     ]
+    # Tasa media de impago a la que se calibra la etiqueta en cada corrida,
+    # para explicar por que la probabilidad media no sigue al deterioro.
+    cfg["tasa_objetivo"] = datos.cargar_config(
+        str(RAIZ / "config" / "etiquetas_impago.yaml")
+    )["tasa_objetivo"]
     return cfg
 
 
