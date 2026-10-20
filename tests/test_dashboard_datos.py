@@ -186,3 +186,69 @@ def test_tendencia_usa_la_referencia_activa_y_la_ultima_corrida_por_corte(tmp_pa
     assert set(tendencia["run_id"]) == {"r2", "r3"}
     capacidad = tendencia[tendencia["variable"] == "capacidad_ahorro"]
     assert capacidad["psi"].tolist() == [0.01, 0.2]
+
+
+# --- Ventana en la vista Cliente y comparacion contra la base --------------
+
+
+def test_inicio_ventana_cruza_el_anio():
+    assert datos.inicio_ventana("2027-04", 12) == "2026-05"
+    assert datos.inicio_ventana("2026-09", 1) == "2026-09"
+
+
+def test_salidas_por_categoria_respeta_la_ventana(gold):
+    todo = datos.salidas_por_categoria(gold, "CLI-1").set_index("categoria")
+    ultimo_mes = datos.salidas_por_categoria(gold, "CLI-1", 1).set_index("categoria")
+
+    assert set(todo.index) == {"comida", "ropa"}
+    assert set(ultimo_mes.index) == {"ropa"}  # septiembre: solo ropa
+    assert ultimo_mes.loc["ropa", "proporcion"] == pytest.approx(1.0)
+
+
+def _resumen_en(carpeta, corte, pct, corrida):
+    from src.gold.resumen_portafolio import escribir_historico
+
+    escribir_historico(
+        {
+            "clientes": 500,
+            "ingreso_mediano": 15000.0,
+            "pct_ahorro_negativo": pct,
+            "probabilidad_media": 0.2,
+            "fecha_corte": dt.date.fromisoformat(corte),
+        },
+        carpeta,
+        ahora=dt.datetime.fromisoformat(corrida),
+    )
+
+
+def test_historico_del_resumen_toma_la_ultima_corrida_de_cada_corte(tmp_path):
+    from src.gold.resumen_portafolio import cargar_historico
+
+    h = tmp_path / "resumen"
+    _resumen_en(h, "2026-09-30", 0.20, "2026-10-01T10:00:00")
+    _resumen_en(h, "2026-09-30", 0.23, "2026-10-01T11:00:00")
+    _resumen_en(h, "2026-10-31", 0.30, "2026-11-01T10:00:00")
+
+    historico = cargar_historico(h)
+    assert len(historico) == 2
+    assert historico["pct_ahorro_negativo"].tolist() == pytest.approx([0.23, 0.30])
+
+
+def test_resumen_base_es_el_corte_mas_antiguo(tmp_path):
+    h = tmp_path / "resumen"
+    assert datos.resumen_base(str(h), dt.date(2026, 10, 31)) is None  # sin historico
+
+    _resumen_en(h, "2026-09-30", 0.23, "2026-10-01T10:00:00")
+    _resumen_en(h, "2026-10-31", 0.30, "2026-11-01T10:00:00")
+
+    base = datos.resumen_base(str(h), dt.date(2026, 10, 31))
+    assert base["pct_ahorro_negativo"] == pytest.approx(0.23)
+    # En la propia base no hay contra que comparar.
+    assert datos.resumen_base(str(h), dt.date(2026, 9, 30)) is None
+
+
+def test_resumen_del_dashboard_y_del_historico_usan_la_misma_definicion(gold):
+    from src.gold.resumen_portafolio import resumen
+
+    df = datos.portafolio(gold, BANDAS)
+    assert datos.resumen_portafolio(df) == resumen(df)

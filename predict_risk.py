@@ -31,6 +31,10 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from src.gold.resumen_portafolio import (  # noqa: E402
+    escribir_historico,
+    resumen,
+)
 from src.gold.risk_features import (  # noqa: E402
     cargar_features,
     preparar_para_modelo,
@@ -133,6 +137,11 @@ def main():
     parser.add_argument("--model", default="models/risk_model.joblib")
     parser.add_argument("--out", default="data/gold/predicciones")
     parser.add_argument("--oof", default="models/probabilidad_fuera_de_pliegue.parquet")
+    parser.add_argument(
+        "--resumen-out",
+        default="data/calidad/resumen_portafolio",
+        help="Historico de las cifras de cabecera del portafolio por corte",
+    )
     args = parser.parse_args()
 
     modelo = joblib.load(args.model)
@@ -164,6 +173,17 @@ def main():
         logger.info(
             "Predicciones escritas en %s: %d clientes", out_path, len(predicciones)
         )
+
+        # Cifras de cabecera de este corte, para que el dashboard pueda
+        # compararlas con la base aunque Gold se reemplace en la siguiente
+        # corrida (src/gold/resumen_portafolio.py).
+        legibles = cargar_features(args.gold).join(
+            predicciones.set_index("cliente_id")["valor_numerico"].rename(
+                "probabilidad_impago"
+            )
+        )
+        destino_resumen = escribir_historico(resumen(legibles), args.resumen_out)
+        logger.info("Resumen del portafolio agregado a %s", destino_resumen)
 
         promedio = predicciones["valor_numerico"].mean()
         logger.info(

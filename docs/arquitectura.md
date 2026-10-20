@@ -43,6 +43,7 @@ hace el computo.
 | Modelo | `models/` | Clasificador de riesgo y grafico de importancia SHAP | Sin PII |
 | Referencia de deriva | `models/referencia_psi/` | Linea base congelada del PSI: cortes y proporciones de entrenamiento y copia del modelo base | Sin PII |
 | Deriva de datos | `data/calidad/deriva_psi/` (Parquet) | Historico del PSI por corrida y variable | Sin PII |
+| Resumen del portafolio | `data/calidad/resumen_portafolio/` (Parquet) | Cifras de cabecera del portafolio por corte (`predict_risk.py`), para comparar contra la base | Sin PII |
 
 ## Tareas del DAG
 

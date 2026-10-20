@@ -79,22 +79,29 @@ def portafolio(ruta_duckdb: str, bandas: list[dict]) -> pd.DataFrame:
 
 
 def resumen_portafolio(df: pd.DataFrame) -> dict:
-    """Cifras de cabecera. Se calculan aqui, no en la pagina, para que la
-    misma definicion la usen la demo y las pruebas."""
-    con_score = df["probabilidad_impago"].notna()
-    return {
-        "clientes": len(df),
-        "ingreso_mediano": float(df["ingreso_mensual_promedio"].median()),
-        "capacidad_ahorro_mediana": float(df["capacidad_ahorro"].median()),
-        "pct_ahorro_negativo": float((df["capacidad_ahorro"] < 0).mean()),
-        "probabilidad_media": (
-            float(df.loc[con_score, "probabilidad_impago"].mean())
-            if con_score.any()
-            else None
-        ),
-        "clientes_sin_score": int((~con_score).sum()),
-        "fecha_corte": df["fecha_corte"].iloc[0] if len(df) else None,
-    }
+    """Cifras de cabecera. La definicion vive en src/gold/resumen_portafolio.py
+    porque tambien la usa predict_risk.py para guardar el historico por corte:
+    asi la comparacion contra la base es entre la misma medida."""
+    from src.gold.resumen_portafolio import resumen
+
+    return resumen(df)
+
+
+def resumen_base(ruta_historico: str, fecha_corte_actual) -> dict | None:
+    """Cifras del corte mas antiguo del historico (la sesion base), para
+    compararlas con el corte actual. None si no hay historico o si el corte
+    actual es el mismo que la base."""
+    from src.gold.resumen_portafolio import cargar_historico
+
+    historico = cargar_historico(ruta_historico)
+    if historico.empty:
+        return None
+    base = historico.iloc[0]
+    if fecha_corte_actual is not None and pd.Timestamp(
+        base["fecha_corte"]
+    ) >= pd.Timestamp(fecha_corte_actual):
+        return None
+    return base.to_dict()
 
 
 def flujo_mensual(ruta_duckdb: str, cliente_id: str | None = None) -> pd.DataFrame:
@@ -120,20 +127,38 @@ def flujo_mensual(ruta_duckdb: str, cliente_id: str | None = None) -> pd.DataFra
         ).fetchdf()
 
 
-def salidas_por_categoria(ruta_duckdb: str, cliente_id: str) -> pd.DataFrame:
-    """A donde se va el dinero de un cliente en todo el periodo: todas las
-    salidas (compras, pagos recurrentes, retiros, envios P2P) por
-    categoria, con su proporcion del total."""
+def inicio_ventana(mes_corte: str, ventana_meses: int) -> str:
+    """Primer mes ('YYYY-MM') de los ultimos ventana_meses meses que terminan
+    en mes_corte, la misma ventana que usan los KPIs de flujo en Gold."""
+    periodo = pd.Period(mes_corte, freq="M") - (ventana_meses - 1)
+    return str(periodo)
+
+
+def salidas_por_categoria(
+    ruta_duckdb: str, cliente_id: str, ventana_meses: int | None = None
+) -> pd.DataFrame:
+    """A donde se va el dinero de un cliente: todas las salidas (compras,
+    pagos recurrentes, retiros, envios P2P) por categoria, con su proporcion
+    del total. Con ventana_meses, solo los ultimos meses hasta el corte de
+    Gold, para que cuadre con las metricas del cliente (calculadas sobre esa
+    ventana); sin ella, todo el historial."""
     with conexion_gold(ruta_duckdb) as con:
+        desde = "0000-00"
+        if ventana_meses:
+            mes_corte = con.execute(
+                "SELECT MAX(mes) FROM gold_movimientos_mensuales"
+            ).fetchone()[0]
+            if mes_corte:
+                desde = inicio_ventana(mes_corte, ventana_meses)
         df = con.execute(
             """
             SELECT categoria, -SUM(monto_total) AS total
             FROM gold_movimientos_mensuales
-            WHERE cliente_id = ? AND monto_total < 0
+            WHERE cliente_id = ? AND monto_total < 0 AND mes >= ?
             GROUP BY categoria
             ORDER BY total DESC
             """,
-            [cliente_id],
+            [cliente_id, desde],
         ).fetchdf()
     df["proporcion"] = df["total"] / df["total"].sum() if len(df) else []
     return df

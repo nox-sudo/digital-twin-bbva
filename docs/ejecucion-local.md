@@ -93,7 +93,7 @@ puede regenerar es lo siguiente, y por eso es lo unico que se respalda:
 |---|---|
 | `data/sesiones/` | Las sesiones de datos, con manifest y checksums |
 | `data/minio/` | La landing zone: el historico inmutable de entregas |
-| `data/calidad/` | El historico de calidad entre corridas (la tendencia no se recalcula), incluido el de deriva (`deriva_psi/`) |
+| `data/calidad/` | El historico de calidad entre corridas (la tendencia no se recalcula), incluidos el de deriva (`deriva_psi/`) y el resumen del portafolio por corte (`resumen_portafolio/`) |
 | `models/referencia_psi/` | La linea base congelada del monitoreo de deriva: un modelo reentrenado daria otra (ver [monitoreo-deriva.md](monitoreo-deriva.md)) |
 
 ```bash

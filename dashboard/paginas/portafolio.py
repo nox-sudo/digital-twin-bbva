@@ -17,10 +17,24 @@ if comun.gold_disponible():
     version = comun.version_gold()
     df = comun.portafolio(version)
     resumen = comun.datos.resumen_portafolio(df)
+    # Cifras de la sesion base (el corte mas antiguo del historico), para
+    # mostrar cuanto cambio el portafolio. None en la propia base o si
+    # todavia no hay historico.
+    base = comun.datos.resumen_base(cfg["resumen_portafolio"], resumen["fecha_corte"])
+
+    def puntos(actual, de_base):
+        if base is None or actual is None or de_base is None:
+            return None
+        return f"{(actual - de_base) * 100:+.1f} pts vs. base"
 
     st.caption(
         f"{resumen['clientes']:,} clientes · datos al {comun.fecha(resumen['fecha_corte'])} · "
         "fuente: capa Gold (DuckDB)"
+        + (
+            f" · comparado con la base al {comun.fecha(base['fecha_corte'])}"
+            if base is not None
+            else ""
+        )
     )
 
     c1, c2, c3, c4 = st.columns(4)
@@ -28,12 +42,22 @@ if comun.gold_disponible():
     c2.metric(
         "Ingreso mensual mediano",
         comun.pesos(resumen["ingreso_mediano"]),
+        delta=(
+            f"{comun.pesos(resumen['ingreso_mediano'] - base['ingreso_mediano'])} vs. base"
+            if base is not None
+            else None
+        ),
         help="Mediana por cliente del ingreso mensual (nómina y depósitos), "
         f"promediado en los últimos {cfg['ventana_meses']} meses.",
     )
     c3.metric(
         "Gastan más de lo que ganan",
         comun.porcentaje(resumen["pct_ahorro_negativo"]),
+        delta=puntos(
+            resumen["pct_ahorro_negativo"],
+            base["pct_ahorro_negativo"] if base is not None else None,
+        ),
+        delta_color="inverse",
         help="Clientes con capacidad de ahorro negativa: en los últimos "
         f"{cfg['ventana_meses']} meses sus compras, pagos de deuda y retiros "
         "superan en promedio a su ingreso.",
@@ -41,6 +65,11 @@ if comun.gold_disponible():
     c4.metric(
         "Probabilidad media de impago",
         comun.porcentaje(resumen["probabilidad_media"], 1),
+        delta=puntos(
+            resumen["probabilidad_media"],
+            base["probabilidad_media"] if base is not None else None,
+        ),
+        delta_color="inverse",
         help="Promedio de la salida del modelo de riesgo (XGBoost) sobre "
         "todos los clientes con score.",
     )
@@ -128,11 +157,14 @@ if comun.gold_disponible():
         .rename(columns={"categoria_gasto_dominante": "categoria"})
         .sort_values("probabilidad_media", ascending=False)
     )
+    segmento["categoria"] = segmento["categoria"].map(comun.nombre_categoria)
     segmento_chart = (
         alt.Chart(segmento)
         .mark_bar(color=comun.AZUL, cornerRadiusEnd=4)
         .encode(
-            y=alt.Y("categoria:N", sort="-x", title=None),
+            y=alt.Y(
+                "categoria:N", sort="-x", title=None, axis=alt.Axis(labelLimit=260)
+            ),
             x=alt.X(
                 "probabilidad_media:Q",
                 title="Probabilidad media de impago",

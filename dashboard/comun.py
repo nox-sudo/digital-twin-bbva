@@ -35,6 +35,33 @@ COLOR_BANDA = {
 }
 ORDEN_BANDAS = ["bajo", "medio", "alto", "sin score"]
 
+# Nombres para mostrar de las categorias de los datos (generador y
+# gold_movimientos_mensuales), que vienen sin acentos y con guion bajo.
+NOMBRE_CATEGORIA = {
+    "comida": "Comida",
+    "transporte": "Transporte",
+    "entretenimiento": "Entretenimiento",
+    "servicios": "Servicios",
+    "salud": "Salud",
+    "educacion": "Educación",
+    "hogar": "Hogar",
+    "ropa": "Ropa",
+    "suscripciones": "Suscripciones",
+    "otros": "Otros",
+    "pago_deuda": "Pago de deuda",
+    "efectivo": "Retiro en efectivo",
+    "transferencia_personal": "Transferencias personales",
+    "ingreso": "Ingreso",
+}
+
+
+def nombre_categoria(valor) -> str:
+    """Nombre legible de una categoria; una que no este en la tabla se
+    muestra con espacios en vez de guiones bajos."""
+    if valor is None or pd.isna(valor):
+        return "Sin categoría"
+    return NOMBRE_CATEGORIA.get(valor, str(valor).replace("_", " ").capitalize())
+
 
 @st.cache_data
 def config() -> dict:
@@ -42,6 +69,7 @@ def config() -> dict:
     cfg["gold_duckdb"] = str(RAIZ / cfg["gold_duckdb"])
     cfg["logs"] = str(RAIZ / cfg["logs"])
     cfg["deriva_psi"] = str(RAIZ / cfg["deriva_psi"])
+    cfg["resumen_portafolio"] = str(RAIZ / cfg["resumen_portafolio"])
     cfg["monitoreo_psi"] = str(RAIZ / cfg["monitoreo_psi"])
     # Ventana de las features de flujo (config/features.yaml), para decirla en
     # los textos de ayuda. Se lee el YAML directo: kpi_definitions importa
@@ -70,7 +98,10 @@ def flujo(version: float, cliente_id: str | None = None) -> pd.DataFrame:
 
 @st.cache_data
 def salidas_categoria(version: float, cliente_id: str) -> pd.DataFrame:
-    return datos.salidas_por_categoria(config()["gold_duckdb"], cliente_id)
+    cfg = config()
+    return datos.salidas_por_categoria(
+        cfg["gold_duckdb"], cliente_id, cfg["ventana_meses"]
+    )
 
 
 def gold_disponible() -> bool:
