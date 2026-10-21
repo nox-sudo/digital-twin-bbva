@@ -18,12 +18,17 @@ Reglas de diseno:
   - Cada herramienta devuelve un dict serializable a JSON. Un argumento
     invalido o un dato que no existe se devuelve como {"error": ...} en vez
     de lanzar, para que el modelo lo explique en lugar de inventar.
+  - Lo que el modelo manda pasa por normalizar() antes de llegar a una
+    herramienta: una sola funcion para las seis, que corrige lo que los
+    modelos mandan mal (numeros y listas como texto, "None" para omitir,
+    desde y ultimos_meses a la vez) y deja cada correccion en el log.
 
 Sin Streamlit ni Spark: lo usan igual la pagina del asistente, las pruebas
 y la evaluacion.
 """
 
 import json
+import logging
 import math
 import re
 from dataclasses import dataclass
@@ -36,6 +41,8 @@ from dashboard import datos
 from src.simulacion import montecarlo as mc
 
 RAIZ = Path(__file__).resolve().parents[1]
+
+log = logging.getLogger(__name__)
 
 VACIOS = {"", "None", "none", "null", "NULL"}
 
@@ -180,12 +187,11 @@ def _rango(
             raise ErrorHerramienta(f"{nombre} debe tener formato AAAA-MM: {valor!r}")
     hasta = hasta or meses[-1]
     if ultimos_meses is not None:
-        n = _a_numero("ultimos_meses", ultimos_meses)
-        if n != int(n) or n < 1:
+        if ultimos_meses < 1:
             raise ErrorHerramienta(
                 f"ultimos_meses debe ser un entero positivo: {ultimos_meses!r}"
             )
-        desde = datos.inicio_ventana(hasta, int(n))
+        desde = datos.inicio_ventana(hasta, ultimos_meses)
     desde = desde or datos.inicio_ventana(meses[-1], ctx.ventana_meses)
     if desde > hasta:
         raise ErrorHerramienta(f"desde ({desde}) es posterior a hasta ({hasta})")
@@ -318,7 +324,7 @@ def comparar_con_portafolio(ctx: Contexto, variables: list | None = None) -> dic
     """Donde queda el cliente en el portafolio: para cada variable, su
     valor, la mediana del portafolio y la proporcion de clientes con un
     valor menor o igual."""
-    variables = _a_lista("variables", variables) if variables else VARIABLES_COMPARABLES
+    variables = variables or VARIABLES_COMPARABLES
     desconocidas = [v for v in variables if v not in VARIABLES_COMPARABLES]
     if desconocidas:
         raise ErrorHerramienta(
@@ -356,20 +362,12 @@ def simular_hipoteca(
     meses para reunir el enganche. Sin un parametro, el de
     config/simulacion.yaml."""
     cfg = ctx.simulacion
-    precio = _a_numero("precio", precio)
-    enganche_pct = _a_numero(
-        "enganche_pct",
-        cfg["hipoteca"]["enganche_pct"] if enganche_pct is None else enganche_pct,
-    )
-    plazo_anios = _a_numero(
-        "plazo_anios",
-        cfg["hipoteca"]["plazo_anios"] if plazo_anios is None else plazo_anios,
-    )
-    tasa_anual = _a_numero(
-        "tasa_anual",
-        cfg["hipoteca"]["tasa_anual"] if tasa_anual is None else tasa_anual,
-    )
-    renta_reemplazada = _a_numero("renta_reemplazada", renta_reemplazada)
+    if enganche_pct is None:
+        enganche_pct = float(cfg["hipoteca"]["enganche_pct"])
+    if plazo_anios is None:
+        plazo_anios = int(cfg["hipoteca"]["plazo_anios"])
+    if tasa_anual is None:
+        tasa_anual = float(cfg["hipoteca"]["tasa_anual"])
     if not 0 < precio <= PRECIO_MAXIMO:
         raise ErrorHerramienta(f"precio debe estar entre 0 y {PRECIO_MAXIMO:,}")
     if not ENGANCHE_PCT[0] <= enganche_pct <= ENGANCHE_PCT[1]:
@@ -591,18 +589,86 @@ def esquemas() -> list[dict]:
     ]
 
 
+@dataclass(frozen=True)
+class Coercion:
+    """Una correccion aplicada a un argumento del modelo. final None quiere
+    decir que el argumento se descarto."""
+
+    herramienta: str
+    argumento: str
+    original: object
+    final: object
+    regla: str
+
+
+def _convertir(argumento: str, valor, tipo: str | None):
+    """Valor con el tipo del esquema. Sin tipo (argumento fuera del
+    esquema) se deja igual: ejecutar() lo rechaza despues."""
+    if tipo == "number":
+        return _a_numero(argumento, valor)
+    if tipo == "integer":
+        numero = _a_numero(argumento, valor)
+        if numero != int(numero):
+            raise ErrorHerramienta(
+                f"{argumento} debe ser un entero positivo: {valor!r}"
+            )
+        return int(numero)
+    if tipo == "array":
+        return _a_lista(argumento, valor)
+    return valor
+
+
+def normalizar(nombre: str, argumentos: dict | None) -> tuple[dict, list[Coercion]]:
+    """Unico punto donde se corrigen los argumentos del modelo, para las seis
+    herramientas. Reglas, en orden:
+
+      1. "None", "null", "" (o None) cuentan como argumento omitido.
+      2. Cada valor toma el tipo de su esquema: numeros y enteros que llegan
+         como texto, y listas como texto ("['a']") o como un solo valor.
+      3. ultimos_meses manda sobre desde: si llegan los dos, desde se
+         descarta (ver _rango).
+
+    Cada correccion queda en el log con la herramienta, el argumento, el
+    valor original y el final. Un valor que no se puede convertir lanza
+    ErrorHerramienta."""
+    esquema = HERRAMIENTAS[nombre]["parametros"]
+    limpios, coerciones = {}, []
+    for argumento, valor in (argumentos or {}).items():
+        if valor is None or (isinstance(valor, str) and valor.strip() in VACIOS):
+            coerciones.append(
+                Coercion(nombre, argumento, valor, None, "vacio_como_omitido")
+            )
+            continue
+        final = _convertir(argumento, valor, esquema.get(argumento, {}).get("type"))
+        if type(final) is not type(valor) or final != valor:
+            coerciones.append(Coercion(nombre, argumento, valor, final, "tipo"))
+        limpios[argumento] = final
+    if "ultimos_meses" in limpios and "desde" in limpios:
+        coerciones.append(
+            Coercion(nombre, "desde", limpios.pop("desde"), None, "ultimos_meses_manda")
+        )
+    for c in coerciones:
+        log.info(
+            "coercion herramienta=%s argumento=%s original=%r final=%r regla=%s",
+            c.herramienta,
+            c.argumento,
+            c.original,
+            c.final,
+            c.regla,
+        )
+    return limpios, coerciones
+
+
 def ejecutar(nombre: str, argumentos: dict | None, ctx: Contexto) -> dict:
     """Ejecuta la herramienta que pidio el modelo. Un nombre o argumento
     que no esta en el esquema, o cualquier ErrorHerramienta, vuelve como
     {"error": ...}. cliente_id siempre sale del contexto."""
     if nombre not in HERRAMIENTAS:
         return {"error": f"No existe la herramienta {nombre!r}"}
-    # Los modelos mandan "None" o "" para decir que omiten un argumento.
-    argumentos = {
-        k: v
-        for k, v in (argumentos or {}).items()
-        if v is not None and not (isinstance(v, str) and v.strip() in VACIOS)
-    }
+    try:
+        argumentos, _ = normalizar(nombre, argumentos)
+    except ErrorHerramienta as e:
+        return {"error": str(e)}
     permitidos = set(HERRAMIENTAS[nombre]["parametros"])
     extra = set(argumentos) - permitidos
     if extra:

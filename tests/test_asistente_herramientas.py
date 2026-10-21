@@ -389,3 +389,47 @@ def test_none_como_texto_es_argumento_omitido(gold, tmp_path):
     )
     assert "categorias" in resultado
     assert resultado == h.ejecutar("gasto_por_categoria", {}, ctx)
+
+
+# --- Normalizacion centralizada ----------------------------------------------
+
+
+def test_normalizar_registra_cada_coercion(caplog):
+    with caplog.at_level("INFO", logger="asistente.herramientas"):
+        limpios, coerciones = h.normalizar(
+            "gasto_por_categoria",
+            {
+                "desde": "2027-01",
+                "hasta": "2027-04",
+                "ultimos_meses": "3",
+                "categoria": "None",
+            },
+        )
+    assert limpios == {"hasta": "2027-04", "ultimos_meses": 3}
+    assert [(c.argumento, c.original, c.final, c.regla) for c in coerciones] == [
+        ("ultimos_meses", "3", 3, "tipo"),
+        ("categoria", "None", None, "vacio_como_omitido"),
+        ("desde", "2027-01", None, "ultimos_meses_manda"),
+    ]
+    mensajes = [r.getMessage() for r in caplog.records]
+    assert len(mensajes) == 3
+    assert all("herramienta=gasto_por_categoria" in m for m in mensajes)
+    assert "argumento=ultimos_meses original='3' final=3 regla=tipo" in mensajes[0]
+
+
+def test_normalizar_sin_correcciones_no_registra(caplog):
+    with caplog.at_level("INFO", logger="asistente.herramientas"):
+        limpios, coerciones = h.normalizar(
+            "simular_hipoteca", {"precio": 900000.0, "plazo_anios": 15}
+        )
+    assert limpios == {"precio": 900000.0, "plazo_anios": 15}
+    assert coerciones == []
+    assert caplog.records == []
+
+
+@pytest.mark.parametrize("nombre", list(h.HERRAMIENTAS))
+def test_normalizar_cubre_las_seis_herramientas(nombre):
+    vacios = {p: "null" for p in h.HERRAMIENTAS[nombre]["parametros"]}
+    limpios, coerciones = h.normalizar(nombre, vacios)
+    assert limpios == {}
+    assert len(coerciones) == len(vacios)
