@@ -365,20 +365,51 @@ def comparar_con_portafolio(ctx: Contexto, variables: list | None = None) -> dic
         )
     df = _portafolio(ctx)
     fila = _fila_cliente(ctx, df)
-    return {
-        "clientes_en_portafolio": len(df),
-        "comparacion": [
+    comparacion = []
+    for v in variables:
+        proporcion = datos.percentil_en_portafolio(df, v, fila[v])
+        valor, mediana = fila[v], df[v].median()
+        comparacion.append(
             {
                 "variable": v,
-                "valor_cliente": _numero(fila[v], 4),
-                "mediana_portafolio": _numero(df[v].median(), 4),
-                "proporcion_menor_o_igual": _numero(
-                    datos.percentil_en_portafolio(df, v, fila[v]), 4
-                ),
+                "valor_cliente": _numero(valor, 4),
+                "mediana_portafolio": _numero(mediana, 4),
+                "proporcion_menor_o_igual": _numero(proporcion, 4),
+                # La frase ya armada: con los numeros sueltos, llama3.1:8b
+                # hacia sus propias cuentas (dividia valor entre mediana).
+                "lectura": _lectura_comparacion(v, valor, mediana, proporcion),
             }
-            for v in variables
-        ],
-    }
+        )
+        if v == "probabilidad_impago":
+            # Sin la banda, el modelo llamaba "alto" a un 8 % por estar sobre
+            # la mediana, aunque la banda configurada fuera "bajo".
+            comparacion[-1]["lectura"] += (
+                f" Banda de riesgo del cliente: {fila['banda_riesgo']} "
+                f"({_limites_bandas(ctx.bandas)})."
+            )
+    return {"clientes_en_portafolio": len(df), "comparacion": comparacion}
+
+
+def _limites_bandas(bandas: list) -> str:
+    ordenadas = sorted(bandas, key=lambda b: b["desde"])
+    return ", ".join(f"{b['nombre']} desde {b['desde'] * 100:.0f} %" for b in ordenadas)
+
+
+def _lectura_comparacion(variable: str, valor, mediana, proporcion) -> str:
+    if valor is None or pd.isna(valor) or pd.isna(proporcion):
+        return f"{variable}: sin dato para este cliente."
+    lado = "por encima de" if valor > mediana else "por debajo de"
+    if valor == mediana:
+        lado = "igual a"
+
+    def cifra(x) -> str:
+        return f"{x:,.2f}" if abs(x) >= 1 else f"{x:.4f}"
+
+    return (
+        f"{variable}: {cifra(valor)} ({lado} la mediana del portafolio, "
+        f"{cifra(mediana)}); el {proporcion * 100:.1f} % de los clientes "
+        "tiene un valor menor o igual."
+    )
 
 
 def simular_hipoteca(

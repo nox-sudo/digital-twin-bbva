@@ -26,6 +26,9 @@ dependencies = [
 ]
 
 [dependency-groups]
+asistente = [
+    "langchain-ollama>=1.1.0",
+]
 dashboard = [
     "streamlit>=1.66.0",
 ]

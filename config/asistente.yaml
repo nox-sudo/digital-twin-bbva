@@ -1,0 +1,24 @@
+# config/asistente.yaml
+#
+# Asistente conversacional (asistente/conversacion.py y la pagina Asistente
+# del dashboard). Corre con un modelo local de Ollama: nada sale de la
+# maquina. Instalacion de Ollama y de los modelos: docs/ejecucion-local.md.
+
+ollama:
+  url: http://localhost:11434
+  modelo: llama3.1:8b
+  # Temperatura 0 y semilla fija: la misma pregunta con los mismos datos da
+  # la misma eleccion de herramienta (medido con
+  # experimentos/sondeo_herramientas.py, 3 corridas por pregunta).
+  temperatura: 0
+  semilla: 42
+
+conversacion:
+  # Rondas de llamadas a herramientas por pregunta antes de cortar. Una
+  # pregunta normal usa 1; el limite evita que el modelo encadene llamadas
+  # sin terminar.
+  max_vueltas: 4
+  # Preguntas anteriores (con su respuesta) que se mandan como contexto. Solo
+  # el texto: los resultados de herramientas de turnos anteriores no se
+  # reenvian, asi que una cifra vieja no se mezcla con una nueva.
+  historial_turnos: 6
