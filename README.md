@@ -126,6 +126,8 @@ digital-twin-bbva/
 │   │   └── referencia.py         # Línea base congelada: crear, archivar y cargar la activa
 │   └── simulacion/
 │       └── montecarlo.py         # Simulador Monte Carlo de hipoteca (módulo puro, sin Spark)
+├── asistente/
+│   └── herramientas.py          # Herramientas del asistente: cifras de Gold y del simulador, cliente fijado por la interfaz
 ├── dags/
 │   └── gemelo_pipeline_dag.py    # DAG de Airflow (DockerOperator)
 ├── dashboard/
@@ -145,6 +147,7 @@ digital-twin-bbva/
 │   ├── test_montecarlo.py        # Cuota, contabilidad del saldo, choque y capacidad hipotecaria
 │   ├── test_generador_perfiles.py  # Perfil financiero estable por cliente en el generador
 │   ├── test_dashboard_datos.py   # Consultas del dashboard y lectura de logs
+│   ├── test_asistente_herramientas.py  # Herramientas del asistente: mismas cifras que el dashboard, errores sin excepciones
 │   ├── test_sesiones.py          # Reproducibilidad y reuso de sesiones de datos
 │   ├── test_pii.py               # Identificadores, HMAC Spark == Python, política de PII
 │   ├── test_landing.py           # Landing zone (S3 simulado) e ingesta incremental
@@ -165,7 +168,8 @@ digital-twin-bbva/
 │   ├── pruebas-robustez.md       # Las 5 brechas de robustez: qué se probó, resultado y cobertura
 │   └── technical-debt.md         # Deuda técnica conocida
 ├── experimentos/
-│   └── auc_evento_posterior.py   # Evalúa el modelo contra el evento posterior: CV, oráculo, signos y orden
+│   ├── auc_evento_posterior.py   # Evalúa el modelo contra el evento posterior: CV, oráculo, signos y orden
+│   └── sondeo_herramientas.py    # Qué herramienta del asistente elige el modelo local, por pregunta y corrida
 ├── models/                       # Modelo entrenado y gráfico SHAP (se regeneran)
 ├── .github/workflows/ci.yml      # Lint, tests, smoke test Bronze→Silver→Gold→modelo
 ├── main.py                       # CLI unico: python main.py <paso> [opciones]
@@ -278,7 +282,7 @@ El workflow de GitHub Actions (`.github/workflows/ci.yml`) corre en cada Pull Re
 |---|---|
 | `lint` | flake8, black y escaneo de secretos y de archivos de datos versionados (`detect-secrets`) |
 | `docker-compose-validate` | Sintaxis de `docker-compose.yml` con un `.env` generado por `setup.sh`, y shellcheck de `setup.sh`/`demo.sh` |
-| `unit-tests` | 244 pruebas (pytest): motor de validación, CURP/RFC y PII, sesiones, landing zone, registro de calidad, feature store, modelo, monitoreo de deriva (PSI), escenario de deriva del generador, CSV mal formados en Bronze, CLI y respaldo/restauración de `demo.sh` |
+| `unit-tests` | La suite completa de pytest pasa en CI: motor de validación, CURP/RFC y PII, sesiones, landing zone, registro de calidad, feature store, modelo, monitoreo de deriva (PSI), escenario de deriva del generador, CSV mal formados en Bronze, herramientas del asistente, CLI y respaldo/restauración de `demo.sh` |
 | `pipeline-smoke-test` | Pipeline completo Bronze → Silver → Gold → modelo de riesgo con volumen reducido (100 clientes, 2 meses), parametrizable vía `workflow_dispatch`; verifica la reproducibilidad de la sesión, la ingesta incremental de Bronze, Silver sin cuarentena inesperada ni PII en claro, que una corrida fallida de Silver se revierta a la anterior, el registro de calidad, los 12 KPIs, el feature store, y que `probabilidad_impago` tenga valor en [0, 1] para todos los clientes |
 
 ---
