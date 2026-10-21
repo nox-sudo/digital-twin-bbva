@@ -44,7 +44,7 @@ Origen: `clientes.csv`. Llave: `cliente_id`.
 | `curp` | string | not_null, unique, identificador CURP | hash+mascara | Formato, digito verificador y fecha coherente con `fecha_nacimiento` |
 | `rfc` | string | unique, identificador RFC, obligatorio si percibe ingresos | hash+mascara | Persona fisica con homoclave del SAT. Vacio para estudiantes |
 | `ocupacion` | string | | | Empleado, Independiente, Empresario, Estudiante, Jubilado, Profesionista, Comerciante |
-| `ingreso_mensual_declarado` | decimal(12,2) | not_null, >= 0.01 | | MXN |
+| `ingreso_mensual_declarado` | decimal(12,2) | not_null, >= 0.01 | | MXN. Lognormal por ocupacion, con piso de un salario minimo para empleados, profesionistas y jubilados (`config/ingresos.yaml`) |
 | `telefono` | string | not_null, 10 digitos sin 0/1 inicial | hash+mascara | Lada real de la ciudad; numero local inicia en 0 (no asignable en Mexico) |
 | `email` | string | formato de correo | hash+mascara | Dominios reservados `example.com/.org/.net` |
 | `calle` | string | | descarta | |

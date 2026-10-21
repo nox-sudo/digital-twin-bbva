@@ -71,6 +71,7 @@ codigo:
 | Archivo | Controla |
 |---|---|
 | `config/sesion.yaml` | Semilla, fecha de referencia y volumen de los datos |
+| `config/ingresos.yaml` | Ingreso declarado por ocupacion, calibrado a clientes bancarizados urbanos de Mexico |
 | `config/business_rules.yaml` | Reglas de calidad de Silver por entidad |
 | `config/monitoreo_psi.yaml` | Intervalos, epsilon y umbrales (vigilar, reentrenar) del monitoreo de deriva |
 | `config/politica_pii.yaml` | Que datos personales se protegen en Silver, y como |
