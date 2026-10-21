@@ -366,7 +366,7 @@ def test_categoria_valida_sin_movimientos_da_cero(gold, tmp_path):
     assert resultado["proporcion"] == 0
     assert resultado["por_mes"] == []
     assert resultado["sin_movimientos"] is True
-    assert resultado["total_salidas"] > 0
+    assert resultado["total_todas_las_categorias"] > 0
     assert es_json_valido(resultado)
 
 
@@ -469,3 +469,17 @@ def test_comparacion_trae_la_lectura_armada(gold, tmp_path):
     assert "por encima de la mediana" in riesgo["lectura"]
     assert "Banda de riesgo del cliente: alto" in riesgo["lectura"]
     assert "medio desde 10 %" in riesgo["lectura"]
+
+
+def test_con_categoria_el_total_es_el_de_la_categoria(gold, tmp_path):
+    resultado = h.ejecutar(
+        "gasto_por_categoria",
+        {"categoria": "comida", "ultimos_meses": 2},
+        contexto(gold, tmp_path),
+    )
+    assert "total_salidas" not in resultado
+    assert list(resultado)[:4] == ["categoria", "desde", "hasta", "total_categoria"]
+    assert resultado["total_categoria"] == 12000.0
+    assert resultado["lectura"].startswith(
+        "Salidas en comida de 2027-01 a 2027-02: $12,000.00 ("
+    )

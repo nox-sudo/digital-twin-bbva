@@ -1,12 +1,13 @@
 """
 dashboard/app.py
 
-Punto de entrada del dashboard del Gemelo Digital Financiero. Tres
-vistas sobre la misma capa Gold:
+Punto de entrada del dashboard del Gemelo Digital Financiero. Vistas
+sobre la misma capa Gold:
 
   - Portafolio: vista ejecutiva, donde se concentra el riesgo.
   - Cliente: vista 360 de una persona.
   - Simulador de hipoteca: escenario Monte Carlo sobre el flujo del cliente.
+  - Asistente: preguntas en lenguaje natural con un modelo local (Ollama).
   - Observabilidad: estado de las corridas y coherencia de Gold.
 
 Solo lee: DuckDB en modo solo lectura y los logs JSON de cada corrida.
@@ -14,6 +15,8 @@ No necesita Spark ni ningun servicio de Docker Compose.
 
 Uso, desde la raiz del repositorio:
     uv run --group dashboard streamlit run dashboard/app.py
+Con el asistente (necesita Ollama, ver docs/ejecucion-local.md):
+    uv run --group dashboard --group asistente streamlit run dashboard/app.py
 """
 
 import sys
@@ -29,6 +32,7 @@ PAGINAS = Path(__file__).resolve().parent / "paginas"
 portafolio = st.Page(PAGINAS / "portafolio.py", title="Portafolio", default=True)
 cliente = st.Page(PAGINAS / "cliente.py", title="Cliente")
 simulador = st.Page(PAGINAS / "simulador.py", title="Simulador de hipoteca")
+asistente = st.Page(PAGINAS / "asistente.py", title="Asistente")
 observabilidad = st.Page(PAGINAS / "observabilidad.py", title="Observabilidad")
 
 # La tabla de clientes a revisar del portafolio salta a la vista de
@@ -36,7 +40,10 @@ observabilidad = st.Page(PAGINAS / "observabilidad.py", title="Observabilidad")
 st.session_state["pagina_cliente"] = cliente
 
 navegacion = st.navigation(
-    {"Negocio": [portafolio, cliente, simulador], "Operación": [observabilidad]}
+    {
+        "Negocio": [portafolio, cliente, simulador, asistente],
+        "Operación": [observabilidad],
+    }
 )
 st.sidebar.caption(
     "Gemelo Digital Financiero · Path Data Engineering BBVA × Tecmilenio"

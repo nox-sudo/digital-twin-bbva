@@ -307,21 +307,31 @@ def gasto_por_categoria(
             for nombre, monto in por_categoria.items()
         ]
         return resultado
+    # Con categoria, el total de la categoria va primero y el de todas las
+    # salidas cambia de nombre: con "total_salidas" al lado, llama3.1:8b
+    # contestaba "cuanto pague de deuda" con el total de todas las salidas.
     de_categoria = df[df["categoria"] == categoria].sort_values("mes")
     subtotal = float(de_categoria["total"].sum())
-    resultado.update(
-        {
-            "categoria": categoria,
-            "sin_movimientos": de_categoria.empty,
-            "total_categoria": _numero(subtotal),
-            "proporcion": _numero(subtotal / total if total else None, 4),
-            "por_mes": [
-                {"mes": m, "total": _numero(t)}
-                for m, t in zip(de_categoria["mes"], de_categoria["total"])
-            ],
-        }
+    proporcion = subtotal / total if total else None
+    lectura = f"Salidas en {categoria} de {desde} a {hasta}: ${subtotal:,.2f}" + (
+        f" ({proporcion * 100:.1f} % de todas las salidas del periodo)."
+        if total
+        else "."
     )
-    return resultado
+    return {
+        "categoria": categoria,
+        "desde": desde,
+        "hasta": hasta,
+        "total_categoria": _numero(subtotal),
+        "lectura": lectura,
+        "sin_movimientos": de_categoria.empty,
+        "proporcion": _numero(proporcion, 4),
+        "por_mes": [
+            {"mes": m, "total": _numero(t)}
+            for m, t in zip(de_categoria["mes"], de_categoria["total"])
+        ],
+        "total_todas_las_categorias": _numero(total),
+    }
 
 
 def flujo_mensual(
