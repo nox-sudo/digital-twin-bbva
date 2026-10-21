@@ -322,3 +322,70 @@ def test_nunca_devuelve_nan(gold, tmp_path):
     for nombre in ["perfil_cliente", "comparar_con_portafolio", "resumen_portafolio"]:
         resultado = h.ejecutar(nombre, {}, contexto(gold, tmp_path))
         assert es_json_valido(resultado), nombre
+
+
+# --- Lo que los modelos mandan mal (sondeo con llama3.1:8b) -----------------
+
+
+def test_ultimos_meses_evita_la_aritmetica_de_fechas(gold, tmp_path):
+    ctx = contexto(gold, tmp_path)
+    resultado = h.ejecutar("flujo_mensual", {"ultimos_meses": "3"}, ctx)
+    assert [m["mes"] for m in resultado["meses"]] == ["2026-12", "2027-01", "2027-02"]
+    con_hasta = h.ejecutar(
+        "gasto_por_categoria", {"ultimos_meses": 2, "hasta": "2026-06"}, ctx
+    )
+    assert (con_hasta["desde"], con_hasta["hasta"]) == ("2026-05", "2026-06")
+
+
+@pytest.mark.parametrize(
+    "argumentos, fragmento",
+    [
+        ({"ultimos_meses": 0}, "entero positivo"),
+        ({"ultimos_meses": 2.5}, "entero positivo"),
+    ],
+)
+def test_ultimos_meses_invalido(gold, tmp_path, argumentos, fragmento):
+    resultado = h.ejecutar("flujo_mensual", argumentos, contexto(gold, tmp_path))
+    assert fragmento in resultado["error"]
+
+
+@pytest.mark.parametrize(
+    "variables", ["['capacidad_ahorro']", '["capacidad_ahorro"]', "capacidad_ahorro"]
+)
+def test_variables_como_texto(gold, tmp_path, variables):
+    resultado = h.ejecutar(
+        "comparar_con_portafolio", {"variables": variables}, contexto(gold, tmp_path)
+    )
+    assert [c["variable"] for c in resultado["comparacion"]] == ["capacidad_ahorro"]
+
+
+def test_argumentos_omitidos_usan_la_configuracion(gold, tmp_path):
+    ctx = contexto(gold, tmp_path)
+    omitidos = h.ejecutar("simular_hipoteca", {"precio": 900000}, ctx)
+    explicitos = h.ejecutar(
+        "simular_hipoteca",
+        {"precio": 900000, "enganche_pct": 0.10, "plazo_anios": 20, "tasa_anual": 0.11},
+        ctx,
+    )
+    assert omitidos == explicitos
+    descripciones = json.dumps(h.HERRAMIENTAS["simular_hipoteca"]["parametros"])
+    assert descripciones.count("Omitelo si el usuario no lo dijo") == 4
+
+
+def test_ultimos_meses_manda_sobre_desde(gold, tmp_path):
+    # Como llego del modelo: "los ultimos 3 meses" con desde mal calculado.
+    resultado = h.ejecutar(
+        "flujo_mensual",
+        {"desde": "2026-11", "hasta": "2027-02", "ultimos_meses": "3"},
+        contexto(gold, tmp_path),
+    )
+    assert (resultado["desde"], resultado["hasta"]) == ("2026-12", "2027-02")
+
+
+def test_none_como_texto_es_argumento_omitido(gold, tmp_path):
+    ctx = contexto(gold, tmp_path)
+    resultado = h.ejecutar(
+        "gasto_por_categoria", {"categoria": "None", "hasta": "", "desde": None}, ctx
+    )
+    assert "categorias" in resultado
+    assert resultado == h.ejecutar("gasto_por_categoria", {}, ctx)

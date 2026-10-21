@@ -23,6 +23,7 @@ Sin Streamlit ni Spark: lo usan igual la pagina del asistente, las pruebas
 y la evaluacion.
 """
 
+import json
 import math
 import re
 from dataclasses import dataclass
@@ -35,6 +36,8 @@ from dashboard import datos
 from src.simulacion import montecarlo as mc
 
 RAIZ = Path(__file__).resolve().parents[1]
+
+VACIOS = {"", "None", "none", "null", "NULL"}
 
 PATRON_MES = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 
@@ -114,6 +117,26 @@ def _a_numero(nombre: str, valor) -> float:
     return numero
 
 
+def _a_lista(nombre: str, valor) -> list:
+    """Los modelos a veces mandan una lista como texto ("['a', 'b']") o un
+    solo valor en vez de una lista."""
+    if isinstance(valor, list):
+        return valor
+    if isinstance(valor, str):
+        texto = valor.strip()
+        if texto.startswith("["):
+            try:
+                lista = json.loads(texto.replace("'", '"'))
+            except json.JSONDecodeError:
+                raise ErrorHerramienta(
+                    f"{nombre} debe ser una lista: {valor!r}"
+                ) from None
+            if isinstance(lista, list):
+                return lista
+        return [texto]
+    raise ErrorHerramienta(f"{nombre} debe ser una lista: {valor!r}")
+
+
 def _portafolio(ctx: Contexto) -> pd.DataFrame:
     return datos.portafolio(ctx.ruta_gold, ctx.bandas)
 
@@ -135,10 +158,20 @@ def _meses_disponibles(ctx: Contexto) -> list[str]:
     return [f[0] for f in filas]
 
 
-def _rango(ctx: Contexto, desde: str | None, hasta: str | None) -> tuple[str, str]:
-    """Rango de meses validado. Sin limites, la ventana de las features
-    (los ultimos ventana_meses meses hasta el corte), la misma de las
-    metricas del cliente."""
+def _rango(
+    ctx: Contexto,
+    desde: str | None,
+    hasta: str | None,
+    ultimos_meses=None,
+) -> tuple[str, str]:
+    """Rango de meses validado. Con ultimos_meses, los n meses que terminan
+    en hasta (o en el ultimo mes con datos): el modelo no tiene que hacer
+    aritmetica de fechas, que es donde se equivoca. ultimos_meses manda sobre
+    desde: el modelo suele llenar los dos y el que calcula mal es desde (con
+    llama3.1:8b, "los ultimos 3 meses" llego como desde 2027-01, hasta
+    2027-04, ultimos_meses 3). Sin limites, la ventana
+    de las features (los ultimos ventana_meses meses hasta el corte), la
+    misma de las metricas del cliente."""
     meses = _meses_disponibles(ctx)
     if not meses:
         raise ErrorHerramienta(f"{ctx.cliente_id} no tiene movimientos en Gold")
@@ -146,6 +179,13 @@ def _rango(ctx: Contexto, desde: str | None, hasta: str | None) -> tuple[str, st
         if valor is not None and not PATRON_MES.match(str(valor)):
             raise ErrorHerramienta(f"{nombre} debe tener formato AAAA-MM: {valor!r}")
     hasta = hasta or meses[-1]
+    if ultimos_meses is not None:
+        n = _a_numero("ultimos_meses", ultimos_meses)
+        if n != int(n) or n < 1:
+            raise ErrorHerramienta(
+                f"ultimos_meses debe ser un entero positivo: {ultimos_meses!r}"
+            )
+        desde = datos.inicio_ventana(hasta, int(n))
     desde = desde or datos.inicio_ventana(meses[-1], ctx.ventana_meses)
     if desde > hasta:
         raise ErrorHerramienta(f"desde ({desde}) es posterior a hasta ({hasta})")
@@ -196,10 +236,11 @@ def gasto_por_categoria(
     desde: str | None = None,
     hasta: str | None = None,
     categoria: str | None = None,
+    ultimos_meses: int | None = None,
 ) -> dict:
     """Salidas del cliente por categoria en un rango de meses. Con
     categoria, el detalle mes a mes de esa categoria."""
-    desde, hasta = _rango(ctx, desde, hasta)
+    desde, hasta = _rango(ctx, desde, hasta, ultimos_meses)
     with datos.conexion_gold(ctx.ruta_gold) as con:
         df = con.execute(
             """
@@ -247,10 +288,13 @@ def gasto_por_categoria(
 
 
 def flujo_mensual(
-    ctx: Contexto, desde: str | None = None, hasta: str | None = None
+    ctx: Contexto,
+    desde: str | None = None,
+    hasta: str | None = None,
+    ultimos_meses: int | None = None,
 ) -> dict:
     """Entradas, salidas y neto del cliente por mes en un rango."""
-    desde, hasta = _rango(ctx, desde, hasta)
+    desde, hasta = _rango(ctx, desde, hasta, ultimos_meses)
     df = datos.flujo_mensual(ctx.ruta_gold, ctx.cliente_id)
     df = df[(df["mes"] >= desde) & (df["mes"] <= hasta)]
     return {
@@ -274,7 +318,7 @@ def comparar_con_portafolio(ctx: Contexto, variables: list | None = None) -> dic
     """Donde queda el cliente en el portafolio: para cada variable, su
     valor, la mediana del portafolio y la proporcion de clientes con un
     valor menor o igual."""
-    variables = variables or VARIABLES_COMPARABLES
+    variables = _a_lista("variables", variables) if variables else VARIABLES_COMPARABLES
     desconocidas = [v for v in variables if v not in VARIABLES_COMPARABLES]
     if desconocidas:
         raise ErrorHerramienta(
@@ -421,6 +465,12 @@ def resumen_portafolio(ctx: Contexto) -> dict:
 # ---------------------------------------------------------------------------
 
 _MES = {"type": "string", "description": "Mes en formato AAAA-MM"}
+_ULTIMOS = {
+    "type": "integer",
+    "description": "Numero de meses que terminan en hasta (o en el ultimo con "
+    "datos), para preguntas como 'los ultimos 3 meses'. Si se da, manda sobre desde",
+}
+_SI_LO_DIJO = " Omitelo si el usuario no lo dijo: se usa el valor de la configuracion."
 
 HERRAMIENTAS = {
     "perfil_cliente": {
@@ -432,15 +482,33 @@ HERRAMIENTAS = {
     },
     "gasto_por_categoria": {
         "funcion": gasto_por_categoria,
-        "descripcion": "Salidas del cliente por categoria en un rango de meses "
-        "(por defecto, los ultimos 12). Con categoria, el detalle mes a mes. "
-        "Categorias: comida, transporte, entretenimiento, servicios, salud, "
-        "educacion, hogar, ropa, suscripciones, otros, pago_deuda, efectivo, "
-        "transferencia_personal.",
+        "descripcion": "Salidas del cliente (en que gasta) por categoria en un "
+        "rango de meses; sin rango, los ultimos 12. Sin categoria devuelve el "
+        "desglose de todas, que es lo que responde 'en que se me va el dinero'.",
         "parametros": {
             "desde": _MES,
             "hasta": _MES,
-            "categoria": {"type": "string", "description": "Una categoria"},
+            "ultimos_meses": _ULTIMOS,
+            "categoria": {
+                "type": "string",
+                "enum": [
+                    "comida",
+                    "transporte",
+                    "entretenimiento",
+                    "servicios",
+                    "salud",
+                    "educacion",
+                    "hogar",
+                    "ropa",
+                    "suscripciones",
+                    "otros",
+                    "pago_deuda",
+                    "efectivo",
+                    "transferencia_personal",
+                ],
+                "description": "Solo si pregunta por una categoria concreta; "
+                "entonces devuelve su detalle mes a mes",
+            },
         },
         "requeridos": [],
     },
@@ -448,7 +516,7 @@ HERRAMIENTAS = {
         "funcion": flujo_mensual,
         "descripcion": "Entradas, salidas y neto del cliente mes a mes en un "
         "rango de meses (por defecto, los ultimos 12).",
-        "parametros": {"desde": _MES, "hasta": _MES},
+        "parametros": {"desde": _MES, "hasta": _MES, "ultimos_meses": _ULTIMOS},
         "requeridos": [],
     },
     "comparar_con_portafolio": {
@@ -473,16 +541,21 @@ HERRAMIENTAS = {
             "precio": {"type": "number", "description": "Precio de la vivienda (MXN)"},
             "enganche_pct": {
                 "type": "number",
-                "description": "Fraccion del precio, entre 0.05 y 0.40",
+                "description": "Fraccion del precio, entre 0.05 y 0.40." + _SI_LO_DIJO,
             },
-            "plazo_anios": {"type": "integer", "enum": PLAZOS_ANIOS},
+            "plazo_anios": {
+                "type": "integer",
+                "enum": PLAZOS_ANIOS,
+                "description": "Plazo del credito en anios." + _SI_LO_DIJO,
+            },
             "tasa_anual": {
                 "type": "number",
-                "description": "Tasa anual como fraccion, entre 0.06 y 0.18",
+                "description": "Tasa anual como fraccion, entre 0.06 y 0.18."
+                + _SI_LO_DIJO,
             },
             "renta_reemplazada": {
                 "type": "number",
-                "description": "Renta mensual que deja de pagar (MXN)",
+                "description": "Renta mensual que deja de pagar (MXN)." + _SI_LO_DIJO,
             },
         },
         "requeridos": ["precio"],
@@ -524,7 +597,12 @@ def ejecutar(nombre: str, argumentos: dict | None, ctx: Contexto) -> dict:
     {"error": ...}. cliente_id siempre sale del contexto."""
     if nombre not in HERRAMIENTAS:
         return {"error": f"No existe la herramienta {nombre!r}"}
-    argumentos = dict(argumentos or {})
+    # Los modelos mandan "None" o "" para decir que omiten un argumento.
+    argumentos = {
+        k: v
+        for k, v in (argumentos or {}).items()
+        if v is not None and not (isinstance(v, str) and v.strip() in VACIOS)
+    }
     permitidos = set(HERRAMIENTAS[nombre]["parametros"])
     extra = set(argumentos) - permitidos
     if extra:
