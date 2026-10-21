@@ -500,3 +500,40 @@ def test_error_incluye_los_valores_validos(gold, tmp_path, nombre, argumentos, v
     assert set(resultado) == {"error"}
     for valido in validos:
         assert valido in resultado["error"]
+
+
+def test_el_log_no_copia_texto_libre(gold, tmp_path, caplog):
+    # Texto que no debe aparecer en el log por ningun camino: fuera del
+    # esquema, en una lista, en un desde que se descarta o en un texto del
+    # esquema que no se corrige.
+    sensible = "CURP PEGJ800101HDFRRN09, vivo en Insurgentes 123"
+    with caplog.at_level("INFO", logger="asistente.herramientas"):
+        _, coerciones = h.normalizar(
+            "gasto_por_categoria",
+            {
+                "nota": sensible,
+                "nota_vacia": "None",
+                "categoria": sensible,
+                "desde": sensible,
+                "ultimos_meses": "3",
+            },
+        )
+        h.normalizar("comparar_con_portafolio", {"variables": sensible})
+        h.ejecutar("perfil_cliente", {"comentario": sensible}, contexto(gold, tmp_path))
+    assert all(
+        c.argumento in h.HERRAMIENTAS["gasto_por_categoria"]["parametros"]
+        for c in coerciones
+    )
+    assert sensible not in caplog.text
+    assert "<texto omitido, 48 caracteres>" in caplog.text
+    assert "<lista omitida, 1 elementos>" in caplog.text
+    # Lo conocido se sigue registrando tal cual.
+    assert "original='3' final=3" in caplog.text
+
+
+def test_el_log_escribe_meses_y_catalogo_tal_cual(caplog):
+    with caplog.at_level("INFO", logger="asistente.herramientas"):
+        h.normalizar("flujo_mensual", {"desde": "2027-01", "ultimos_meses": 3})
+        h.normalizar("comparar_con_portafolio", {"variables": "capacidad_ahorro"})
+    assert "original='2027-01' final=None regla=ultimos_meses_manda" in caplog.text
+    assert "original='capacidad_ahorro' final=['capacidad_ahorro']" in caplog.text

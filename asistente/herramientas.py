@@ -47,6 +47,7 @@ log = logging.getLogger(__name__)
 VACIOS = {"", "None", "none", "null", "NULL"}
 
 PATRON_MES = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
+PATRON_NUMERO = re.compile(r"^-?\d+(\.\d+)?$")
 
 # Categorias de salida de gold_movimientos_mensuales (las de "ingreso" solo
 # tienen entradas).
@@ -618,9 +619,41 @@ class Coercion:
     regla: str
 
 
+def _para_log(valor, esquema_argumento: dict):
+    """Lo que el log puede escribir de un valor: numeros (tambien como
+    texto, "3"), meses AAAA-MM,
+    valores del catalogo del esquema (enum) y los marcadores de vacio, tal
+    cual. Cualquier otro texto se reemplaza por su largo: es la garantia de
+    que el log no copia texto libre aunque una herramienta llegue a
+    recibirlo."""
+    permitidos = set(esquema_argumento.get("enum") or [])
+    permitidos |= set(esquema_argumento.get("items", {}).get("enum") or [])
+
+    def seguro(v) -> bool:
+        if v is None or isinstance(v, bool | int | float):
+            return True
+        if isinstance(v, str):
+            return (
+                v.strip() in VACIOS
+                or bool(PATRON_MES.match(v))
+                or bool(PATRON_NUMERO.match(v.strip()))
+                or v in permitidos
+            )
+        return False
+
+    if isinstance(valor, list):
+        return (
+            valor
+            if all(seguro(v) for v in valor)
+            else f"<lista omitida, {len(valor)} elementos>"
+        )
+    if seguro(valor):
+        return valor
+    return f"<texto omitido, {len(str(valor))} caracteres>"
+
+
 def _convertir(argumento: str, valor, tipo: str | None):
-    """Valor con el tipo del esquema. Sin tipo (argumento fuera del
-    esquema) se deja igual: ejecutar() lo rechaza despues."""
+    """Valor con el tipo del esquema. Un texto ("string") se deja igual."""
     if tipo == "number":
         return _a_numero(argumento, valor)
     if tipo == "integer":
@@ -647,16 +680,29 @@ def normalizar(nombre: str, argumentos: dict | None) -> tuple[dict, list[Coercio
 
     Cada correccion queda en el log con la herramienta, el argumento, el
     valor original y el final. Un valor que no se puede convertir lanza
-    ErrorHerramienta."""
+    ErrorHerramienta.
+
+    Que llega al log: solo argumentos del esquema, y de ellos solo los que
+    se corrigen. Un argumento fuera del esquema no se registra nunca (pasa
+    sin tocar y ejecutar() lo rechaza). Los valores pasan por _para_log():
+    numeros, meses y valores del catalogo se escriben tal cual y cualquier
+    otro texto se reemplaza por su largo, asi que si una herramienta llega a
+    recibir texto libre del usuario, el log no lo copia."""
     esquema = HERRAMIENTAS[nombre]["parametros"]
     limpios, coerciones = {}, []
     for argumento, valor in (argumentos or {}).items():
-        if valor is None or (isinstance(valor, str) and valor.strip() in VACIOS):
+        vacio = valor is None or (isinstance(valor, str) and valor.strip() in VACIOS)
+        if argumento not in esquema:
+            # Sin registro: puede ser cualquier cosa que invente el modelo.
+            if not vacio:
+                limpios[argumento] = valor
+            continue
+        if vacio:
             coerciones.append(
                 Coercion(nombre, argumento, valor, None, "vacio_como_omitido")
             )
             continue
-        final = _convertir(argumento, valor, esquema.get(argumento, {}).get("type"))
+        final = _convertir(argumento, valor, esquema[argumento].get("type"))
         if type(final) is not type(valor) or final != valor:
             coerciones.append(Coercion(nombre, argumento, valor, final, "tipo"))
         limpios[argumento] = final
@@ -669,8 +715,8 @@ def normalizar(nombre: str, argumentos: dict | None) -> tuple[dict, list[Coercio
             "coercion herramienta=%s argumento=%s original=%r final=%r regla=%s",
             c.herramienta,
             c.argumento,
-            c.original,
-            c.final,
+            _para_log(c.original, esquema[c.argumento]),
+            _para_log(c.final, esquema[c.argumento]),
             c.regla,
         )
     return limpios, coerciones
