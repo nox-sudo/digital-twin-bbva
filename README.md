@@ -159,6 +159,7 @@ digital-twin-bbva/
 │   ├── arquitectura.md           # Flujo, zonas, DAG y decisiones de diseño
 │   ├── diccionario-datos.md      # Columnas, tipos, reglas y tratamiento de PII
 │   ├── ejecucion-local.md        # Guía para correr el proyecto en otra máquina
+│   ├── guion-demo.md             # Reconstruir la instancia de la demo y recorrido del dashboard
 │   ├── seguridad.md              # Secretos, clasificación de datos por capa, auditoría
 │   ├── monitoreo-deriva.md       # PSI: qué mide, línea base congelada, data drift vs concept drift
 │   ├── pruebas-robustez.md       # Las 5 brechas de robustez: qué se probó, resultado y cobertura
@@ -337,6 +338,7 @@ La documentación técnica vive en el repositorio y se actualiza en el mismo PR 
 | [docs/diccionario-datos.md](docs/diccionario-datos.md) | Columnas por entidad y capa: tipos, reglas de calidad, tratamiento de PII, KPIs y feature store |
 | [docs/seguridad.md](docs/seguridad.md) | Secretos, clasificación de datos por capa, protección de PII, auditoría del repositorio y riesgos aceptados |
 | [docs/ejecucion-local.md](docs/ejecucion-local.md) | Cómo correr el proyecto en otra máquina, comandos de `demo.sh` y problemas comunes |
+| [docs/guion-demo.md](docs/guion-demo.md) | Cómo reconstruir en otra máquina la instancia de la presentación (base y 7 entregas con deriva), cifras esperadas y recorrido del dashboard |
 | [docs/pruebas-robustez.md](docs/pruebas-robustez.md) | Las 5 brechas de robustez probadas con datos sucios, su resultado y qué parte tiene prueba automatizada |
 | [docs/technical-debt.md](docs/technical-debt.md) | Deuda técnica conocida (incluye la evaluación pendiente de las etiquetas de impago), con fecha de última verificación |
 
