@@ -69,10 +69,23 @@ if comun.gold_disponible():
             resumen["probabilidad_media"],
             base["probabilidad_media"] if base is not None else None,
         ),
-        delta_color="inverse",
+        # Gris y no verde: que baje no significa que el portafolio mejoro
+        # (ver la nota de abajo).
+        delta_color="off",
         help="Promedio de la salida del modelo de riesgo (XGBoost) sobre "
-        "todos los clientes con score.",
+        "todos los clientes con score. Se queda cerca de la tasa de impago "
+        "a la que se calibra la etiqueta; no mide el deterioro entre cortes.",
     )
+    if base is not None:
+        st.caption(
+            "Por qué la probabilidad media no sube: el modelo se reentrena en "
+            "cada corrida y la etiqueta de impago se calibra para que la tasa "
+            f"media sea {comun.porcentaje(cfg['tasa_objetivo'])} (config/etiquetas_impago.yaml). "
+            "El promedio del score se queda cerca de esa tasa aunque el "
+            "portafolio empeore; el deterioro se ve en el ingreso, en quienes "
+            "gastan más de lo que ganan y en la deriva del score "
+            "(Observabilidad)."
+        )
     if resumen["clientes_sin_score"]:
         st.info(
             f"{resumen['clientes_sin_score']} clientes no tienen score de riesgo: "
