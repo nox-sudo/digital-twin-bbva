@@ -43,6 +43,10 @@ bash demo.sh
 El primer arranque tarda mas (descarga de imagenes y build del worker);
 los siguientes reutilizan el cache de Docker.
 
+Para reconstruir la instancia de la presentacion (base mas 7 entregas con
+el escenario de deriva) y comparar contra las cifras esperadas, ver
+[guion-demo.md](guion-demo.md).
+
 ## Que revisar al terminar
 
 | Que | Donde |
