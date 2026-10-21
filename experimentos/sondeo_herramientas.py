@@ -3,8 +3,11 @@ experimentos/sondeo_herramientas.py
 
 Sondeo de las herramientas del asistente (asistente/herramientas.py) con un
 modelo local de Ollama: para un conjunto fijo de preguntas en espanol, que
-herramienta elige el modelo, con que argumentos, y si la llamada se puede
-ejecutar. Sirve para ver donde se equivoca el modelo antes de construir la
+herramienta elige el modelo, con que argumentos, que hacen con esa llamada
+las guardas de asistente/origen.py y si se puede ejecutar. Usa el mismo
+prompt de sistema que el asistente (asistente/conversacion.py); la pregunta
+fuera de alcance llega al modelo porque aqui no pasa por la verificacion
+previa. Sirve para ver donde se equivoca el modelo antes de construir la
 conversacion encima, y para comparar despues de cambiar descripciones o
 reglas de normalizacion.
 
@@ -30,7 +33,9 @@ import urllib.request
 
 sys.path.insert(0, os.getcwd())
 
+from asistente.conversacion import prompt_sistema  # noqa: E402
 from asistente.herramientas import Contexto, ejecutar, esquemas  # noqa: E402
+from asistente.origen import revisar_llamada  # noqa: E402
 from dashboard import datos  # noqa: E402
 
 PREGUNTAS = [
@@ -42,16 +47,11 @@ PREGUNTAS = [
     "¿En qué se me va el dinero?",
     "¿Cuál fue mi flujo en los últimos 3 meses?",
     "¿Qué acciones me recomiendas comprar?",
+    "quiero comprarme un bmw m4 puedo?",
+    "¿Puedo comprar un auto de 450 mil a crédito a 48 meses al 14 %?",
+    "¿Me alcanza para un viaje de 30 mil de contado?",
+    "quiero comprar un departamento de 2 millones",
 ]
-
-
-def prompt_sistema(ultimo_mes: str) -> str:
-    return (
-        "Eres el asistente financiero del Gemelo Digital. Respondes en espanol "
-        "sobre el cliente seleccionado y el portafolio. Para cualquier cifra usa "
-        "una herramienta; nunca inventes numeros. El ultimo mes con datos es "
-        f"{ultimo_mes}."
-    )
 
 
 def preguntar(url: str, modelo: str, sistema: str, pregunta: str, semilla: int):
@@ -80,12 +80,23 @@ def preguntar(url: str, modelo: str, sistema: str, pregunta: str, semilla: int):
     return llamadas, mensaje.get("content", ""), time.perf_counter() - inicio
 
 
-def estado_de(resultado: dict) -> str:
+def estado_de(nombre: str, argumentos: dict, pregunta: str, ctx) -> str:
+    """Que pasa con la llamada despues de las guardas de asistente/origen.py
+    (las mismas del asistente) y al ejecutarla."""
+    decision = revisar_llamada(nombre, argumentos, [pregunta])
+    if decision.rechazo:
+        return "rechazada por origen (se pide el dato)"
+    resultado = ejecutar(decision.nombre, decision.argumentos, ctx)
+    prefijo = ""
+    if decision.nombre != nombre:
+        prefijo = f"redirigida a {decision.nombre}, "
+    elif decision.notas:
+        prefijo = f"{len(decision.notas)} dato(s) inventado(s) descartado(s), "
     if "error" in resultado:
-        return "error: " + resultado["error"][:90]
+        return prefijo + "error: " + resultado["error"][:90]
     if resultado.get("sin_movimientos"):
-        return "ok, sin movimientos"
-    return "ok"
+        return prefijo + "ok, sin movimientos"
+    return prefijo + "ok"
 
 
 def main():
@@ -101,7 +112,7 @@ def main():
 
     ctx = Contexto.desde_config(args.cliente)
     ultimo_mes = datos.flujo_mensual(ctx.ruta_gold, args.cliente)["mes"].max()
-    sistema = prompt_sistema(ultimo_mes)
+    sistema = prompt_sistema(ctx, ultimo_mes)
     print(
         f"Modelo {args.modelo}, cliente {args.cliente}, ultimo mes {ultimo_mes}, "
         f"temperature 0, semilla {args.semilla}, {args.repeticiones} corridas "
@@ -129,7 +140,7 @@ def main():
             for nombre, argumentos in llamadas:
                 print(
                     f"  corrida {i} ({segundos:.1f} s): {nombre} {argumentos} -> "
-                    f"{estado_de(ejecutar(nombre, argumentos, ctx))}"
+                    f"{estado_de(nombre, argumentos, pregunta, ctx)}"
                 )
         print(
             f"  coinciden las {args.repeticiones}: herramienta "

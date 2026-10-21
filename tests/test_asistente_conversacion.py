@@ -132,6 +132,8 @@ def test_prompt_fija_cliente_mes_y_reglas(gold, tmp_path):
     assert "CLI-2" in sistema and "2027-02" in sistema
     assert "No atribuyas causas" in sistema
     assert "Toda cifra sale de una herramienta" in sistema
+    assert "no lo inventes ni uses un valor tipico" in sistema
+    assert "evaluar_compra" in sistema
 
 
 def test_error_de_conexion_se_propaga(gold, tmp_path):
@@ -148,3 +150,54 @@ def test_configuracion_del_repo():
     assert cfg.modelo == "llama3.1:8b"
     assert (cfg.temperatura, cfg.semilla) == (0.0, 42)
     assert cfg.max_vueltas >= 1 and cfg.historial_turnos >= 0
+
+
+def test_la_guarda_de_origen_no_ejecuta_y_avisa_al_modelo(gold, tmp_path):
+    modelo = ModeloFalso(
+        llamada("evaluar_compra", {"precio": 2500000, "forma_pago": "contado"}),
+        texto("¿Cuál es el precio del auto?"),
+    )
+    r = c.responder(
+        "quiero un bmw, ¿puedo?", [], contexto(gold, tmp_path), modelo, "2027-02"
+    )
+    assert r.texto == "¿Cuál es el precio del auto?"
+    assert "no aparece en lo que escribio el usuario" in r.pasos[0].resultado["error"]
+    assert "pregunta" in modelo.recibidos[1][-1]["content"]
+
+
+def test_el_historial_cuenta_como_dato_del_usuario(gold, tmp_path):
+    modelo = ModeloFalso(
+        llamada("evaluar_compra", {"precio": 25000, "forma_pago": "contado"}),
+        texto("Te alcanza."),
+    )
+    r = c.responder(
+        "¿y de contado?",
+        [("quiero un viaje de 25 mil", "¿De contado o a crédito?")],
+        contexto(gold, tmp_path),
+        modelo,
+        "2027-02",
+    )
+    assert "error" not in r.pasos[0].resultado
+    assert r.pasos[0].resultado["alcanza_con_el_saldo_hoy"] is True
+
+
+def test_ajustes_de_origen_llegan_en_el_resultado(gold, tmp_path):
+    modelo = ModeloFalso(
+        llamada(
+            "simular_hipoteca",
+            {"precio": 900000, "tasa_anual": 0.12, "enganche_pct": 0.05},
+        ),
+        texto("ok"),
+    )
+    r = c.responder(
+        "¿Puedo pagar una casa de 900 mil?",
+        [],
+        contexto(gold, tmp_path),
+        modelo,
+        "2027-02",
+    )
+    paso = r.pasos[0]
+    assert paso.argumentos == {"precio": 900000}
+    assert paso.resultado["tasa_anual"] == 0.11  # la de la configuracion
+    assert len(paso.resultado["ajustes"]) == 2
+    assert "ajustes" in json.loads(modelo.recibidos[1][-1]["content"])

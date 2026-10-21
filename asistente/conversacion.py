@@ -12,7 +12,9 @@ redacta la respuesta con lo que devolvieron.
   3. Hasta max_vueltas rondas: si el modelo pide herramientas se ejecutan
      con ejecutar() (el cliente sale del contexto, nunca del modelo) y sus
      resultados vuelven como mensajes "tool"; si contesta sin pedir nada,
-     esa es la respuesta.
+     esa es la respuesta. Antes de ejecutar, asistente/origen.py descarta o
+     rechaza datos que el usuario no dio (precio, plazo, tasa...) y redirige
+     una vivienda evaluada como compra general a la hipoteca.
 
 El bucle no depende de LangChain: recibe cualquier objeto con
 invoke(mensajes) -> {"content": str, "tool_calls": [...]}, asi que las
@@ -29,6 +31,7 @@ import yaml
 
 from asistente.alcance import verificar_alcance
 from asistente.herramientas import RAIZ, Contexto, ejecutar, esquemas
+from asistente.origen import revisar_llamada
 
 log = logging.getLogger(__name__)
 
@@ -96,6 +99,18 @@ def prompt_sistema(ctx: Contexto, ultimo_mes: str) -> str:
         "- Toda cifra sale de una herramienta. Nunca inventes, calcules ni "
         "redondees de memoria un numero que una herramienta no devolvio.\n"
         "- Usa solo los argumentos que el usuario dio; omite los demas.\n"
+        "- Si a la pregunta le falta un dato que ninguna herramienta tiene (por "
+        "ejemplo el precio de lo que quiere comprar, o el plazo y la tasa de un "
+        "credito), no lo inventes ni uses un valor tipico: pregunta por ese dato "
+        "en una frase y di para que lo necesitas.\n"
+        "- Una casa, departamento o terreno va siempre con simular_hipoteca, "
+        "aunque la pregunta diga comprar; cualquier otra compra (un auto, un "
+        "viaje) va con evaluar_compra.\n"
+        "- En una compra o un credito no concluyas solo 'puedes' o 'no puedes': "
+        "da la cuota o el saldo y como cambia la probabilidad de quedar en saldo "
+        "negativo; si con la compra es alta, dilo claramente.\n"
+        "- Si ninguna herramienta cubre la pregunta, dilo y menciona que si "
+        "puedes responder; no contestes solo que no puedes ayudar.\n"
         "- Si una herramienta devuelve sin_movimientos, la respuesta es que no "
         "hubo movimientos (0), no un error.\n"
         "- Si una herramienta devuelve error, vuelve a llamarla corrigiendo los "
@@ -146,6 +161,7 @@ def responder(
         pregunta, historial, prompt_sistema(ctx, ultimo_mes), historial_turnos
     )
     pasos: list[Paso] = []
+    textos_usuario = [anterior for anterior, _ in historial] + [pregunta]
     for _ in range(max_vueltas):
         mensaje = modelo.invoke(mensajes)
         llamadas = mensaje.get("tool_calls") or []
@@ -162,8 +178,19 @@ def responder(
             }
         )
         for llamada in llamadas:
-            resultado = ejecutar(llamada["name"], llamada.get("args"), ctx)
-            pasos.append(Paso(llamada["name"], llamada.get("args") or {}, resultado))
+            decision = revisar_llamada(
+                llamada["name"], llamada.get("args") or {}, textos_usuario
+            )
+            if decision.rechazo is not None:
+                log.info(
+                    "llamada rechazada por origen: herramienta=%s", decision.nombre
+                )
+                resultado = {"error": decision.rechazo}
+            else:
+                resultado = ejecutar(decision.nombre, decision.argumentos, ctx)
+                if decision.notas:
+                    resultado = {**resultado, "ajustes": decision.notas}
+            pasos.append(Paso(decision.nombre, decision.argumentos, resultado))
             mensajes.append(
                 {
                     "role": "tool",

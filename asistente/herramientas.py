@@ -19,7 +19,7 @@ Reglas de diseno:
     invalido o un dato que no existe se devuelve como {"error": ...} en vez
     de lanzar, para que el modelo lo explique en lugar de inventar.
   - Lo que el modelo manda pasa por normalizar() antes de llegar a una
-    herramienta: una sola funcion para las seis, que corrige lo que los
+    herramienta: una sola funcion para todas, que corrige lo que los
     modelos mandan mal (numeros y listas como texto, "None" para omitir,
     desde y ultimos_meses a la vez) y deja cada correccion en el log.
 
@@ -34,6 +34,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import yaml
 
@@ -45,6 +46,10 @@ RAIZ = Path(__file__).resolve().parents[1]
 log = logging.getLogger(__name__)
 
 VACIOS = {"", "None", "none", "null", "NULL"}
+# Argumentos en los que 0 no es un valor sino la forma del modelo de decir
+# "sin limite" (llama3.1:8b mandaba ultimos_meses 0 para "en que se me va el
+# dinero").
+CERO_ES_OMITIDO = {"ultimos_meses"}
 
 PATRON_MES = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 PATRON_NUMERO = re.compile(r"^-?\d+(\.\d+)?$")
@@ -84,6 +89,12 @@ PLAZOS_ANIOS = [5, 10, 15, 20, 25, 30]
 ENGANCHE_PCT = (0.05, 0.40)
 TASA_ANUAL = (0.06, 0.18)
 PRECIO_MAXIMO = 20_000_000
+# Compras que no son vivienda (evaluar_compra). Rangos amplios a proposito:
+# el credito al consumo en Mexico puede pasar del 40 % anual.
+PLAZO_COMPRA_MESES = (1, 120)
+TASA_COMPRA = (0.0, 0.80)
+ENGANCHE_COMPRA = (0.0, 0.90)
+FORMAS_PAGO = ["contado", "credito"]
 
 
 class ErrorHerramienta(ValueError):
@@ -458,14 +469,7 @@ def simular_hipoteca(
     if renta_reemplazada < 0:
         raise ErrorHerramienta("renta_reemplazada no puede ser negativa")
 
-    choque = cfg["choque_ingreso"]
-    supuestos = mc.Supuestos(
-        meses=int(cfg["simulacion"]["meses"]),
-        trayectorias=int(cfg["simulacion"]["trayectorias"]),
-        semilla=int(cfg["simulacion"]["semilla"]),
-        prob_choque_mensual=float(choque["probabilidad_mensual"]),
-        duracion_choque=tuple(int(x) for x in choque["duracion_meses"]),
-    )
+    supuestos = _supuestos_simulacion(cfg)
     hipoteca = mc.Hipoteca(
         precio=float(precio),
         tasa_anual=float(tasa_anual),
@@ -502,7 +506,196 @@ def simular_hipoteca(
         "incremento_deficit_maximo": incremento,
         "ahorro_mensual_promedio": _numero(historial.neto.mean()),
         "meses_para_reunir_pago_inicial": _numero(meses_enganche, 1),
+        # Con los numeros sueltos, llama3.1:8b leyo 99.98 % de deficit como
+        # "muy baja".
+        "lectura": (
+            f"Cuota de ${hipoteca.cuota_mensual:,.2f} al mes. Probabilidad de "
+            f"quedar en saldo negativo en los proximos {supuestos.meses} meses: "
+            f"{sin.probabilidad_deficit * 100:.1f} % sin la hipoteca y "
+            f"{con.probabilidad_deficit * 100:.1f} % con ella."
+            + _advertencia(con.probabilidad_deficit)
+            + " "
+            + (
+                "Con su flujo actual no ahorra, asi que no reuniria el pago "
+                f"inicial de ${hipoteca.pago_inicial:,.2f}."
+                if meses_enganche is None
+                else f"Reuniria el pago inicial de ${hipoteca.pago_inicial:,.2f} "
+                f"en {meses_enganche:.1f} meses."
+            )
+        ),
     }
+
+
+def _advertencia(probabilidad_con: float) -> str:
+    """Frase fija cuando, con la compra, quedar en saldo negativo es mas
+    probable que no: sin ella, llama3.1:8b contestaba "puedes comprarlo" con
+    100 % de probabilidad de deficit."""
+    if probabilidad_con >= 0.5:
+        return (
+            " Con la compra es mas probable quedar en saldo negativo que no: no "
+            "es una compra que su flujo sostenga."
+        )
+    return ""
+
+
+def _supuestos_simulacion(cfg: dict) -> mc.Supuestos:
+    choque = cfg["choque_ingreso"]
+    return mc.Supuestos(
+        meses=int(cfg["simulacion"]["meses"]),
+        trayectorias=int(cfg["simulacion"]["trayectorias"]),
+        semilla=int(cfg["simulacion"]["semilla"]),
+        prob_choque_mensual=float(choque["probabilidad_mensual"]),
+        duracion_choque=tuple(int(x) for x in choque["duracion_meses"]),
+    )
+
+
+def evaluar_compra(
+    ctx: Contexto,
+    precio: float,
+    forma_pago: str,
+    plazo_meses: int | None = None,
+    tasa_anual: float | None = None,
+    enganche_pct: float | None = None,
+) -> dict:
+    """Cualquier compra que no sea vivienda (un auto, un viaje, un equipo),
+    de contado o a credito, con el mismo Monte Carlo del simulador: el
+    historial propio del cliente remuestreado, el choque de ingreso y la
+    misma semilla, sobre las mismas muestras con y sin la compra.
+
+    - Contado: el precio sale del saldo hoy. Si el saldo no alcanza, cuantos
+      meses le tomaria reunirlo a su ritmo de ahorro.
+    - Credito: cuota fija durante el plazo (solo los meses del plazo dentro
+      del horizonte simulado). El enganche, si hay, se evalua aparte como en
+      la hipoteca (meses para reunirlo).
+
+    No inventa condiciones: un credito sin plazo o sin tasa es un error que
+    dice que dato falta, para que el modelo se lo pregunte al usuario."""
+    if forma_pago not in FORMAS_PAGO:
+        raise ErrorHerramienta(
+            f"forma_pago debe ser una de {FORMAS_PAGO}: {forma_pago!r}"
+        )
+    if not 0 < precio <= PRECIO_MAXIMO:
+        raise ErrorHerramienta(f"precio debe estar entre 0 y {PRECIO_MAXIMO:,}")
+    supuestos_texto = []
+    if forma_pago == "credito":
+        faltan = [
+            n
+            for n, v in (("plazo_meses", plazo_meses), ("tasa_anual", tasa_anual))
+            if v is None
+        ]
+        if faltan:
+            raise ErrorHerramienta(
+                f"Para una compra a credito falta {' y '.join(faltan)}: "
+                "preguntalo al usuario, no lo supongas"
+            )
+        if not PLAZO_COMPRA_MESES[0] <= plazo_meses <= PLAZO_COMPRA_MESES[1]:
+            raise ErrorHerramienta(
+                f"plazo_meses debe estar entre {PLAZO_COMPRA_MESES[0]} y "
+                f"{PLAZO_COMPRA_MESES[1]}. Si es una vivienda, usa simular_hipoteca"
+            )
+        if not TASA_COMPRA[0] <= tasa_anual <= TASA_COMPRA[1]:
+            raise ErrorHerramienta(
+                f"tasa_anual debe estar entre {TASA_COMPRA[0]} y {TASA_COMPRA[1]} "
+                "(fraccion del 0 al 1)"
+            )
+        if enganche_pct is None:
+            enganche_pct = 0.0
+            supuestos_texto.append("sin enganche (el usuario no lo dio)")
+        if not ENGANCHE_COMPRA[0] <= enganche_pct <= ENGANCHE_COMPRA[1]:
+            raise ErrorHerramienta(
+                f"enganche_pct debe estar entre {ENGANCHE_COMPRA[0]} y "
+                f"{ENGANCHE_COMPRA[1]}"
+            )
+    elif any(v is not None for v in (plazo_meses, tasa_anual, enganche_pct)):
+        raise ErrorHerramienta(
+            "plazo_meses, tasa_anual y enganche_pct solo aplican a forma_pago credito"
+        )
+
+    supuestos = _supuestos_simulacion(ctx.simulacion)
+    try:
+        historial = mc.historial_cliente(ctx.ruta_gold, ctx.cliente_id)
+        saldo = mc.saldo_inicial_cliente(ctx.ruta_gold, ctx.cliente_id)
+    except ValueError as e:
+        raise ErrorHerramienta(str(e)) from e
+    muestras = mc.muestrear(len(historial.meses), supuestos)
+    sin_compra = mc.simular(historial, saldo, muestras)
+    sin = mc.resumir(sin_compra)
+    resultado = {
+        "forma_pago": forma_pago,
+        "precio": _numero(precio),
+        "saldo_disponible": _numero(saldo),
+        "ahorro_mensual_promedio": _numero(historial.neto.mean()),
+        "meses_simulados": supuestos.meses,
+        "probabilidad_deficit_sin_compra": _numero(sin.probabilidad_deficit, 4),
+    }
+
+    if forma_pago == "contado":
+        con = mc.resumir(sin_compra - precio)
+        alcanza = saldo >= precio
+        meses = mc.meses_para_juntar(precio, historial, saldo)
+        resultado.update(
+            {
+                "alcanza_con_el_saldo_hoy": alcanza,
+                "probabilidad_deficit_con_compra": _numero(con.probabilidad_deficit, 4),
+                "meses_para_reunir_el_precio": _numero(meses, 1),
+            }
+        )
+        if alcanza:
+            lectura = (
+                f"De contado: el saldo (${saldo:,.2f}) alcanza para ${precio:,.2f}. "
+                "Probabilidad de quedar en saldo negativo en los proximos "
+                f"{supuestos.meses} meses: {sin.probabilidad_deficit * 100:.1f} % sin "
+                f"la compra y {con.probabilidad_deficit * 100:.1f} % con ella."
+                + _advertencia(con.probabilidad_deficit)
+            )
+        elif meses is None:
+            lectura = (
+                f"De contado: el saldo (${saldo:,.2f}) no alcanza para "
+                f"${precio:,.2f} y con su flujo actual no ahorra, asi que no lo "
+                "reuniria."
+            )
+        else:
+            lectura = (
+                f"De contado: el saldo (${saldo:,.2f}) no alcanza para "
+                f"${precio:,.2f}; a su ritmo de ahorro lo reuniria en {meses:.1f} meses."
+            )
+    else:
+        monto = precio * (1 - enganche_pct)
+        cuota = mc.cuota_fija(monto, tasa_anual, int(plazo_meses))
+        # La cuota solo se paga durante el plazo: meses acumulados de pago
+        # hasta cada cierre de mes del horizonte.
+        pagados = np.minimum(np.arange(supuestos.meses + 1), int(plazo_meses))
+        con = mc.resumir(sin_compra - cuota * pagados)
+        enganche = precio * enganche_pct
+        meses_enganche = (
+            mc.meses_para_juntar(enganche, historial, saldo) if enganche else 0.0
+        )
+        resultado.update(
+            {
+                "plazo_meses": int(plazo_meses),
+                "tasa_anual": _numero(tasa_anual, 4),
+                "enganche_pct": _numero(enganche_pct, 4),
+                "monto_credito": _numero(monto),
+                "cuota_mensual": _numero(cuota),
+                "probabilidad_deficit_con_compra": _numero(con.probabilidad_deficit, 4),
+                "meses_para_reunir_enganche": _numero(meses_enganche, 1),
+            }
+        )
+        if plazo_meses > supuestos.meses:
+            supuestos_texto.append(
+                f"se simulan los primeros {supuestos.meses} de {int(plazo_meses)} "
+                "meses del credito"
+            )
+        lectura = (
+            f"A credito: cuota de ${cuota:,.2f} al mes durante {int(plazo_meses)} "
+            f"meses. Probabilidad de quedar en saldo negativo en los proximos "
+            f"{supuestos.meses} meses: {sin.probabilidad_deficit * 100:.1f} % sin la "
+            f"compra y {con.probabilidad_deficit * 100:.1f} % con ella."
+            + _advertencia(con.probabilidad_deficit)
+        )
+    resultado["supuestos"] = supuestos_texto
+    resultado["lectura"] = lectura
+    return resultado
 
 
 def resumen_portafolio(ctx: Contexto) -> dict:
@@ -591,9 +784,10 @@ HERRAMIENTAS = {
     },
     "simular_hipoteca": {
         "funcion": simular_hipoteca,
-        "descripcion": "Simula contratar una hipoteca: riesgo de quedar en saldo "
-        "negativo con y sin ella, cuota mensual, capacidad hipotecaria y meses "
-        "para reunir el enganche.",
+        "descripcion": "Solo para comprar vivienda: simula contratar una "
+        "hipoteca (riesgo de quedar en saldo negativo con y sin ella, cuota "
+        "mensual, capacidad hipotecaria y meses para reunir el enganche). Para "
+        "cualquier otra compra usa evaluar_compra.",
         "parametros": {
             "precio": {"type": "number", "description": "Precio de la vivienda (MXN)"},
             "enganche_pct": {
@@ -616,6 +810,38 @@ HERRAMIENTAS = {
             },
         },
         "requeridos": ["precio"],
+    },
+    "evaluar_compra": {
+        "funcion": evaluar_compra,
+        "descripcion": "Compras que NO son vivienda (auto, viaje, equipo...), "
+        "de contado o a credito. Una casa, departamento o terreno va siempre con "
+        "simular_hipoteca. Devuelve  si el saldo alcanza, cuota, riesgo "
+        "de quedar en saldo negativo con y sin la compra, y meses para reunir el "
+        "precio o el enganche. Necesita el precio que dio el usuario; a credito "
+        "tambien plazo y tasa. Si el usuario no los dio, preguntalos en vez de "
+        "llamar esta herramienta.",
+        "parametros": {
+            "precio": {
+                "type": "number",
+                "description": "Precio (MXN) que dio el usuario",
+            },
+            "forma_pago": {"type": "string", "enum": FORMAS_PAGO},
+            "plazo_meses": {
+                "type": "integer",
+                "description": "Plazo del credito en meses, solo si el usuario lo dio",
+            },
+            "tasa_anual": {
+                "type": "number",
+                "description": "Tasa anual del credito como fraccion, solo si el "
+                "usuario la dio",
+            },
+            "enganche_pct": {
+                "type": "number",
+                "description": "Fraccion del precio que paga al inicio, solo si el "
+                "usuario la dio",
+            },
+        },
+        "requeridos": ["precio", "forma_pago"],
     },
     "resumen_portafolio": {
         "funcion": resumen_portafolio,
@@ -710,10 +936,11 @@ def _convertir(argumento: str, valor, tipo: str | None):
 
 
 def normalizar(nombre: str, argumentos: dict | None) -> tuple[dict, list[Coercion]]:
-    """Unico punto donde se corrigen los argumentos del modelo, para las seis
+    """Unico punto donde se corrigen los argumentos del modelo, para todas las
     herramientas. Reglas, en orden:
 
-      1. "None", "null", "" (o None) cuentan como argumento omitido.
+      1. "None", "null", "" (o None) cuentan como argumento omitido, y 0 en
+         ultimos_meses tambien.
       2. Cada valor toma el tipo de su esquema: numeros y enteros que llegan
          como texto, y listas como texto ("['a']") o como un solo valor.
       3. ultimos_meses manda sobre desde: si llegan los dos, desde se
@@ -744,6 +971,11 @@ def normalizar(nombre: str, argumentos: dict | None) -> tuple[dict, list[Coercio
             )
             continue
         final = _convertir(argumento, valor, esquema[argumento].get("type"))
+        if argumento in CERO_ES_OMITIDO and final == 0:
+            coerciones.append(
+                Coercion(nombre, argumento, valor, None, "cero_como_omitido")
+            )
+            continue
         if type(final) is not type(valor) or final != valor:
             coerciones.append(Coercion(nombre, argumento, valor, final, "tipo"))
         limpios[argumento] = final

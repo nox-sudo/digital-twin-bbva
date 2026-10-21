@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 
 import duckdb
+import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -257,7 +258,7 @@ def test_ultimos_meses_evita_la_aritmetica_de_fechas(gold, tmp_path):
 @pytest.mark.parametrize(
     "argumentos, fragmento",
     [
-        ({"ultimos_meses": 0}, "entero positivo"),
+        ({"ultimos_meses": -1}, "entero positivo"),
         ({"ultimos_meses": 2.5}, "entero positivo"),
     ],
 )
@@ -345,7 +346,7 @@ def test_normalizar_sin_correcciones_no_registra(caplog):
 
 
 @pytest.mark.parametrize("nombre", list(h.HERRAMIENTAS))
-def test_normalizar_cubre_las_seis_herramientas(nombre):
+def test_normalizar_cubre_todas_las_herramientas(nombre):
     vacios = {p: "null" for p in h.HERRAMIENTAS[nombre]["parametros"]}
     limpios, coerciones = h.normalizar(nombre, vacios)
     assert limpios == {}
@@ -482,4 +483,152 @@ def test_con_categoria_el_total_es_el_de_la_categoria(gold, tmp_path):
     assert resultado["total_categoria"] == 12000.0
     assert resultado["lectura"].startswith(
         "Salidas en comida de 2027-01 a 2027-02: $12,000.00 ("
+    )
+
+
+# --- Compras que no son vivienda --------------------------------------------
+
+
+def _montecarlo(gold, cliente):
+    supuestos = mc.Supuestos(meses=12, trayectorias=300, semilla=7)
+    historial = mc.historial_cliente(gold, cliente)
+    saldo = mc.saldo_inicial_cliente(gold, cliente)
+    muestras = mc.muestrear(len(historial.meses), supuestos)
+    return historial, saldo, mc.simular(historial, saldo, muestras)
+
+
+def test_compra_de_contado_que_alcanza(gold, tmp_path):
+    resultado = h.ejecutar(
+        "evaluar_compra",
+        {"precio": "25000", "forma_pago": "contado"},
+        contexto(gold, tmp_path),
+    )
+    _, _, saldos = _montecarlo(gold, "CLI-1")
+    assert resultado["alcanza_con_el_saldo_hoy"] is True
+    assert resultado["probabilidad_deficit_sin_compra"] == pytest.approx(
+        mc.resumir(saldos).probabilidad_deficit, abs=1e-4
+    )
+    assert resultado["probabilidad_deficit_con_compra"] == pytest.approx(
+        mc.resumir(saldos - 25000).probabilidad_deficit, abs=1e-4
+    )
+    assert resultado["lectura"].startswith("De contado: el saldo ($30,000.00) alcanza")
+    assert es_json_valido(resultado)
+
+
+def test_compra_de_contado_que_no_alcanza(gold, tmp_path):
+    ahorra = h.ejecutar(
+        "evaluar_compra",
+        {"precio": 90000, "forma_pago": "contado"},
+        contexto(gold, tmp_path),
+    )
+    historial, saldo, _ = _montecarlo(gold, "CLI-1")
+    assert ahorra["alcanza_con_el_saldo_hoy"] is False
+    assert ahorra["meses_para_reunir_el_precio"] == pytest.approx(
+        mc.meses_para_juntar(90000, historial, saldo), abs=0.05
+    )
+    no_ahorra = h.ejecutar(
+        "evaluar_compra",
+        {"precio": 90000, "forma_pago": "contado"},
+        contexto(gold, tmp_path, "CLI-2"),
+    )
+    assert no_ahorra["meses_para_reunir_el_precio"] is None
+    assert "no lo reuniria" in no_ahorra["lectura"]
+
+
+def test_compra_a_credito_paga_cuota_solo_durante_el_plazo(gold, tmp_path):
+    resultado = h.ejecutar(
+        "evaluar_compra",
+        {
+            "precio": 450000,
+            "forma_pago": "credito",
+            "plazo_meses": 6,
+            "tasa_anual": 0.14,
+        },
+        contexto(gold, tmp_path),
+    )
+    _, _, saldos = _montecarlo(gold, "CLI-1")
+    cuota = mc.cuota_fija(450000, 0.14, 6)
+    pagados = np.minimum(np.arange(13), 6)
+    assert resultado["cuota_mensual"] == pytest.approx(cuota, abs=0.01)
+    assert resultado["probabilidad_deficit_con_compra"] == pytest.approx(
+        mc.resumir(saldos - cuota * pagados).probabilidad_deficit, abs=1e-4
+    )
+    assert resultado["supuestos"] == ["sin enganche (el usuario no lo dio)"]
+    assert es_json_valido(resultado)
+
+
+def test_credito_mas_largo_que_el_horizonte_lo_dice(gold, tmp_path):
+    resultado = h.ejecutar(
+        "evaluar_compra",
+        {
+            "precio": 450000,
+            "forma_pago": "credito",
+            "plazo_meses": 48,
+            "tasa_anual": 0.14,
+            "enganche_pct": 0.2,
+        },
+        contexto(gold, tmp_path),
+    )
+    assert resultado["monto_credito"] == 360000.0
+    assert resultado["supuestos"] == [
+        "se simulan los primeros 12 de 48 meses del credito"
+    ]
+
+
+@pytest.mark.parametrize(
+    "argumentos, fragmento",
+    [
+        ({"precio": 450000, "forma_pago": "credito"}, "falta plazo_meses y tasa_anual"),
+        (
+            {"precio": 450000, "forma_pago": "credito", "plazo_meses": 48},
+            "falta tasa_anual",
+        ),
+        ({"precio": 450000, "forma_pago": "leasing"}, "forma_pago debe ser una de"),
+        (
+            {"precio": 450000, "forma_pago": "contado", "plazo_meses": 12},
+            "solo aplican",
+        ),
+        ({"precio": 0, "forma_pago": "contado"}, "precio debe estar"),
+        ({"forma_pago": "contado"}, "Faltan argumentos"),
+    ],
+)
+def test_compra_no_inventa_condiciones(gold, tmp_path, argumentos, fragmento):
+    resultado = h.ejecutar("evaluar_compra", argumentos, contexto(gold, tmp_path))
+    assert set(resultado) == {"error"}
+    assert fragmento in resultado["error"]
+
+
+def test_la_lectura_advierte_cuando_el_deficit_es_mas_probable(gold, tmp_path):
+    gasta_de_mas = h.ejecutar(
+        "evaluar_compra",
+        {
+            "precio": 450000,
+            "forma_pago": "credito",
+            "plazo_meses": 48,
+            "tasa_anual": 0.14,
+        },
+        contexto(gold, tmp_path, "CLI-2"),
+    )
+    assert gasta_de_mas["probabilidad_deficit_con_compra"] >= 0.5
+    assert "no es una compra que su flujo sostenga" in gasta_de_mas["lectura"]
+    hipoteca = h.ejecutar(
+        "simular_hipoteca", {"precio": 900000}, contexto(gold, tmp_path, "CLI-2")
+    )
+    assert "no es una compra que su flujo sostenga" in hipoteca["lectura"]
+    ahorra = h.ejecutar(
+        "evaluar_compra",
+        {"precio": 1000, "forma_pago": "contado"},
+        contexto(gold, tmp_path),
+    )
+    assert ahorra["probabilidad_deficit_con_compra"] < 0.5
+    assert "sostenga" not in ahorra["lectura"]
+
+
+def test_ultimos_meses_cero_es_omitido(gold, tmp_path):
+    ctx = contexto(gold, tmp_path)
+    limpios, coerciones = h.normalizar("gasto_por_categoria", {"ultimos_meses": "0"})
+    assert limpios == {}
+    assert coerciones[0].regla == "cero_como_omitido"
+    assert h.ejecutar("gasto_por_categoria", {"ultimos_meses": 0}, ctx) == h.ejecutar(
+        "gasto_por_categoria", {}, ctx
     )
