@@ -157,7 +157,7 @@ def test_el_modelo_no_puede_cambiar_de_cliente(gold, tmp_path):
             {"desde": "2020-01", "hasta": "2020-06"},
             "2026-01 a 2027-02",
         ),
-        ("gasto_por_categoria", {"categoria": "viajes"}, "Categorias con salidas"),
+        ("gasto_por_categoria", {"categoria": "viajes"}, "Categorias validas"),
         ("comparar_con_portafolio", {"variables": ["curp"]}, "no comparables"),
         ("simular_hipoteca", {"precio": 900000, "plazo_anios": 7}, "plazo_anios"),
         ("simular_hipoteca", {"precio": 900000, "tasa_anual": 11}, "tasa_anual"),
@@ -213,7 +213,8 @@ def test_gasto_por_defecto_es_la_ventana_y_cuadra_con_el_dashboard(gold, tmp_pat
 def test_categoria_fuera_de_la_ventana_se_pide_con_rango(gold, tmp_path):
     ctx = contexto(gold, tmp_path, "CLI-2")
     sin_rango = h.ejecutar("gasto_por_categoria", {"categoria": "comida"}, ctx)
-    assert "error" in sin_rango
+    assert sin_rango["total_categoria"] == 0
+    assert sin_rango["sin_movimientos"] is True
     con_rango = h.ejecutar(
         "gasto_por_categoria", {"categoria": "comida", "desde": "2026-01"}, ctx
     )
@@ -433,3 +434,69 @@ def test_normalizar_cubre_las_seis_herramientas(nombre):
     limpios, coerciones = h.normalizar(nombre, vacios)
     assert limpios == {}
     assert len(coerciones) == len(vacios)
+
+
+# --- Resultado vacio contra error -------------------------------------------
+
+
+def test_categoria_valida_sin_movimientos_da_cero(gold, tmp_path):
+    resultado = h.ejecutar(
+        "gasto_por_categoria",
+        {"categoria": "salud", "ultimos_meses": 3},
+        contexto(gold, tmp_path),
+    )
+    assert "error" not in resultado
+    assert resultado["total_categoria"] == 0
+    assert resultado["proporcion"] == 0
+    assert resultado["por_mes"] == []
+    assert resultado["sin_movimientos"] is True
+    assert resultado["total_salidas"] > 0
+    assert es_json_valido(resultado)
+
+
+def test_rango_valido_sin_movimientos_da_cero(gold, tmp_path):
+    con = duckdb.connect(gold)
+    con.execute("DELETE FROM gold_movimientos_mensuales WHERE mes = '2026-06'")
+    con.close()
+    ctx = contexto(gold, tmp_path)
+    flujo = h.ejecutar("flujo_mensual", {"desde": "2026-06", "hasta": "2026-06"}, ctx)
+    assert flujo["meses"] == [] and flujo["sin_movimientos"] is True
+    gasto = h.ejecutar(
+        "gasto_por_categoria", {"desde": "2026-06", "hasta": "2026-06"}, ctx
+    )
+    assert gasto["total_salidas"] == 0 and gasto["categorias"] == []
+    assert gasto["sin_movimientos"] is True
+    assert es_json_valido(flujo) and es_json_valido(gasto)
+
+
+def test_con_movimientos_no_marca_vacio(gold, tmp_path):
+    ctx = contexto(gold, tmp_path)
+    assert h.ejecutar("flujo_mensual", {}, ctx)["sin_movimientos"] is False
+    assert h.ejecutar("gasto_por_categoria", {}, ctx)["sin_movimientos"] is False
+    con_categoria = h.ejecutar("gasto_por_categoria", {"categoria": "comida"}, ctx)
+    assert con_categoria["sin_movimientos"] is False
+
+
+@pytest.mark.parametrize(
+    "nombre, argumentos, validos",
+    [
+        ("gasto_por_categoria", {"categoria": "viajes"}, h.CATEGORIAS),
+        ("flujo_mensual", {"desde": "marzo"}, ["2026-01 a 2027-02"]),
+        (
+            "flujo_mensual",
+            {"desde": "2027-02", "hasta": "2026-01"},
+            ["2026-01 a 2027-02"],
+        ),
+        ("gasto_por_categoria", {"hasta": "2027-13"}, ["2026-01 a 2027-02"]),
+        (
+            "flujo_mensual",
+            {"desde": "2030-01", "hasta": "2030-03"},
+            ["2026-01 a 2027-02"],
+        ),
+    ],
+)
+def test_error_incluye_los_valores_validos(gold, tmp_path, nombre, argumentos, validos):
+    resultado = h.ejecutar(nombre, argumentos, contexto(gold, tmp_path))
+    assert set(resultado) == {"error"}
+    for valido in validos:
+        assert valido in resultado["error"]

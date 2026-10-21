@@ -48,6 +48,24 @@ VACIOS = {"", "None", "none", "null", "NULL"}
 
 PATRON_MES = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 
+# Categorias de salida de gold_movimientos_mensuales (las de "ingreso" solo
+# tienen entradas).
+CATEGORIAS = [
+    "comida",
+    "transporte",
+    "entretenimiento",
+    "servicios",
+    "salud",
+    "educacion",
+    "hogar",
+    "ropa",
+    "suscripciones",
+    "otros",
+    "pago_deuda",
+    "efectivo",
+    "transferencia_personal",
+]
+
 # Variables del feature store que se pueden comparar contra el portafolio.
 VARIABLES_COMPARABLES = [
     "ingreso_mensual_promedio",
@@ -178,13 +196,20 @@ def _rango(
     llama3.1:8b, "los ultimos 3 meses" llego como desde 2027-01, hasta
     2027-04, ultimos_meses 3). Sin limites, la ventana
     de las features (los ultimos ventana_meses meses hasta el corte), la
-    misma de las metricas del cliente."""
+    misma de las metricas del cliente.
+
+    Un mes mal escrito o un rango fuera de los datos es un error que dice
+    que meses hay; un rango valido sin movimientos no lo es (la herramienta
+    devuelve 0 y sin_movimientos)."""
     meses = _meses_disponibles(ctx)
     if not meses:
         raise ErrorHerramienta(f"{ctx.cliente_id} no tiene movimientos en Gold")
+    disponibles = f"Hay movimientos de {meses[0]} a {meses[-1]}"
     for nombre, valor in (("desde", desde), ("hasta", hasta)):
         if valor is not None and not PATRON_MES.match(str(valor)):
-            raise ErrorHerramienta(f"{nombre} debe tener formato AAAA-MM: {valor!r}")
+            raise ErrorHerramienta(
+                f"{nombre} debe tener formato AAAA-MM: {valor!r}. {disponibles}"
+            )
     hasta = hasta or meses[-1]
     if ultimos_meses is not None:
         if ultimos_meses < 1:
@@ -194,7 +219,9 @@ def _rango(
         desde = datos.inicio_ventana(hasta, ultimos_meses)
     desde = desde or datos.inicio_ventana(meses[-1], ctx.ventana_meses)
     if desde > hasta:
-        raise ErrorHerramienta(f"desde ({desde}) es posterior a hasta ({hasta})")
+        raise ErrorHerramienta(
+            f"desde ({desde}) es posterior a hasta ({hasta}). {disponibles}"
+        )
     if hasta < meses[0] or desde > meses[-1]:
         raise ErrorHerramienta(
             f"Sin datos entre {desde} y {hasta}: hay movimientos de "
@@ -245,7 +272,13 @@ def gasto_por_categoria(
     ultimos_meses: int | None = None,
 ) -> dict:
     """Salidas del cliente por categoria en un rango de meses. Con
-    categoria, el detalle mes a mes de esa categoria."""
+    categoria, el detalle mes a mes de esa categoria. Una categoria que no
+    existe es un error con las validas; una que existe pero no tuvo salidas
+    en el rango da 0 y sin_movimientos: es una respuesta, no un error."""
+    if categoria is not None and categoria not in CATEGORIAS:
+        raise ErrorHerramienta(
+            f"Categoria no valida: {categoria!r}. Categorias validas: {CATEGORIAS}"
+        )
     desde, hasta = _rango(ctx, desde, hasta, ultimos_meses)
     with datos.conexion_gold(ctx.ruta_gold) as con:
         df = con.execute(
@@ -260,6 +293,7 @@ def gasto_por_categoria(
     total = float(df["total"].sum())
     resultado = {"desde": desde, "hasta": hasta, "total_salidas": _numero(total)}
     if categoria is None:
+        resultado["sin_movimientos"] = df.empty
         por_categoria = (
             df.groupby("categoria")["total"].sum().sort_values(ascending=False)
         )
@@ -272,16 +306,12 @@ def gasto_por_categoria(
             for nombre, monto in por_categoria.items()
         ]
         return resultado
-    if categoria not in set(df["categoria"]):
-        raise ErrorHerramienta(
-            f"Sin salidas en la categoria {categoria!r} entre {desde} y {hasta}. "
-            f"Categorias con salidas: {sorted(set(df['categoria']))}"
-        )
     de_categoria = df[df["categoria"] == categoria].sort_values("mes")
     subtotal = float(de_categoria["total"].sum())
     resultado.update(
         {
             "categoria": categoria,
+            "sin_movimientos": de_categoria.empty,
             "total_categoria": _numero(subtotal),
             "proporcion": _numero(subtotal / total if total else None, 4),
             "por_mes": [
@@ -315,6 +345,7 @@ def flujo_mensual(
             }
             for _, f in df.iterrows()
         ],
+        "sin_movimientos": df.empty,
         "neto_promedio": _numero(df["neto"].mean()),
         "meses_con_neto_negativo": int((df["neto"] < 0).sum()),
     }
@@ -489,21 +520,7 @@ HERRAMIENTAS = {
             "ultimos_meses": _ULTIMOS,
             "categoria": {
                 "type": "string",
-                "enum": [
-                    "comida",
-                    "transporte",
-                    "entretenimiento",
-                    "servicios",
-                    "salud",
-                    "educacion",
-                    "hogar",
-                    "ropa",
-                    "suscripciones",
-                    "otros",
-                    "pago_deuda",
-                    "efectivo",
-                    "transferencia_personal",
-                ],
+                "enum": CATEGORIAS,
                 "description": "Solo si pregunta por una categoria concreta; "
                 "entonces devuelve su detalle mes a mes",
             },
