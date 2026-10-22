@@ -88,6 +88,48 @@ print(con.sql('SELECT kpi_id, COUNT(*) AS clientes FROM gold_kpis GROUP BY 1 ORD
 | `bash demo.sh respaldar [destino]` | Copia sesiones, landing zone (MinIO), historico de calidad y referencia de deriva fuera del repo, con manifiesto SHA-256 (ver [Respaldo y restauracion](#respaldo-y-restauracion)) |
 | `bash demo.sh restaurar <respaldo>` | Verifica el respaldo y lo restaura en `data/`; despues `bash demo.sh` reconstruye todo lo demas |
 
+## Asistente (Ollama)
+
+La pagina Asistente del dashboard usa un modelo local con
+[Ollama](https://ollama.com): nada sale de la maquina. El resto del proyecto
+no lo necesita, y el CI tampoco (las pruebas del asistente usan un modelo
+falso).
+
+1. Instalar Ollama. En macOS con Homebrew:
+
+   ```bash
+   brew install ollama
+   brew services start ollama
+   ```
+
+   Sin Homebrew, la app de https://ollama.com/download hace lo mismo (deja el
+   servidor corriendo en la barra de menu). En Linux, el instalador de esa
+   pagina. En Mac con chip M usa la GPU; en Docker, en Mac, solo CPU y
+   bastante mas lento.
+
+2. Descargar el modelo (unos 5 GB) y comprobar que el servidor responde:
+
+   ```bash
+   ollama pull llama3.1:8b
+   curl -s localhost:11434/api/tags
+   ```
+
+3. Abrir el dashboard con el grupo de dependencias del asistente:
+
+   ```bash
+   uv run --group dashboard --group asistente streamlit run dashboard/app.py
+   ```
+
+Modelo, URL, temperatura y semilla viven en `config/asistente.yaml`. Si
+Ollama no responde, la pagina lo dice con el comando para arrancarlo.
+
+Para medir que herramienta elige el modelo en un conjunto fijo de preguntas
+(temperature 0, semilla fija, 3 corridas por pregunta):
+
+```bash
+uv run python experimentos/sondeo_herramientas.py
+```
+
 ## Respaldo y restauracion
 
 Bronze, Silver, Gold y el modelo se pueden reconstruir; lo que no se

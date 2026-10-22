@@ -43,7 +43,7 @@ flowchart LR
     C --> FS
     FS --> E[Modelo de riesgo<br/>XGBoost + SHAP]
     E -->|probabilidad_impago| D
-    D --> F[Asistente RAG<br/>pendiente]
+    D --> F[Asistente<br/>Ollama, local]
     D --> G[Dashboard<br/>Streamlit]
 
     H[Apache Airflow] -.orquesta.-> B
@@ -96,6 +96,7 @@ digital-twin-bbva/
 │   ├── kpi_catalog.yaml          # Metadata de los 12 KPIs de Gold
 │   ├── dashboard.yaml            # Rutas de lectura y bandas de riesgo del dashboard
 │   ├── simulacion.yaml           # Supuestos del simulador de hipoteca
+│   ├── asistente.yaml            # Modelo de Ollama, temperatura, semilla y límites de la conversación
 │   ├── monitoreo_psi.yaml        # Intervalos, epsilon y umbrales del monitoreo de deriva (PSI)
 │   └── etiquetas_impago.yaml     # Parámetros del modelo latente de la etiqueta de impago (pre-registrados)
 ├── src/
@@ -127,7 +128,10 @@ digital-twin-bbva/
 │   └── simulacion/
 │       └── montecarlo.py         # Simulador Monte Carlo de hipoteca (módulo puro, sin Spark)
 ├── asistente/
-│   └── herramientas.py          # Herramientas del asistente: cifras de Gold y del simulador, cliente fijado por la interfaz
+│   ├── herramientas.py           # Herramientas del asistente: cifras de Gold y del simulador, cliente fijado por la interfaz
+│   ├── conversacion.py           # Bucle de herramientas con Ollama (LangChain) y prompt de sistema
+│   ├── origen.py                 # Guardas: datos que el usuario no dio y vivienda evaluada como compra
+│   └── alcance.py                # Verificación previa: preguntas fuera de alcance (recomendaciones de inversión)
 ├── dags/
 │   └── gemelo_pipeline_dag.py    # DAG de Airflow (DockerOperator)
 ├── dashboard/
@@ -148,6 +152,9 @@ digital-twin-bbva/
 │   ├── test_generador_perfiles.py  # Perfil financiero estable por cliente en el generador
 │   ├── test_dashboard_datos.py   # Consultas del dashboard y lectura de logs
 │   ├── test_asistente_herramientas.py  # Herramientas del asistente: mismas cifras que el dashboard, errores sin excepciones
+│   ├── test_asistente_conversacion.py  # Bucle de conversación con un modelo falso (sin Ollama)
+│   ├── test_asistente_origen.py  # Guardas de datos inventados y de vivienda
+│   ├── test_asistente_alcance.py # Verificación previa de alcance
 │   ├── test_sesiones.py          # Reproducibilidad y reuso de sesiones de datos
 │   ├── test_pii.py               # Identificadores, HMAC Spark == Python, política de PII
 │   ├── test_landing.py           # Landing zone (S3 simulado) e ingesta incremental
@@ -259,6 +266,12 @@ uv run --group dashboard streamlit run dashboard/app.py
 
 Las bandas de riesgo (bajo, medio, alto) se configuran en `config/dashboard.yaml`.
 
+**Asistente.** Página del dashboard para preguntar en lenguaje natural sobre el cliente seleccionado y el portafolio, con un modelo local (`llama3.1:8b` en Ollama; nada sale de la máquina). El modelo no calcula cifras: elige una herramienta (perfil, gasto por categoría, flujo, comparación con el portafolio, hipoteca, compra de contado o a crédito, resumen del portafolio) y Python la ejecuta con las mismas consultas que las demás vistas. Cada respuesta muestra qué herramientas usó y qué devolvieron. Si a la pregunta le falta un dato (el precio de lo que se quiere comprar, el plazo y la tasa de un crédito), lo pregunta en vez de suponerlo. No da recomendaciones de inversión. Requiere Ollama con los modelos descargados ([docs/ejecucion-local.md](docs/ejecucion-local.md#asistente-ollama)):
+
+```bash
+uv run --group dashboard --group asistente streamlit run dashboard/app.py
+```
+
 **Simulador de hipoteca.** Responde, para un cliente, qué tan probable es que su saldo quede negativo en los próximos 36 meses si contrata una hipoteca, y cuál es el precio máximo de vivienda que puede asumir. Cada una de las 5,000 trayectorias arma el futuro eligiendo al azar meses del historial real del cliente (`gold_movimientos_mensuales`), más un choque de pérdida de ingreso que el historial no contiene; con y sin hipoteca se evalúan sobre los mismos meses simulados, así que la diferencia es solo el crédito. Los supuestos (tasa, plazo, enganche, gastos, choque y umbral de capacidad) están en `config/simulacion.yaml`. Está en el dashboard y en línea de comandos:
 
 ```bash
@@ -327,8 +340,8 @@ Catálogo de 12 KPIs en 5 categorías (ingresos, gastos, ahorro y liquidez, ries
 - [x] Arranque reproducible con un comando en cualquier máquina con Docker (`demo.sh`)
 - [x] Simulador Monte Carlo de hipoteca: riesgo de déficit con y sin el crédito, enganche y capacidad hipotecaria, en línea de comandos y en el dashboard
 - [x] Monitoreo de deriva de datos con PSI contra una línea base congelada, con histórico en `data/calidad/deriva_psi/` (detalle en [docs/monitoreo-deriva.md](docs/monitoreo-deriva.md))
-- [ ] Asistente conversacional RAG local (Ollama + Llama 3 + LangChain)
-- [x] Dashboard en Streamlit con tres vistas: portafolio, cliente y observabilidad (decisión en [docs/arquitectura.md](docs/arquitectura.md#decisiones-de-diseno))
+- [ ] Asistente conversacional RAG local (Ollama + Llama 3.1 + LangChain): herramientas, conversación y página listas; faltan el RAG sobre la documentación y la evaluación con preguntas no vistas
+- [x] Dashboard en Streamlit con las vistas de portafolio, cliente, simulador, asistente y observabilidad (decisión en [docs/arquitectura.md](docs/arquitectura.md#decisiones-de-diseno))
 
 ---
 
