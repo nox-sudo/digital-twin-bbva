@@ -228,6 +228,24 @@ levantar Spark.
 | `monto_total` | Suma de `monto` con el signo de Silver: positivo para entradas, negativo para salidas. El neto de un mes es la suma simple |
 | `n_movimientos` | Numero de transacciones agregadas |
 
+## Gold: gold_creditos_cliente
+
+Una fila por cuenta de credito (tarjeta o prestamo personal), sin PII. La
+escribe `build_features.py` desde Silver `cuentas` y la usa la escalera
+financiera (`src/gold/escalera.py`) para estimar el pago mensual comprometido
+sin leer Silver.
+
+| Columna | Tipo | Notas |
+|---|---|---|
+| `cliente_id` | string | |
+| `cuenta_id` | string | |
+| `tipo_cuenta` | string | `tarjeta_credito` o `prestamo_personal` |
+| `saldo_actual` | double | MXN |
+| `limite_credito` | double | MXN; solo tarjetas |
+| `monto_original` | double | MXN; solo prestamos |
+| `plazo_meses` | int | Solo prestamos |
+| `fecha_apertura` | date | |
+
 ## Gold: gold_etiquetas_impago
 
 Etiqueta de impago por cliente, generada por `generate_labels.py` como un evento posterior a las
