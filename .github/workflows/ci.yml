@@ -81,8 +81,10 @@ jobs:
           java-version: "21"
       - uses: astral-sh/setup-uv@v3
       - run: uv python install 3.11
-      - run: uv sync --frozen
-      - run: uv run pytest tests/ -v
+      # El grupo dashboard trae Streamlit para las pruebas de las vistas con
+      # AppTest (tests/test_moneda_mxn.py), sobre el Gold de las fixtures.
+      - run: uv sync --frozen --group dashboard
+      - run: uv run --group dashboard pytest tests/ -v
 
   # Smoke test del pipeline completo con volumen pequeno, para que sea
   # rapido en cada PR. El volumen es parametrizable via

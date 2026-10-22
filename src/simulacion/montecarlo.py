@@ -45,6 +45,8 @@ import duckdb
 import numpy as np
 import pandas as pd
 
+from src.common.formato import formato_mxn
+
 TIPOS_INGRESO_LABORAL = ("nomina", "deposito")
 
 
@@ -380,7 +382,8 @@ def capacidad_maxima(
         return Capacidad(
             None,
             SUPERA_TOPE,
-            f"Ni una vivienda de ${precio_tope:,.0f} sube el riesgo más de "
+            f"Ni una vivienda de {formato_mxn(precio_tope, estilo='cliente')} sube "
+            "el riesgo más de "
             f"{incremento_maximo * 100:.0f} puntos: la capacidad está por encima del "
             "rango que se busca.",
         )

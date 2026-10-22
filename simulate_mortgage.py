@@ -26,6 +26,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from src.common.formato import formato_mxn  # noqa: E402
 from src.simulacion.montecarlo import (  # noqa: E402
     Hipoteca,
     Supuestos,
@@ -58,7 +59,7 @@ def supuestos_desde_config(cfg: dict, semilla: int | None = None) -> Supuestos:
 
 
 def pesos(valor: float) -> str:
-    return f"{'-' if valor < 0 else ''}${abs(valor):,.0f}"
+    return formato_mxn(valor)
 
 
 def main():

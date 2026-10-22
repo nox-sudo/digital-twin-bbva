@@ -480,8 +480,8 @@ def test_comparacion_trae_la_lectura_armada(gold, tmp_path):
     )
     ahorro, riesgo = resultado["comparacion"]
     assert ahorro["lectura"] == (
-        "capacidad_ahorro: -3,000.00 (por debajo de la mediana del portafolio, "
-        "1,500.00); el 50.0 % de los clientes tiene un valor menor o igual."
+        "capacidad_ahorro: -$3,000 (por debajo de la mediana del portafolio, "
+        "$1,500); el 50.0 % de los clientes tiene un valor menor o igual."
     )
     assert "por encima de la mediana" in riesgo["lectura"]
     assert "Banda de riesgo del cliente: alto" in riesgo["lectura"]
@@ -498,7 +498,7 @@ def test_con_categoria_el_total_es_el_de_la_categoria(gold, tmp_path):
     assert list(resultado)[:4] == ["categoria", "desde", "hasta", "total_categoria"]
     assert resultado["total_categoria"] == 12000.0
     assert resultado["lectura"].startswith(
-        "Salidas en comida de 2027-01 a 2027-02: $12,000.00 ("
+        "Salidas en comida de 2027-01 a 2027-02: $12,000 ("
     )
 
 
@@ -527,7 +527,7 @@ def test_compra_de_contado_que_alcanza(gold, tmp_path):
     assert resultado["probabilidad_deficit_con_compra"] == pytest.approx(
         mc.resumir(saldos - 25000).probabilidad_deficit, abs=1e-4
     )
-    assert resultado["lectura"].startswith("De contado: el saldo ($30,000.00) alcanza")
+    assert resultado["lectura"].startswith("De contado: el saldo ($30,000) alcanza")
     assert es_json_valido(resultado)
 
 
@@ -563,7 +563,8 @@ def test_compra_a_credito_paga_cuota_solo_durante_el_plazo(gold, tmp_path):
         contexto(gold, tmp_path),
     )
     _, _, saldos = _montecarlo(gold, "CLI-1")
-    cuota = mc.cuota_fija(450000, 0.14, 6)
+    # IVA de 16 % sobre los intereses de un credito de consumo.
+    cuota = mc.cuota_fija(450000, 0.14 * 1.16, 6)
     pagados = np.minimum(np.arange(13), 6)
     assert resultado["cuota_mensual"] == pytest.approx(cuota, abs=0.01)
     assert resultado["probabilidad_deficit_con_compra"] == pytest.approx(
@@ -666,4 +667,35 @@ def test_escalera_financiera_del_cliente_del_contexto(gold, tmp_path):
     assert es_json_valido(con_credito) and es_json_valido(sin_credito)
     assert "error" in h.ejecutar(
         "escalera_financiera", {}, contexto(gold, tmp_path, "X")
+    )
+
+
+def test_iva_sobre_intereses_en_consumo_y_no_en_vivienda(gold, tmp_path):
+    from src.common.mercado import iva_sobre_intereses
+
+    assert iva_sobre_intereses("credito_consumo") == 0.16
+    assert iva_sobre_intereses("tarjeta_credito") == 0.16
+    assert iva_sobre_intereses("hipoteca_vivienda") == 0.0
+    with pytest.raises(ValueError):
+        iva_sobre_intereses("leasing")
+    credito = h.ejecutar(
+        "evaluar_compra",
+        {
+            "precio": 100000,
+            "forma_pago": "credito",
+            "plazo_meses": 12,
+            "tasa_anual": 0.2,
+        },
+        contexto(gold, tmp_path),
+    )
+    assert credito["iva_sobre_intereses"] == 0.16
+    assert "IVA de 16 % sobre los intereses" in credito["lectura"]
+    hipoteca = h.ejecutar(
+        "simular_hipoteca", {"precio": 900000}, contexto(gold, tmp_path)
+    )
+    assert hipoteca["cuota_mensual"] == pytest.approx(
+        mc.cuota_fija(810000, 0.11, 240), abs=0.01
+    )
+    assert hipoteca["cat_referencia"]["etiqueta"].startswith(
+        "CAT promedio de referencia BBVA (informativo, sin IVA"
     )
