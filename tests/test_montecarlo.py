@@ -128,7 +128,9 @@ def test_capacidad_maxima_esta_en_la_frontera():
     ahorro mensual (5,000) mas lo que el saldo inicial cubre en 24 meses."""
     historial = _historial(ingreso=25_000, salidas=20_000)
     muestras = mc.muestrear(12, SIN_CHOQUE)
-    capacidad = mc.capacidad_maxima(historial, 0.0, _hipoteca(1), muestras, 0.0)
+    resultado = mc.capacidad_maxima(historial, 0.0, _hipoteca(1), muestras, 0.0)
+    assert resultado.aplica and resultado.motivo is None
+    capacidad = resultado.monto
 
     cuota_en_capacidad = _hipoteca(capacidad).cuota_mensual
     cuota_un_poco_arriba = _hipoteca(capacidad + 20_000).cuota_mensual
@@ -168,3 +170,62 @@ def test_historial_desde_gold_rellena_meses_sin_movimientos(tmp_path):
     assert historial.salidas.tolist() == [8_000, 9_000, 0]
     with pytest.raises(ValueError, match="CLI-NO"):
         mc.historial_cliente(ruta, "CLI-NO")
+
+
+TOPE = 20_000_000
+
+
+def test_riesgo_saturado_no_aplica_en_vez_del_tope():
+    """Gasta mas de lo que gana: sin hipoteca ya queda en negativo en el 100 %
+    de los escenarios. Antes la capacidad salia en el tope (20,000,000)."""
+    historial = _historial(ingreso=15_000, salidas=18_000)
+    muestras = mc.muestrear(12, SIN_CHOQUE)
+    resultado = mc.capacidad_maxima(historial, 0.0, _hipoteca(1), muestras, 0.05)
+    assert resultado.monto is None
+    assert resultado.motivo == mc.RIESGO_SATURADO
+    assert "100 %" in resultado.detalle
+
+
+def test_riesgo_en_95_por_ciento_tambien_satura():
+    """Justo en el borde: 95 % sin hipoteca mas 5 puntos llega a 100 %."""
+    historial = _historial(ingreso=15_000, salidas=18_000)
+    muestras = mc.muestrear(12, SIN_CHOQUE)
+    saldo = 0.0
+    riesgo = mc.resumir(mc.simular(historial, saldo, muestras)).probabilidad_deficit
+    incremento = 1 - riesgo  # el limite queda exactamente en 1
+    resultado = mc.capacidad_maxima(
+        historial, saldo, _hipoteca(1), muestras, incremento
+    )
+    assert resultado.motivo == mc.RIESGO_SATURADO
+
+
+def test_supera_el_tope_no_aplica():
+    historial = _historial(ingreso=10_000_000, salidas=0)
+    muestras = mc.muestrear(12, SIN_CHOQUE)
+    resultado = mc.capacidad_maxima(historial, 0.0, _hipoteca(1), muestras, 0.0)
+    assert resultado.monto is None
+    assert resultado.motivo == mc.SUPERA_TOPE
+
+
+@pytest.mark.parametrize(
+    "ingreso, salidas, saldo",
+    [
+        (15_000, 18_000, 0.0),
+        (15_000, 14_900, 0.0),
+        (25_000, 20_000, 0.0),
+        (25_000, 20_000, 500_000.0),
+        (9_582.47, 9_000, 2_000.0),
+        (60_000, 30_000, 50_000.0),
+        (10_000_000, 0, 0.0),
+    ],
+)
+def test_ningun_cliente_sale_con_el_tope_como_capacidad(ingreso, salidas, saldo):
+    historial = _historial(ingreso=ingreso, salidas=salidas)
+    supuestos = mc.Supuestos(meses=36, trayectorias=500, semilla=42)
+    muestras = mc.muestrear(len(historial.meses), supuestos)
+    resultado = mc.capacidad_maxima(historial, saldo, _hipoteca(1), muestras, 0.05)
+    if resultado.aplica:
+        assert resultado.monto < TOPE - 10_000
+    else:
+        assert resultado.motivo in (mc.RIESGO_SATURADO, mc.SUPERA_TOPE)
+        assert resultado.detalle

@@ -244,6 +244,37 @@ entregas, hay que decidir de forma explicita como versionarlas.
 
 ## Resueltos
 
+### Capacidad hipotecaria en el tope de la busqueda (20,000,000)
+
+Encontrado el 2026-10-21 al probar el asistente: la capacidad hipotecaria de
+CLI-000283 salia en $20,000,000. La causa estaba en `capacidad_maxima`
+(`src/simulacion/montecarlo.py`), no en `simulate_mortgage.py` ni en
+`config/simulacion.yaml`: el criterio es que la hipoteca no suba la probabilidad
+de deficit mas de `incremento_deficit_maximo` (5 puntos) sobre la del cliente sin
+hipoteca. Con 95 % o mas de riesgo sin hipoteca el limite llega a 100 %, ningun
+precio lo rompe y la busqueda binaria devolvia el tope como si fuera la capacidad.
+No era un denominador en cero sino un limite que no restringe nada.
+
+Resuelto en `fix/capacidad-hipotecaria`: `capacidad_maxima` devuelve `Capacidad`,
+con monto o con "no aplica" y su motivo (`riesgo_saturado` o `supera_tope`), nunca
+un monto fijo. La vista del simulador muestra "No aplica" con el motivo, el CLI lo
+imprime y la herramienta `simular_hipoteca` del asistente devuelve
+`capacidad_hipotecaria: null` con `capacidad_no_aplica`. Una prueba falla si algun
+caso devuelve el tope como capacidad (con el codigo anterior fallan 6 pruebas).
+
+Clientes con la capacidad en el tope, antes y despues (precio de 900,000 y los
+supuestos de `config/simulacion.yaml`):
+
+| Gold | Antes: en el tope | Despues: en el tope | Despues: no aplica (riesgo saturado) |
+|---|---|---|---|
+| Instancia, ingresos de develop, 500 clientes (corte 2027-04) | 136 | 0 | 136 |
+| Base con los ingresos de `feature/ingresos-mexicanos`, 500 clientes | 85 | 0 | 85 |
+| Base de 5,000 clientes, ingresos de develop (1,000 trayectorias) | 929 | 0 | 929 |
+| Base de 5,000 clientes, ingresos nuevos (1,000 trayectorias) | 964 | 0 | 964 |
+
+Los demas clientes conservan el mismo monto. Todos los casos en el tope eran de
+riesgo saturado; `supera_tope` no aparecio en ninguna de las cuatro.
+
 ### Ingresos sinteticos por encima de los de Mexico
 
 Registrado el 2026-10-21, al revisar la data para la presentacion: el ingreso
