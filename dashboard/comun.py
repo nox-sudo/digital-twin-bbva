@@ -20,6 +20,7 @@ RAIZ = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(RAIZ))
 
 from dashboard import datos  # noqa: E402
+from src.common.formato import formato_mxn as _formato_mxn  # noqa: E402
 
 # Paleta. Dos series (entradas y salidas) usan los dos primeros colores
 # categoricos; las bandas de riesgo usan colores de estado, siempre con su
@@ -122,11 +123,11 @@ def gold_disponible() -> bool:
     return False
 
 
-def pesos(valor: float | None) -> str:
-    if valor is None or pd.isna(valor):
-        return "sin dato"
-    signo = "-" if valor < 0 else ""
-    return f"{signo}${abs(valor):,.0f}"
+# Unico formato de moneda del dashboard y del asistente. La funcion vive en
+# src/common/formato.py (sin Streamlit) para que la usen tambien el asistente
+# y la escalera financiera; aqui se reexporta. Estilo "admin" ("$20,407 MXN")
+# en las vistas de este dashboard; "cliente" ("$20,407") en texto natural.
+formato_mxn = _formato_mxn
 
 
 def porcentaje(valor: float | None, decimales: int = 0) -> str:

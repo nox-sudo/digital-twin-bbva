@@ -42,9 +42,9 @@ if comun.gold_disponible():
     c1.metric("Clientes", f"{resumen['clientes']:,}")
     c2.metric(
         "Ingreso mensual mediano",
-        comun.pesos(resumen["ingreso_mediano"]),
+        comun.formato_mxn(resumen["ingreso_mediano"]),
         delta=(
-            f"{comun.pesos(resumen['ingreso_mediano'] - base['ingreso_mediano'])} vs. base"
+            f"{comun.formato_mxn(resumen['ingreso_mediano'] - base['ingreso_mediano'])} vs. base"
             if base is not None
             else None
         ),
