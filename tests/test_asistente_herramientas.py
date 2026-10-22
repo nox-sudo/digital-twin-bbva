@@ -648,3 +648,22 @@ def test_ultimos_meses_cero_es_omitido(gold, tmp_path):
     assert h.ejecutar("gasto_por_categoria", {"ultimos_meses": 0}, ctx) == h.ejecutar(
         "gasto_por_categoria", {}, ctx
     )
+
+
+def test_escalera_financiera_del_cliente_del_contexto(gold, tmp_path):
+    con_credito = h.ejecutar(
+        "escalera_financiera", {}, contexto(gold, tmp_path, "CLI-2")
+    )
+    assert con_credito["paso_actual"] == "uso_tarjeta"
+    assert con_credito["numero_paso"] == 2 and con_credito["total_pasos"] == 6
+    assert "límite de tu tarjeta" in con_credito["lectura"]
+    assert con_credito["pago_deuda_comprometido"] > 0
+    sin_credito = h.ejecutar(
+        "escalera_financiera", {}, contexto(gold, tmp_path, "CLI-1")
+    )
+    assert sin_credito["paso_actual"] == "fondo_minimo"
+    assert sin_credito["pago_deuda_comprometido"] == 0
+    assert es_json_valido(con_credito) and es_json_valido(sin_credito)
+    assert "error" in h.ejecutar(
+        "escalera_financiera", {}, contexto(gold, tmp_path, "X")
+    )

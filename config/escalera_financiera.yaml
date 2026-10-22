@@ -1,0 +1,120 @@
+# config/escalera_financiera.yaml
+#
+# Escalera financiera de la vista cliente: en que paso esta cada cliente y que
+# le falta para el siguiente. El paso lo calcula Python (src/gold/escalera.py);
+# el asistente solo lo explica.
+#
+# Convencion del proyecto para cifras externas: cada una lleva valor, fuente,
+# url, tipo_fuente (primaria, secundaria o propia), fecha_dato y
+# fecha_consulta. Sin fuente verificable va como propia (regla del proyecto) o
+# null, nunca como un estimado atribuido a otro.
+
+fecha_consulta: 2026-10-21
+
+# Orden de los pasos. El paso actual de un cliente es el primero que no
+# cumple; si cumple todos, esta en "invertir".
+orden:
+  - pagos_deuda
+  - uso_tarjeta
+  - fondo_minimo
+  - ahorro
+  - fondo_meta
+  - invertir
+
+umbrales:
+  fondo_emergencia:
+    minimo_meses: 3
+    meta_meses: 6
+    # Meses de gastos mensuales que cubre el saldo liquido (cuenta digital).
+    fuente: "CONDUSEF, revista Proteja su Dinero: \"¡Que tu cartera no dé el grito!\""
+    url: https://revista.condusef.gob.mx/ahorro-general/2024/09/fondo-de-emergencia/
+    tipo_fuente: primaria
+    fecha_dato: 2024-09-01
+    fecha_consulta: 2026-10-21
+    nota: "Dice 'tres o seis meses de tus gastos mensuales'; se usa el gasto mensual observado (compras, pagos de deuda y retiros)."
+
+  pagos_deuda_max:
+    valor: 0.30
+    # Pago mensual comprometido de deuda entre el ingreso neto mensual de
+    # referencia. No es ratio_endeudamiento (saldo entre ingreso), que se
+    # queda como medida aparte.
+    fuente: "CONDUSEF, revista Proteja su Dinero: \"De la preocupación a la acción\""
+    url: https://revista.condusef.gob.mx/usuario-inteligente/economia-joven/2026/04/de-la-preocupacion-a-la-accion/
+    tipo_fuente: primaria
+    fecha_dato: 2026-04-01
+    fecha_consulta: 2026-10-21
+    nota: "'El pago de tus deudas no debería superar el 30% de tus ingresos netos'. Con ingreso variable, el mismo texto pide tomar como referencia el mes con menor ingreso del último año."
+
+  uso_tarjeta_max:
+    valor: 0.30
+    # Saldo de las tarjetas entre su limite.
+    fuente: "Regla del proyecto"
+    url: null
+    tipo_fuente: propia
+    fecha_dato: null
+    fecha_consulta: 2026-10-21
+    nota: "No se encontro en CONDUSEF (ni en su sitio ni en prensa que la cite); en prensa el 30 % atribuido a CONDUSEF es sobre el ingreso. Es una practica de scoring crediticio. Las fuentes de gobierno solo piden saldos bajos respecto al limite, sin cifra."
+
+  ahorro_min:
+    valor: 0.10
+    # (ingreso - salidas) entre ingreso, en promedio mensual de la ventana.
+    fuente: "Regla del proyecto"
+    url: null
+    tipo_fuente: propia
+    fecha_dato: null
+    fecha_consulta: 2026-10-21
+
+  invertir:
+    condicion: "Todos los pasos anteriores cubiertos"
+    fuente: "Regla del proyecto"
+    url: null
+    tipo_fuente: propia
+    fecha_dato: null
+    fecha_consulta: 2026-10-21
+
+# Ingreso variable: el cliente recibe la mayor parte de su ingreso laboral
+# como depositos (no nomina). Para el es el mes con menor ingreso de la
+# ventana, como pide CONDUSEF; para los demas, el promedio mensual.
+ingreso_variable:
+  proporcion_depositos_min: 0.5
+  tipo_fuente: propia
+  fecha_consulta: 2026-10-21
+
+# Supuestos del pago mensual comprometido (opcion C: comprometido como
+# medida, pagado como senal).
+pago_comprometido:
+  pago_minimo_tarjeta:
+    # El mayor entre (1.5 % del saldo + intereses con IVA) y 1.25 % del
+    # limite; si supera el saldo, el saldo.
+    saldo_pct: 0.015
+    limite_pct: 0.0125
+    fuente: "Banco de Mexico, Circular 13/2011, numeral 2.1 (copia publicada por la ABM)"
+    url: https://www.abm.org.mx/legislacion-y-regulacion/juridico/banxico/circulares/2011/Circular%2013%202011.pdf
+    tipo_fuente: primaria
+    fecha_dato: 2011-06-01
+    fecha_consulta: 2026-10-21
+    nota: "No se confirmo si sigue vigente sin cambios en 2026; cada banco puede cobrar un minimo mayor."
+  iva_intereses:
+    valor: 0.16
+    fuente: "Ley del Impuesto al Valor Agregado, articulo 1o (tasa del 16 %)"
+    url: https://www.diputados.gob.mx/LeyesBiblio/pdf/LIVA.pdf
+    tipo_fuente: primaria
+    fecha_dato: 2021-11-12  # ultima reforma publicada en el DOF
+    fecha_consulta: 2026-10-21
+    nota: "Se aplica a los intereses de tarjeta y prestamo personal. El generador sintetico no cobra IVA, asi que el pago observado de un cliente puntual puede quedar un poco abajo del comprometido."
+  tasas_anuales:
+    # Las del catalogo sintetico del generador (catalogo_productos.json), no
+    # tasas de mercado: pendientes de verificar contra Banxico o CONDUSEF
+    # (config/mercado_mx.yaml).
+    tarjeta_credito: 0.45
+    prestamo_personal: 0.28
+    fuente: "Catalogo sintetico del generador"
+    url: null
+    tipo_fuente: propia
+    fecha_dato: null
+    fecha_consulta: 2026-10-21
+
+# Senal de cumplimiento: meses recientes en que el cliente no pago nada de
+# deuda teniendo pagos comprometidos.
+cumplimiento:
+  meses_recientes: 3

@@ -72,10 +72,22 @@ codigo:
 |---|---|
 | `config/sesion.yaml` | Semilla, fecha de referencia y volumen de los datos |
 | `config/ingresos.yaml` | Ingreso declarado por ocupacion, calibrado a clientes bancarizados urbanos de Mexico |
+| `config/escalera_financiera.yaml` | Pasos y umbrales de la escalera financiera de la vista cliente, cada uno con su fuente |
 | `config/business_rules.yaml` | Reglas de calidad de Silver por entidad |
 | `config/monitoreo_psi.yaml` | Intervalos, epsilon y umbrales (vigilar, reentrenar) del monitoreo de deriva |
 | `config/politica_pii.yaml` | Que datos personales se protegen en Silver, y como |
 | `config/kpi_catalog.yaml` | Metadata de los KPIs de Gold |
+
+### Cifras externas
+
+Toda cifra que no genera el proyecto (tasas, CAT, salarios, umbrales de
+CONDUSEF) entra a la configuracion con valor, fuente, url, tipo de fuente
+(primaria, secundaria o propia), fecha del dato y fecha de consulta. Primaria
+es el organismo o la institucion (Banxico, CONDUSEF, CONASAMI, IMSS, INEGI, la
+pagina del producto del banco); secundaria, un medio que los cita; propia, una
+regla del proyecto sin fuente externa, dicha como tal. Sin fuente verificable,
+`null` o propia, nunca un estimado atribuido a otro. Ejemplos:
+`config/ingresos.yaml` y `config/escalera_financiera.yaml`.
 
 ## Decisiones de diseno
 
@@ -105,6 +117,7 @@ codigo:
 | Guardas deterministas antes de ejecutar una herramienta (`asistente/origen.py`) | Con `llama3.1:8b` el prompt no alcanzo: inventaba precios ("un BMW M4" llegaba con 2,500,000), tasas y enganches, y evaluaba un departamento como compra general. Un precio, plazo, tasa, enganche o renta solo se acepta si ese numero aparece en lo que escribio el usuario: si el dato es opcional se descarta y la herramienta usa su valor por defecto; si es obligatorio, el modelo recibe un error que le pide preguntarlo. Una vivienda evaluada con `evaluar_compra` se redirige a `simular_hipoteca` | Pedirle al modelo que corrija tras un rechazo (preguntaba al usuario datos que tenian valor por defecto), o confiar en el prompt |
 | Las herramientas devuelven la lectura ya armada (`lectura`) ademas de las cifras | Con los numeros sueltos el modelo hacia sus propias cuentas o tomaba el campo equivocado: contesto "cuanto pague de deuda" con el total de todas las salidas y leyo 99.98 % de deficit como "muy baja". La frase la arma Python, con la advertencia cuando con la compra es mas probable quedar en saldo negativo que no | Solo cifras, y reglas de redaccion en el prompt |
 | Recomendaciones de inversion se detienen antes del modelo (`asistente/alcance.py`) | Una regla aislada con su prueba: ajustar el limite es cambiar un archivo. El modelo, ante "que acciones me recomiendas", llamaba a una herramienta en vez de negarse. Provisional hasta definir el limite en la sesion de seguimiento | Una regla en el prompt (el modelo no la siguio) |
+| Escalera financiera calculada en Python (`src/gold/escalera.py`) | El paso de cada cliente lo deciden reglas con fuente (`config/escalera_financiera.yaml`); el asistente solo lo explica. La deuda se mide como CONDUSEF: pago mensual comprometido (cuota del prestamo y pago minimo de tarjeta de Banxico, con IVA sobre intereses) entre ingreso neto, con el mes de menor ingreso para ingreso variable. El pago observado es una senal (meses sin pago), no la medida: con el observado, el cliente que deja de pagar se veria menos endeudado. `ratio_endeudamiento` (saldo entre ingreso) queda como medida aparte; en la instancia, 199 de 333 clientes con deuda cambian de resultado segun cual se use | Que el modelo decida el paso; usar los pagos observados o `ratio_endeudamiento` para la regla del 30 % |
 
 ## Como se verifica
 

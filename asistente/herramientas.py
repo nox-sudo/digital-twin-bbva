@@ -39,6 +39,7 @@ import pandas as pd
 import yaml
 
 from dashboard import datos
+from src.gold import escalera as esc
 from src.simulacion import montecarlo as mc
 
 RAIZ = Path(__file__).resolve().parents[1]
@@ -705,6 +706,40 @@ def evaluar_compra(
     return resultado
 
 
+def escalera_financiera(ctx: Contexto) -> dict:
+    """Paso de la escalera financiera del cliente (src/gold/escalera.py,
+    config/escalera_financiera.yaml). El paso lo decide Python; el modelo
+    solo lo explica con la lectura."""
+    try:
+        e = esc.calcular(ctx.ruta_gold, ctx.cliente_id, ctx.ventana_meses)
+    except ValueError as error:
+        raise ErrorHerramienta(str(error)) from error
+    m = e.metricas
+    return {
+        "paso_actual": e.paso_actual,
+        "numero_paso": e.numero_paso,
+        "total_pasos": len(e.pasos),
+        "nombre_paso": esc.NOMBRES[e.paso_actual],
+        "lectura": e.lectura,
+        "pasos": [
+            {
+                "paso": p.paso,
+                "nombre": p.nombre,
+                "cumple": p.cumple,
+                "aplica": p.aplica,
+                "valor": _numero(p.valor, 4),
+                "umbral": p.umbral,
+            }
+            for p in e.pasos
+        ],
+        "pago_deuda_comprometido": _numero(m["pago_comprometido"]),
+        "ingreso_referencia": _numero(m["ingreso_referencia"]),
+        "ingreso_variable": m["ingreso_variable"],
+        "meses_sin_pago_recientes": e.cumplimiento["meses_sin_pago"],
+        "supuestos": e.supuestos,
+    }
+
+
 def resumen_portafolio(ctx: Contexto) -> dict:
     """Cifras de cabecera del portafolio, su cambio contra la base y la
     distribucion por banda de riesgo, como en la vista Portafolio."""
@@ -849,6 +884,15 @@ HERRAMIENTAS = {
             },
         },
         "requeridos": ["precio", "forma_pago"],
+    },
+    "escalera_financiera": {
+        "funcion": escalera_financiera,
+        "descripcion": "En que paso de la escalera financiera esta el cliente "
+        "(deudas, tarjeta, fondo de emergencia, ahorro, invertir) y que le falta "
+        "para el siguiente. Para preguntas como 'como voy con mis finanzas' o 'que "
+        "deberia hacer primero'. Explica el paso que devuelve; no lo cambies.",
+        "parametros": {},
+        "requeridos": [],
     },
     "resumen_portafolio": {
         "funcion": resumen_portafolio,

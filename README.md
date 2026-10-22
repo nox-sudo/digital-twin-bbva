@@ -91,6 +91,7 @@ digital-twin-bbva/
 ├── config/
 │   ├── sesion.yaml               # Parámetros de la sesión de datos (semilla, fecha, volumen, escenario de deriva)
 │   ├── ingresos.yaml             # Ingreso declarado por ocupación (mediana, dispersión, piso de salario mínimo) y sus referencias
+│   ├── escalera_financiera.yaml  # Pasos y umbrales de la escalera financiera, con fuente (CONDUSEF, Banxico)
 │   ├── features.yaml             # Ventana de meses de las features de flujo (12)
 │   ├── business_rules.yaml       # Reglas de calidad de Silver, declarativas
 │   ├── politica_pii.yaml         # Qué datos personales se protegen en Silver, y cómo
@@ -107,6 +108,7 @@ digital-twin-bbva/
 │   │   ├── identificadores.py    # CURP y RFC: construcción y validación (RENAPO/SAT)
 │   │   ├── secretos.py           # Lectura de secretos desde entorno o .env
 │   │   ├── escenario_deriva.py   # Escenario de deriva del generador (apagado por defecto)
+│   │   ├── formato.py            # formato_mxn: montos en pesos para dashboard, asistente y escalera
 │   │   └── logging_utils.py      # Logging estructurado por entidad
 │   ├── bronze/
 │   │   └── control.py            # Registro de control de la ingesta incremental (archivo + SHA-256)
@@ -119,7 +121,8 @@ digital-twin-bbva/
 │   │   └── registro.py           # Registro histórico: incidencias, perfil de nulos, errores de tipo
 │   ├── gold/
 │   │   ├── kpi_definitions.py    # Lógica de cálculo de cada KPI
-│   │   ├── risk_features.py      # Feature store: construir, persistir y leer features
+│   │   ├── risk_features.py      # Feature store y gold_creditos_cliente: construir, persistir y leer
+│   │   ├── escalera.py           # Escalera financiera: paso del cliente con umbrales de CONDUSEF
 │   │   ├── movimientos.py        # gold_movimientos_mensuales: transacciones por cliente y mes
 │   │   ├── etiquetas_impago.py   # Modelo latente de la etiqueta de impago (módulo puro)
 │   │   └── etiquetas_gold.py     # Lectura/escritura de gold_etiquetas_impago y verificación del esquema
@@ -156,6 +159,7 @@ digital-twin-bbva/
 │   ├── test_asistente_conversacion.py  # Bucle de conversación con un modelo falso (sin Ollama)
 │   ├── test_asistente_origen.py  # Guardas de datos inventados y de vivienda
 │   ├── test_asistente_alcance.py # Verificación previa de alcance
+│   ├── test_escalera.py          # Escalera financiera: un cliente por paso, sin crédito, ingreso variable, pagos omitidos
 │   ├── test_sesiones.py          # Reproducibilidad y reuso de sesiones de datos
 │   ├── test_pii.py               # Identificadores, HMAC Spark == Python, política de PII
 │   ├── test_landing.py           # Landing zone (S3 simulado) e ingesta incremental

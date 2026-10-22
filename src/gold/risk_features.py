@@ -35,6 +35,10 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 TABLA_FEATURES = "gold_features_cliente"
+# Una fila por cuenta de credito (tarjeta o prestamo), sin PII. La usa la
+# escalera financiera (src/gold/escalera.py) para estimar el pago mensual
+# comprometido sin leer Silver.
+TABLA_CREDITOS = "gold_creditos_cliente"
 
 # Columnas de la tabla que describen la fila, no al cliente: se excluyen
 # al preparar la matriz para el modelo. fecha_corte es la fecha hasta la
@@ -193,6 +197,43 @@ def construir_features(
 
     logger.info("Features listas: %d filas, %d columnas", *features.shape)
     return features
+
+
+def creditos_silver(spark, silver_path: str) -> pd.DataFrame:
+    """Cuentas de credito de Silver (tarjeta y prestamo personal) con lo que
+    hace falta para estimar el pago mensual: saldo, limite, monto original y
+    plazo."""
+    from pyspark.sql import functions as F
+
+    cuentas = spark.read.format("delta").load(f"{silver_path}/cuentas")
+    creditos = cuentas.filter(
+        F.col("tipo_cuenta").isin("tarjeta_credito", "prestamo_personal")
+    ).select(
+        "cliente_id",
+        "cuenta_id",
+        "tipo_cuenta",
+        F.col("saldo_actual").cast("double").alias("saldo_actual"),
+        F.col("limite_credito").cast("double").alias("limite_credito"),
+        F.col("monto_original").cast("double").alias("monto_original"),
+        F.col("plazo_meses").cast("int").alias("plazo_meses"),
+        F.col("fecha_apertura").cast("date").alias("fecha_apertura"),
+    )
+    return creditos.toPandas()
+
+
+def escribir_creditos(creditos: pd.DataFrame, gold_duckdb_path: str) -> int:
+    """Reemplaza gold_creditos_cliente completa, como gold_features_cliente."""
+    con = duckdb.connect(gold_duckdb_path)
+    try:
+        con.register("creditos_df", creditos)
+        con.execute(
+            f"CREATE OR REPLACE TABLE {TABLA_CREDITOS} AS SELECT * FROM creditos_df"
+        )
+        n_filas = con.execute(f"SELECT COUNT(*) FROM {TABLA_CREDITOS}").fetchone()[0]
+    finally:
+        con.close()
+    logger.info("%s escrita: %d cuentas de credito", TABLA_CREDITOS, n_filas)
+    return n_filas
 
 
 def escribir_features(features: pd.DataFrame, gold_duckdb_path: str) -> int:

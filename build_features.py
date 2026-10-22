@@ -2,7 +2,9 @@
 build_features.py
 
 Construye la tabla de features por cliente (gold_features_cliente) y la
-persiste en el DuckDB de Gold, junto a gold_kpis. Es el feature store
+persiste en el DuckDB de Gold, junto a gold_kpis. Escribe tambien
+gold_creditos_cliente (una fila por tarjeta o prestamo), que usa la escalera
+financiera. Es el feature store
 ligero del proyecto: la fuente unica de features para el modelo de
 riesgo, el dashboard, el simulador y el asistente RAG.
 
@@ -26,6 +28,8 @@ from src.gold.kpi_definitions import cargar_ventana  # noqa: E402
 from src.gold.risk_features import (  # noqa: E402
     TABLA_FEATURES,
     construir_features,
+    creditos_silver,
+    escribir_creditos,
     escribir_features,
 )
 
@@ -50,6 +54,7 @@ def main():
     spark = get_spark_session("construir_features")
     try:
         features = construir_features(spark, args.silver, args.gold, ventana_meses)
+        creditos = creditos_silver(spark, args.silver)
     except Exception:
         logger.exception("Fallo la construccion de features")
         raise
@@ -57,6 +62,7 @@ def main():
         spark.stop()
 
     escribir_features(features, args.gold)
+    escribir_creditos(creditos, args.gold)
 
 
 if __name__ == "__main__":
