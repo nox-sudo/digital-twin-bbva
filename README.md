@@ -96,7 +96,7 @@ digital-twin-bbva/
 │   ├── business_rules.yaml       # Reglas de calidad de Silver, declarativas
 │   ├── politica_pii.yaml         # Qué datos personales se protegen en Silver, y cómo
 │   ├── kpi_catalog.yaml          # Metadata de los 12 KPIs de Gold
-│   ├── dashboard.yaml            # Rutas de lectura y bandas de riesgo del dashboard
+│   ├── dashboard.yaml            # Rutas de lectura (Gold, usuarios) y bandas de riesgo del dashboard
 │   ├── simulacion.yaml           # Supuestos del simulador de hipoteca
 │   ├── asistente.yaml            # Modelo de Ollama, temperatura, semilla y límites de la conversación
 │   ├── monitoreo_psi.yaml        # Intervalos, epsilon y umbrales del monitoreo de deriva (PSI)
@@ -108,6 +108,7 @@ digital-twin-bbva/
 │   │   ├── identificadores.py    # CURP y RFC: construcción y validación (RENAPO/SAT)
 │   │   ├── secretos.py           # Lectura de secretos desde entorno o .env
 │   │   ├── escenario_deriva.py   # Escenario de deriva del generador (apagado por defecto)
+│   │   ├── usuarios.py           # Usuarios del dashboard: contraseñas aleatorias, hashes argon2id, verificación
 │   │   ├── formato.py            # formato_mxn: montos en pesos para dashboard, asistente y escalera
 │   │   └── logging_utils.py      # Logging estructurado por entidad
 │   ├── bronze/
@@ -139,7 +140,8 @@ digital-twin-bbva/
 ├── dags/
 │   └── gemelo_pipeline_dag.py    # DAG de Airflow (DockerOperator)
 ├── dashboard/
-│   ├── app.py                    # Entrada de Streamlit y navegación
+│   ├── app.py                    # Entrada de Streamlit, inicio de sesión y navegación por rol
+│   ├── acceso.py                 # Login, páginas por rol y cliente de la sesión (cliente_actual)
 │   ├── datos.py                  # Consultas de solo lectura a Gold y a los logs (sin Streamlit)
 │   ├── comun.py                  # Caché, formato y paleta compartidos
 │   └── paginas/                  # portafolio.py, cliente.py, simulador.py, observabilidad.py
@@ -159,6 +161,7 @@ digital-twin-bbva/
 │   ├── test_asistente_conversacion.py  # Bucle de conversación con un modelo falso (sin Ollama)
 │   ├── test_asistente_origen.py  # Guardas de datos inventados y de vivienda
 │   ├── test_asistente_alcance.py # Verificación previa de alcance
+│   ├── test_acceso.py            # Login y roles: solo hashes, credenciales ignoradas por git, un cliente no ve a otro
 │   ├── test_escalera.py          # Escalera financiera: un cliente por paso, sin crédito, ingreso variable, pagos omitidos
 │   ├── test_sesiones.py          # Reproducibilidad y reuso de sesiones de datos
 │   ├── test_pii.py               # Identificadores, HMAC Spark == Python, política de PII
@@ -195,6 +198,7 @@ digital-twin-bbva/
 ├── train_model.py
 ├── predict_risk.py
 ├── monitor_drift.py
+├── generate_credentials.py      # Usuarios del dashboard (admin y uno por cliente), solo hashes en la base
 ├── quality_report.py             # Reporte del registro histórico de calidad
 ├── pipeline_summary.py           # Reporte visual HTML: volumen por capa en la última corrida
 ├── Dockerfile                    # Imagen del worker (PySpark + Delta)
@@ -268,6 +272,14 @@ Dos reportes, para preguntas distintas:
 ```bash
 uv run --group dashboard streamlit run dashboard/app.py
 ```
+
+**Inicio de sesión.** El dashboard pide usuario y contraseña, con dos roles: `admin` ve todas las vistas y elige al cliente; un cliente entra con su `cliente_id` y solo ve sus propios datos (Mi resumen, Simulador y Asistente), sin selector. El cliente sale de la sesión, nunca de la URL ni de un argumento del asistente. Los usuarios se crean a partir de los clientes de Gold, con contraseñas aleatorias nuevas en cada corrida:
+
+```bash
+uv run --group dashboard python generate_credentials.py
+```
+
+La base `data/auth/usuarios.duckdb` guarda solo el hash argon2id de cada contraseña; las contraseñas en claro quedan en `data/credenciales_prueba.md`, dentro de `data/`, que git ignora. Volver a correrlo invalida las anteriores.
 
 Las bandas de riesgo (bajo, medio, alto) se configuran en `config/dashboard.yaml`.
 

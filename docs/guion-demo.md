@@ -60,9 +60,11 @@ construida.
    bash demo.sh respaldar
    ```
 
-6. **Abrir el dashboard:**
+6. **Crear los usuarios y abrir el dashboard.** Las contraseñas (nuevas en
+   cada corrida) quedan en `data/credenciales_prueba.md`:
 
    ```bash
+   uv run --group dashboard python generate_credentials.py
    uv run --group dashboard streamlit run dashboard/app.py
    ```
 
