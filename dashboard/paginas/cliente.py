@@ -37,7 +37,7 @@ if comun.gold_disponible():
             return "Sin dato para este cliente."
         return (
             f"Mayor o igual que el {percentil:.0%} de los clientes. "
-            f"Mediana del portafolio: {comun.pesos(mediana)}."
+            f"Mediana del portafolio: {comun.formato_mxn(mediana)}."
         )
 
     # --- Riesgo -----------------------------------------------------------
@@ -57,26 +57,26 @@ if comun.gold_disponible():
     c1, c2, c3, c4 = st.columns(4)
     c1.metric(
         "Ingreso mensual",
-        comun.pesos(fila["ingreso_mensual_promedio"]),
+        comun.formato_mxn(fila["ingreso_mensual_promedio"]),
         help=contexto("ingreso_mensual_promedio")
         + f" Promedio de los últimos {cfg['ventana_meses']} meses.",
     )
     c2.metric(
         "Gasto mensual",
-        comun.pesos(fila["gasto_mensual_total"]),
+        comun.formato_mxn(fila["gasto_mensual_total"]),
         help=contexto("gasto_mensual_total")
         + f" Promedio de los últimos {cfg['ventana_meses']} meses.",
     )
     c3.metric(
         "Capacidad de ahorro",
-        comun.pesos(fila["capacidad_ahorro"]),
+        comun.formato_mxn(fila["capacidad_ahorro"]),
         help=contexto("capacidad_ahorro")
         + " Ingreso menos compras, pagos de deuda y retiros, en promedio mensual"
         + f" de los últimos {cfg['ventana_meses']} meses.",
     )
     c4.metric(
         "Saldo disponible",
-        comun.pesos(fila["saldo_liquido_disponible"]),
+        comun.formato_mxn(fila["saldo_liquido_disponible"]),
         help=contexto("saldo_liquido_disponible"),
     )
 
@@ -138,7 +138,7 @@ if comun.gold_disponible():
         meses_negativos = int((en_ventana["neto"] < 0).sum())
         st.caption(
             f"Últimos {ventana} meses: neto promedio de "
-            f"{comun.pesos(en_ventana['neto'].mean())} al mes; salidas mayores que "
+            f"{comun.formato_mxn(en_ventana['neto'].mean())} al mes; salidas mayores que "
             f"entradas en {meses_negativos} de {len(en_ventana)} meses. La gráfica "
             f"muestra todo el historial ({len(flujo)} meses)."
         )

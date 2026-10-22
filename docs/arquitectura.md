@@ -73,6 +73,7 @@ codigo:
 | `config/sesion.yaml` | Semilla, fecha de referencia y volumen de los datos |
 | `config/ingresos.yaml` | Ingreso declarado por ocupacion, calibrado a clientes bancarizados urbanos de Mexico |
 | `config/escalera_financiera.yaml` | Pasos y umbrales de la escalera financiera de la vista cliente, cada uno con su fuente |
+| `config/mercado_mx.yaml` | Cifras de mercado de referencia (tasa objetivo de Banxico, CAT de BBVA y promedio, IVA sobre intereses con su fundamento), cada una con su fuente |
 | `config/business_rules.yaml` | Reglas de calidad de Silver por entidad |
 | `config/monitoreo_psi.yaml` | Intervalos, epsilon y umbrales (vigilar, reentrenar) del monitoreo de deriva |
 | `config/politica_pii.yaml` | Que datos personales se protegen en Silver, y como |

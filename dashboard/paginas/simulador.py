@@ -11,6 +11,7 @@ import streamlit as st
 import yaml
 
 from dashboard import comun
+from src.common.mercado import cargar_mercado
 from src.simulacion import montecarlo as mc
 
 st.title("Simulador de hipoteca")
@@ -113,6 +114,18 @@ if comun.gold_disponible():
         "distingue la renta de otros gastos, así que se indica aquí.",
     )
 
+    # Referencia de mercado junto a la tasa: informativa, no es el CAT de esta
+    # simulacion (config/mercado_mx.yaml, con fuente y fecha).
+    ref = cargar_mercado()["hipoteca_bbva_fija"]
+    st.caption(
+        f"Tasa del simulador: {tasa_pct:.2f} % anual fija, sin IVA sobre intereses "
+        "(crédito a la vivienda exento, LIVA art. 15, fr. X, inc. d). "
+        f"{ref['etiqueta']}: {ref['cat_promedio_sin_iva'] * 100:.1f} %, con tasa de "
+        f"{ref['tasa_calculo_cat'] * 100:.2f} %, plazo de {ref['plazo_calculo_anios']} "
+        f"años y aforo de {ref['aforo_calculo'] * 100:.0f} %. No es el CAT de este "
+        "cliente."
+    )
+
     r = correr(version, cliente_id, float(precio), enganche, plazo, tasa, float(renta))
     hipoteca: mc.Hipoteca = r["hipoteca"]
     sin: mc.Resultado = r["sin"]
@@ -133,8 +146,8 @@ if comun.gold_disponible():
     )
     m1.metric(
         "Cuota mensual",
-        comun.pesos(hipoteca.cuota_mensual),
-        help=f"Crédito de {comun.pesos(hipoteca.monto_credito)}. "
+        comun.formato_mxn(hipoteca.cuota_mensual),
+        help=f"Crédito de {comun.formato_mxn(hipoteca.monto_credito)}. "
         + (
             f"Equivale al {proporcion:.0%} de su ingreso laboral medio."
             if proporcion
@@ -155,7 +168,7 @@ if comun.gold_disponible():
     capacidad = r["capacidad"]
     m4.metric(
         "Capacidad hipotecaria",
-        comun.pesos(capacidad.monto) if capacidad.aplica else "No aplica",
+        comun.formato_mxn(capacidad.monto) if capacidad.aplica else "No aplica",
         help=(
             f"Precio máximo de vivienda con el que la hipoteca no sube el riesgo más de "
             f"{r['incremento'] * 100:.0f} puntos, con este enganche, plazo y tasa."
@@ -172,8 +185,8 @@ if comun.gold_disponible():
     meses_enganche = r["meses_enganche"]
     # En st.info y similares, Streamlit interpreta "$...$" como formula; se
     # escapa el signo de pesos.
-    pago_inicial = comun.pesos(hipoteca.pago_inicial).replace("$", "\\$")
-    ahorro = comun.pesos(r["ahorro_medio"]).replace("$", "\\$")
+    pago_inicial = comun.formato_mxn(hipoteca.pago_inicial).replace("$", "\\$")
+    ahorro = comun.formato_mxn(r["ahorro_medio"]).replace("$", "\\$")
     if meses_enganche == 0:
         st.success(
             f"Enganche y gastos ({pago_inicial}): los cubre con su saldo actual."
@@ -237,7 +250,7 @@ if comun.gold_disponible():
         "Debajo de la línea punteada, el saldo no alcanza."
     )
 
-    saldo_md = comun.pesos(r["saldo"]).replace("$", "\\$")
+    saldo_md = comun.formato_mxn(r["saldo"]).replace("$", "\\$")
     with st.expander("Cómo se calcula y qué supone"):
         choque = config_simulacion()["choque_ingreso"]
         st.markdown(f"""

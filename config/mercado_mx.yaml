@@ -1,0 +1,103 @@
+# config/mercado_mx.yaml
+#
+# Cifras de mercado de Mexico que muestran el simulador y el asistente, como
+# referencia. No son condiciones ofrecidas al cliente ni las calcula el
+# proyecto: el simulador muestra el CAT de referencia junto a la tasa, sin
+# calcular un CAT propio.
+#
+# Convencion del proyecto (docs/arquitectura.md, "Cifras externas"): valor,
+# fuente, url, tipo_fuente (primaria, secundaria o propia), fecha_dato y
+# fecha_consulta. Sin fuente verificable: null y estado pendiente.
+
+banxico_tasa_objetivo:
+  valor: 0.0650
+  fuente: "Banco de Mexico, Anuncio de Politica Monetaria, comunicado de prensa del 24 de septiembre de 2026"
+  url: https://www.banxico.org.mx/canales/%7B64E93EB1-E9FF-891E-60C6-9BBC812A50C6%7D.pdf
+  tipo_fuente: primaria
+  fecha_dato: 2026-09-24
+  fecha_consulta: 2026-10-22
+  nota: "Se mantiene en 6.50 %; la siguiente decision es en noviembre de 2026."
+
+hipoteca_bbva_fija:
+  # CAT promedio sin IVA del producto, con la tasa y los supuestos con que lo
+  # calcula BBVA. Es informativo: no es el CAT del cliente del simulador.
+  cat_promedio_sin_iva: 0.133
+  tasa_calculo_cat: 0.112
+  tasa_desde: 0.0905
+  plazo_calculo_anios: 15
+  aforo_calculo: 0.80
+  comision_contratacion: 0.01
+  fecha_calculo: 2026-06-30
+  vigencia_hasta: 2026-12-27
+  fuente: "BBVA Mexico, pagina de Hipoteca Fija"
+  url: https://www.bbva.mx/personas/productos/creditos/credito-hipotecario/hipoteca-bancomer-fija.html
+  tipo_fuente: primaria
+  fecha_dato: 2026-06-30
+  fecha_consulta: 2026-10-22
+  nota: "La pagina anuncia 'desde 9.05 %' y en otra seccion 'desde 9.15 %'; el CAT de 13.3 % esta calculado con 11.20 %."
+  etiqueta: "CAT promedio de referencia BBVA (informativo, sin IVA, calculado al 30 jun 2026)"
+
+cat_hipotecario_promedio:
+  valor: 0.1396
+  tasa_promedio: 0.1146
+  fuente: "Lider Empresarial, con datos de Banco de Mexico"
+  url: https://www.liderempresarial.com/banxico-mantiene-la-tasa-como-afecta-a-tu-credito-y-ahorro/
+  tipo_fuente: secundaria
+  fecha_dato: 2026-04-30
+  fecha_consulta: 2026-10-21
+  nota: "Abril de 2026. Fuente primaria pendiente: indicadores de credito a la vivienda de Banxico."
+
+iva:
+  tasa_general:
+    valor: 0.16
+    fuente: "Ley del Impuesto al Valor Agregado, articulo 1o"
+    url: https://www.diputados.gob.mx/LeyesBiblio/pdf/LIVA.pdf
+    tipo_fuente: primaria
+    fecha_dato: 2021-11-12  # ultima reforma publicada en el DOF
+    fecha_consulta: 2026-10-22
+  intereses:
+    # Donde aplica el 16 % sobre los intereses de un credito.
+    hipoteca_vivienda: false
+    tarjeta_credito: true
+    prestamo_personal: true
+    credito_consumo: true
+    fundamento: >-
+      LIVA art. 15, fraccion X. Inciso d): exentos los intereses de creditos
+      hipotecarios o con garantia fiduciaria para adquirir, ampliar, construir o
+      reparar casa habitacion. Inciso b): la exencion de los intereses que cobran
+      las instituciones de credito no aplica a creditos a personas fisicas sin
+      actividad empresarial, ni a creditos otorgados a traves de tarjetas de
+      credito.
+    url: https://www.diputados.gob.mx/LeyesBiblio/pdf/LIVA.pdf
+    tipo_fuente: primaria
+    fecha_dato: 2021-11-12
+    fecha_consulta: 2026-10-22
+    nota: "Simplificacion del proyecto: se aplica a todo credito de consumo de persona fisica. Una persona con actividad empresarial puede estar exenta en creditos de inversion (mismo inciso b)."
+
+# Tasas de productos de consumo: pendientes de verificar contra Banxico
+# (indicadores basicos de credito) o CONDUSEF. El generador usa las de su
+# catalogo sintetico (catalogo_productos.json), que no son de mercado.
+tarjeta_credito_tasa:
+  valor: null
+  estado: pendiente de verificar contra Banxico o CONDUSEF
+  fuente: null
+  url: null
+  tipo_fuente: null
+  fecha_dato: null
+  fecha_consulta: 2026-10-22
+prestamo_personal_tasa:
+  valor: null
+  estado: pendiente de verificar contra Banxico o CONDUSEF
+  fuente: null
+  url: null
+  tipo_fuente: null
+  fecha_dato: null
+  fecha_consulta: 2026-10-22
+cetes_tasa:
+  valor: null
+  estado: pendiente de verificar contra Banxico
+  fuente: null
+  url: null
+  tipo_fuente: null
+  fecha_dato: null
+  fecha_consulta: 2026-10-22

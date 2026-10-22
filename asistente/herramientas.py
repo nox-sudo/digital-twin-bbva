@@ -39,6 +39,8 @@ import pandas as pd
 import yaml
 
 from dashboard import datos
+from src.common.formato import formato_mxn
+from src.common.mercado import cargar_mercado, iva_sobre_intereses
 from src.gold import escalera as esc
 from src.simulacion import montecarlo as mc
 
@@ -84,6 +86,14 @@ VARIABLES_COMPARABLES = [
     "estabilidad_ingreso",
     "probabilidad_impago",
 ]
+
+# Las que estan en pesos: en la lectura van con formato_mxn.
+VARIABLES_EN_PESOS = {
+    "ingreso_mensual_promedio",
+    "gasto_mensual_total",
+    "capacidad_ahorro",
+    "saldo_liquido_disponible",
+}
 
 # Mismos rangos que los controles de la pagina del simulador.
 PLAZOS_ANIOS = [5, 10, 15, 20, 25, 30]
@@ -132,6 +142,11 @@ class Contexto:
 # ---------------------------------------------------------------------------
 # Utilidades
 # ---------------------------------------------------------------------------
+
+
+def _pesos(valor) -> str:
+    """Monto para las lecturas: texto natural, "$20,407" (formato_mxn)."""
+    return formato_mxn(valor, estilo="cliente")
 
 
 def _numero(valor, decimales: int = 2):
@@ -325,7 +340,7 @@ def gasto_por_categoria(
     de_categoria = df[df["categoria"] == categoria].sort_values("mes")
     subtotal = float(de_categoria["total"].sum())
     proporcion = subtotal / total if total else None
-    lectura = f"Salidas en {categoria} de {desde} a {hasta}: ${subtotal:,.2f}" + (
+    lectura = f"Salidas en {categoria} de {desde} a {hasta}: {_pesos(subtotal)}" + (
         f" ({proporcion * 100:.1f} % de todas las salidas del periodo)."
         if total
         else "."
@@ -425,6 +440,8 @@ def _lectura_comparacion(variable: str, valor, mediana, proporcion) -> str:
         lado = "igual a"
 
     def cifra(x) -> str:
+        if variable in VARIABLES_EN_PESOS:
+            return _pesos(x)
         return f"{x:,.2f}" if abs(x) >= 1 else f"{x:.4f}"
 
     return (
@@ -506,13 +523,16 @@ def simular_hipoteca(
         # busqueda (20,000,000) como si fuera la capacidad.
         "capacidad_hipotecaria": _numero(capacidad.monto),
         "capacidad_no_aplica": None if capacidad.aplica else capacidad.detalle,
+        # Referencia de mercado con su etiqueta: informativa, no es el CAT de
+        # esta simulacion (config/mercado_mx.yaml).
+        "cat_referencia": _cat_referencia(),
         "incremento_deficit_maximo": incremento,
         "ahorro_mensual_promedio": _numero(historial.neto.mean()),
         "meses_para_reunir_pago_inicial": _numero(meses_enganche, 1),
         # Con los numeros sueltos, llama3.1:8b leyo 99.98 % de deficit como
         # "muy baja".
         "lectura": (
-            f"Cuota de ${hipoteca.cuota_mensual:,.2f} al mes. Probabilidad de "
+            f"Cuota de {_pesos(hipoteca.cuota_mensual)} al mes. Probabilidad de "
             f"quedar en saldo negativo en los proximos {supuestos.meses} meses: "
             f"{sin.probabilidad_deficit * 100:.1f} % sin la hipoteca y "
             f"{con.probabilidad_deficit * 100:.1f} % con ella."
@@ -520,17 +540,28 @@ def simular_hipoteca(
             + " "
             + (
                 "Con su flujo actual no ahorra, asi que no reuniria el pago "
-                f"inicial de ${hipoteca.pago_inicial:,.2f}."
+                f"inicial de {_pesos(hipoteca.pago_inicial)}."
                 if meses_enganche is None
-                else f"Reuniria el pago inicial de ${hipoteca.pago_inicial:,.2f} "
+                else f"Reuniria el pago inicial de {_pesos(hipoteca.pago_inicial)} "
                 f"en {meses_enganche:.1f} meses."
             )
             + (
-                f" Capacidad hipotecaria: vivienda de hasta ${capacidad.monto:,.2f}."
+                f" Capacidad hipotecaria: vivienda de hasta {_pesos(capacidad.monto)}."
                 if capacidad.aplica
                 else f" Capacidad hipotecaria: no aplica. {capacidad.detalle}"
             )
         ),
+    }
+
+
+def _cat_referencia() -> dict:
+    ref = cargar_mercado()["hipoteca_bbva_fija"]
+    return {
+        "etiqueta": ref["etiqueta"],
+        "cat_sin_iva": ref["cat_promedio_sin_iva"],
+        "tasa_de_calculo": ref["tasa_calculo_cat"],
+        "fuente": ref["fuente"],
+        "fecha_calculo": str(ref["fecha_calculo"]),
     }
 
 
@@ -650,7 +681,7 @@ def evaluar_compra(
         )
         if alcanza:
             lectura = (
-                f"De contado: el saldo (${saldo:,.2f}) alcanza para ${precio:,.2f}. "
+                f"De contado: el saldo ({_pesos(saldo)}) alcanza para {_pesos(precio)}. "
                 "Probabilidad de quedar en saldo negativo en los proximos "
                 f"{supuestos.meses} meses: {sin.probabilidad_deficit * 100:.1f} % sin "
                 f"la compra y {con.probabilidad_deficit * 100:.1f} % con ella."
@@ -658,18 +689,21 @@ def evaluar_compra(
             )
         elif meses is None:
             lectura = (
-                f"De contado: el saldo (${saldo:,.2f}) no alcanza para "
-                f"${precio:,.2f} y con su flujo actual no ahorra, asi que no lo "
+                f"De contado: el saldo ({_pesos(saldo)}) no alcanza para "
+                f"{_pesos(precio)} y con su flujo actual no ahorra, asi que no lo "
                 "reuniria."
             )
         else:
             lectura = (
-                f"De contado: el saldo (${saldo:,.2f}) no alcanza para "
-                f"${precio:,.2f}; a su ritmo de ahorro lo reuniria en {meses:.1f} meses."
+                f"De contado: el saldo ({_pesos(saldo)}) no alcanza para "
+                f"{_pesos(precio)}; a su ritmo de ahorro lo reuniria en {meses:.1f} meses."
             )
     else:
         monto = precio * (1 - enganche_pct)
-        cuota = mc.cuota_fija(monto, tasa_anual, int(plazo_meses))
+        # IVA de 16 % sobre los intereses de un credito de consumo (LIVA art.
+        # 15, fr. X, inc. b); la hipoteca de vivienda esta exenta.
+        iva = iva_sobre_intereses("credito_consumo")
+        cuota = mc.cuota_fija(monto, tasa_anual * (1 + iva), int(plazo_meses))
         # La cuota solo se paga durante el plazo: meses acumulados de pago
         # hasta cada cierre de mes del horizonte.
         pagados = np.minimum(np.arange(supuestos.meses + 1), int(plazo_meses))
@@ -682,6 +716,7 @@ def evaluar_compra(
             {
                 "plazo_meses": int(plazo_meses),
                 "tasa_anual": _numero(tasa_anual, 4),
+                "iva_sobre_intereses": iva,
                 "enganche_pct": _numero(enganche_pct, 4),
                 "monto_credito": _numero(monto),
                 "cuota_mensual": _numero(cuota),
@@ -695,8 +730,9 @@ def evaluar_compra(
                 "meses del credito"
             )
         lectura = (
-            f"A credito: cuota de ${cuota:,.2f} al mes durante {int(plazo_meses)} "
-            f"meses. Probabilidad de quedar en saldo negativo en los proximos "
+            f"A credito: cuota de {_pesos(cuota)} al mes durante {int(plazo_meses)} "
+            f"meses, con IVA de {iva * 100:.0f} % sobre los intereses. "
+            "Probabilidad de quedar en saldo negativo en los proximos "
             f"{supuestos.meses} meses: {sin.probabilidad_deficit * 100:.1f} % sin la "
             f"compra y {con.probabilidad_deficit * 100:.1f} % con ella."
             + _advertencia(con.probabilidad_deficit)
