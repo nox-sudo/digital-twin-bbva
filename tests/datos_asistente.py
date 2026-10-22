@@ -82,10 +82,27 @@ def crear_gold(tmp_path) -> str:
     )
     movimientos["n_movimientos"] = 1
     con = duckdb.connect(ruta)
+    # CLI-2 tiene tarjeta (al 80 % de su limite) y prestamo; CLI-1, nada.
+    creditos = pd.DataFrame(
+        [
+            ("CLI-2", "TC-2", "tarjeta_credito", 8000.0, 10000.0, None, None),
+            ("CLI-2", "PP-2", "prestamo_personal", 40000.0, None, 60000.0, 24),
+        ],
+        columns=[
+            "cliente_id",
+            "cuenta_id",
+            "tipo_cuenta",
+            "saldo_actual",
+            "limite_credito",
+            "monto_original",
+            "plazo_meses",
+        ],
+    )
     for nombre, df in [
         ("gold_features_cliente", features),
         ("gold_kpis", kpis),
         ("gold_movimientos_mensuales", movimientos),
+        ("gold_creditos_cliente", creditos),
     ]:
         con.register("df", df)
         con.execute(f"CREATE TABLE {nombre} AS SELECT * FROM df")
