@@ -2,7 +2,9 @@
 tests/datos_asistente.py
 
 Gold minimo en DuckDB y contexto de las pruebas del asistente
-(test_asistente_herramientas.py y test_asistente_conversacion.py).
+(test_asistente_herramientas.py y test_asistente_conversacion.py), y la
+configuracion del dashboard sobre ese Gold para las pruebas de las vistas
+(test_acceso.py).
 """
 
 import datetime as dt
@@ -12,7 +14,8 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+RAIZ = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(RAIZ))
 
 from asistente import herramientas as h  # noqa: E402
 
@@ -120,3 +123,35 @@ def contexto(gold, tmp_path, cliente_id="CLI-1", ventana=12):
         ventana_meses=ventana,
         simulacion=SIMULACION,
     )
+
+
+def config_vistas(tmp_path, ruta_usuarios: str | None = None) -> dict:
+    """Configuracion del dashboard (comun.config) sobre el Gold minimo, con
+    las columnas que piden las vistas y rutas solo dentro de tmp_path."""
+    ruta = crear_gold(tmp_path)
+    con = duckdb.connect(ruta)
+    for columna, tipo, valor in [
+        ("numero_productos", "BIGINT", 1),
+        ("gasto_promedio_3_meses", "DOUBLE", 12000.0),
+        ("frecuencia_transacciones", "DOUBLE", 30.0),
+        ("actividad_p2p", "DOUBLE", 0.0),
+        ("ingreso_declarado", "DOUBLE", 18000.0),
+        ("proporcion_retiros", "DOUBLE", 0.1),
+    ]:
+        con.execute(
+            f"ALTER TABLE gold_features_cliente ADD COLUMN {columna} {tipo} DEFAULT {valor}"
+        )
+    con.close()
+    for carpeta in ("logs", "deriva_psi", "resumen"):
+        (tmp_path / carpeta).mkdir(exist_ok=True)
+    return {
+        "gold_duckdb": ruta,
+        "logs": str(tmp_path / "logs"),
+        "deriva_psi": str(tmp_path / "deriva_psi"),
+        "resumen_portafolio": str(tmp_path / "resumen"),
+        "monitoreo_psi": str(RAIZ / "config" / "monitoreo_psi.yaml"),
+        "usuarios": ruta_usuarios or str(tmp_path / "auth" / "usuarios.duckdb"),
+        "bandas_riesgo": BANDAS,
+        "ventana_meses": 12,
+        "tasa_objetivo": 0.08,
+    }

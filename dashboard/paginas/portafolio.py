@@ -7,9 +7,10 @@ pregunta de un responsable de negocio: "a quien tengo que mirar".
 import altair as alt
 import streamlit as st
 
-from dashboard import comun
+from dashboard import acceso, comun
 
 st.title("Portafolio")
+acceso.requiere_rol("admin")
 
 cfg = comun.config()
 

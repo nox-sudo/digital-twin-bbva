@@ -8,9 +8,10 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from dashboard import comun
+from dashboard import acceso, comun
 
 st.title("Cliente")
+acceso.requiere_rol("admin", "cliente")
 
 cfg = comun.config()
 
@@ -19,14 +20,7 @@ if comun.gold_disponible():
     df = comun.portafolio(version)
     clientes = df["cliente_id"].tolist()
 
-    preseleccionado = st.session_state.get("cliente_id", clientes[0])
-    cliente_id = st.selectbox(
-        "Cliente",
-        clientes,
-        index=clientes.index(preseleccionado) if preseleccionado in clientes else 0,
-        label_visibility="collapsed",
-    )
-    st.session_state["cliente_id"] = cliente_id
+    cliente_id = acceso.cliente_actual(clientes)
     fila = df.set_index("cliente_id").loc[cliente_id]
 
     def contexto(columna: str) -> str:
