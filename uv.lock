@@ -720,6 +720,7 @@ asistente = [
     { name = "langchain-ollama" },
 ]
 dashboard = [
+    { name = "argon2-cffi" },
     { name = "streamlit" },
 ]
 dev = [
@@ -753,7 +754,10 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 asistente = [{ name = "langchain-ollama", specifier = ">=1.1.0" }]
-dashboard = [{ name = "streamlit", specifier = ">=1.66.0" }]
+dashboard = [
+    { name = "argon2-cffi", specifier = ">=25.1.0" },
+    { name = "streamlit", specifier = ">=1.66.0" },
+]
 dev = [
     { name = "black", specifier = ">=26.5.1" },
     { name = "flake8", specifier = ">=7.3.0" },

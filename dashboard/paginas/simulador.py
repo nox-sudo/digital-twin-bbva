@@ -10,11 +10,12 @@ import pandas as pd
 import streamlit as st
 import yaml
 
-from dashboard import comun
+from dashboard import acceso, comun
 from src.common.mercado import cargar_mercado
 from src.simulacion import montecarlo as mc
 
 st.title("Simulador de hipoteca")
+acceso.requiere_rol("admin", "cliente")
 
 
 @st.cache_data
@@ -81,14 +82,8 @@ if comun.gold_disponible():
     clientes = comun.portafolio(version)["cliente_id"].tolist()
     cfg = config_simulacion()["hipoteca"]
 
-    preseleccionado = st.session_state.get("cliente_id", clientes[0])
     columna_cliente, columna_precio = st.columns([1, 1])
-    cliente_id = columna_cliente.selectbox(
-        "Cliente",
-        clientes,
-        index=clientes.index(preseleccionado) if preseleccionado in clientes else 0,
-    )
-    st.session_state["cliente_id"] = cliente_id
+    cliente_id = acceso.cliente_actual(clientes, columna_cliente, "visible")
     precio = columna_precio.number_input(
         "Precio de la vivienda (MXN)", min_value=100_000, value=900_000, step=50_000
     )

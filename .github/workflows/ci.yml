@@ -81,8 +81,9 @@ jobs:
           java-version: "21"
       - uses: astral-sh/setup-uv@v3
       - run: uv python install 3.11
-      # El grupo dashboard trae Streamlit para las pruebas de las vistas con
-      # AppTest (tests/test_moneda_mxn.py), sobre el Gold de las fixtures.
+      # El grupo dashboard trae Streamlit y argon2-cffi para las pruebas de
+      # las vistas con AppTest (tests/test_moneda_mxn.py) y del login
+      # (tests/test_acceso.py), sobre el Gold de las fixtures.
       - run: uv sync --frozen --group dashboard
       - run: uv run --group dashboard pytest tests/ -v
 

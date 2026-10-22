@@ -9,11 +9,12 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from dashboard import comun
+from dashboard import acceso, comun
 from src.monitoreo.psi import TEMPORAL
 from src.monitoreo.psi import cargar_config as cargar_config_psi
 
 st.title("Observabilidad del pipeline")
+acceso.requiere_rol("admin")
 
 cfg = comun.config()
 corridas = comun.datos.corridas(cfg["logs"])

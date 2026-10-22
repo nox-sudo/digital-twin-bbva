@@ -18,9 +18,10 @@ from asistente.conversacion import (
     responder,
 )
 from asistente.herramientas import Contexto
-from dashboard import comun
+from dashboard import acceso, comun
 
 st.title("Asistente")
+acceso.requiere_rol("admin", "cliente")
 
 EJEMPLOS = [
     "¿Cuál es mi riesgo de impago?",
@@ -51,14 +52,9 @@ if comun.gold_disponible():
     version = comun.version_gold()
     clientes = comun.portafolio(version)["cliente_id"].tolist()
 
-    preseleccionado = st.session_state.get("cliente_id", clientes[0])
-    cliente_id = st.selectbox(
-        "Cliente",
-        clientes,
-        index=clientes.index(preseleccionado) if preseleccionado in clientes else 0,
-        label_visibility="collapsed",
-    )
-    st.session_state["cliente_id"] = cliente_id
+    # El cliente sale de la sesion (o del selector del admin), nunca del
+    # modelo ni de la URL.
+    cliente_id = acceso.cliente_actual(clientes)
     st.caption(
         f"Modelo local {cfg.modelo} en Ollama. Las cifras salen de las mismas "
         "consultas que las demás vistas; el modelo solo elige qué consultar y "

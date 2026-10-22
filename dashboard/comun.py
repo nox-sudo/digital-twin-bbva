@@ -72,6 +72,7 @@ def config() -> dict:
     cfg["deriva_psi"] = str(RAIZ / cfg["deriva_psi"])
     cfg["resumen_portafolio"] = str(RAIZ / cfg["resumen_portafolio"])
     cfg["monitoreo_psi"] = str(RAIZ / cfg["monitoreo_psi"])
+    cfg["usuarios"] = str(RAIZ / cfg["usuarios"])
     # Ventana de las features de flujo (config/features.yaml), para decirla en
     # los textos de ayuda. Se lee el YAML directo: kpi_definitions importa
     # Spark y el dashboard no lo necesita.

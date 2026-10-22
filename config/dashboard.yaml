@@ -14,6 +14,8 @@ deriva_psi: data/calidad/deriva_psi
 # comparar el corte actual contra la base.
 resumen_portafolio: data/calidad/resumen_portafolio
 monitoreo_psi: config/monitoreo_psi.yaml
+# Usuarios del dashboard (generate_credentials.py): solo hashes argon2id.
+usuarios: data/auth/usuarios.duckdb
 
 # Bandas de riesgo sobre probabilidad_impago. Son una decision de
 # operacion (a partir de que probabilidad se revisa a un cliente), no una

@@ -2,9 +2,9 @@
 tests/test_moneda_mxn.py
 
 Todo monto que ve una persona sale en pesos (MXN) con formato_mxn, y nada en
-dolares. Revisa las vistas del dashboard (AppTest de Streamlit, sobre el Gold
-minimo de las fixtures, nunca sobre data/gold), las lecturas de todas las
-herramientas del asistente y la escalera financiera.
+dolares. Revisa las vistas del dashboard (AppTest de Streamlit, con un usuario
+en la sesion y sobre el Gold minimo de las fixtures, nunca sobre data/gold),
+las lecturas de todas las herramientas del asistente y la escalera financiera.
 
 Dos reglas, definidas de forma estrecha a proposito:
 
@@ -20,15 +20,15 @@ import re
 import sys
 from pathlib import Path
 
-import duckdb
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from asistente import herramientas as h  # noqa: E402
 from asistente.alcance import RESPUESTA_INVERSION  # noqa: E402
-from datos_asistente import contexto, crear_gold  # noqa: E402
+from datos_asistente import config_vistas, contexto, crear_gold  # noqa: E402
 from src.common.formato import formato_mxn  # noqa: E402
+from src.common.usuarios import Usuario  # noqa: E402
 
 RAIZ = Path(__file__).resolve().parents[1]
 
@@ -149,40 +149,6 @@ def test_respuesta_fija_de_alcance():
 st_testing = pytest.importorskip("streamlit.testing.v1")
 
 
-def gold_para_vistas(tmp_path) -> dict:
-    """El Gold de las fixtures con las columnas que piden las vistas, y una
-    configuracion que apunta solo a tmp_path."""
-    ruta = crear_gold(tmp_path)
-    con = duckdb.connect(ruta)
-    for columna, tipo, valor in [
-        ("numero_productos", "BIGINT", 1),
-        ("gasto_promedio_3_meses", "DOUBLE", 12000.0),
-        ("frecuencia_transacciones", "DOUBLE", 30.0),
-        ("actividad_p2p", "DOUBLE", 0.0),
-        ("ingreso_declarado", "DOUBLE", 18000.0),
-        ("proporcion_retiros", "DOUBLE", 0.1),
-    ]:
-        con.execute(
-            f"ALTER TABLE gold_features_cliente ADD COLUMN {columna} {tipo} DEFAULT {valor}"
-        )
-    con.close()
-    for carpeta in ("logs", "deriva_psi", "resumen"):
-        (tmp_path / carpeta).mkdir(exist_ok=True)
-    return {
-        "gold_duckdb": ruta,
-        "logs": str(tmp_path / "logs"),
-        "deriva_psi": str(tmp_path / "deriva_psi"),
-        "resumen_portafolio": str(tmp_path / "resumen"),
-        "monitoreo_psi": str(RAIZ / "config" / "monitoreo_psi.yaml"),
-        "bandas_riesgo": [
-            {"nombre": "bajo", "desde": 0.0},
-            {"nombre": "medio", "desde": 0.10},
-            {"nombre": "alto", "desde": 0.30},
-        ],
-        "ventana_meses": 12,
-    }
-
-
 def textos_de_la_vista(at) -> list[str]:
     elementos = [
         *at.title,
@@ -200,26 +166,32 @@ def textos_de_la_vista(at) -> list[str]:
     return salida
 
 
+ADMIN = Usuario("admin", "admin")
+
+
+# (pagina, usuario de la sesion, cliente elegido por el admin)
 @pytest.mark.parametrize(
-    "pagina, cliente",
+    "pagina, usuario, cliente",
     [
-        ("portafolio.py", None),
-        ("cliente.py", "CLI-2"),
-        ("simulador.py", "CLI-1"),
-        ("simulador.py", "CLI-2"),
-        ("observabilidad.py", None),
-        ("asistente.py", "CLI-1"),
+        ("portafolio.py", ADMIN, None),
+        ("cliente.py", ADMIN, "CLI-2"),
+        ("cliente.py", Usuario("CLI-1", "cliente"), None),
+        ("simulador.py", ADMIN, "CLI-1"),
+        ("simulador.py", Usuario("CLI-2", "cliente"), None),
+        ("observabilidad.py", ADMIN, None),
+        ("asistente.py", Usuario("CLI-1", "cliente"), None),
     ],
 )
-def test_vistas_del_dashboard_en_pesos(tmp_path, monkeypatch, pagina, cliente):
+def test_vistas_del_dashboard_en_pesos(tmp_path, monkeypatch, pagina, usuario, cliente):
     import streamlit as st
 
     from dashboard import comun
 
-    cfg = gold_para_vistas(tmp_path)
+    cfg = config_vistas(tmp_path)
     monkeypatch.setattr(comun, "config", lambda: cfg)
     st.cache_data.clear()
     at = st_testing.AppTest.from_file(str(RAIZ / "dashboard" / "paginas" / pagina))
+    at.session_state["usuario"] = usuario
     if cliente:
         at.session_state["cliente_id"] = cliente
     at.run(timeout=60)
