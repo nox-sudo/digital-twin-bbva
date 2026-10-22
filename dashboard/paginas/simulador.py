@@ -152,12 +152,21 @@ if comun.gold_disponible():
         comun.porcentaje(con.probabilidad_deficit),
         help="Misma simulación, con la cuota (menos la renta que deja de pagar).",
     )
+    capacidad = r["capacidad"]
     m4.metric(
         "Capacidad hipotecaria",
-        comun.pesos(r["capacidad"]),
-        help=f"Precio máximo de vivienda con el que la hipoteca no sube el riesgo más de "
-        f"{r['incremento'] * 100:.0f} puntos, con este enganche, plazo y tasa.",
+        comun.pesos(capacidad.monto) if capacidad.aplica else "No aplica",
+        help=(
+            f"Precio máximo de vivienda con el que la hipoteca no sube el riesgo más de "
+            f"{r['incremento'] * 100:.0f} puntos, con este enganche, plazo y tasa."
+            if capacidad.aplica
+            else capacidad.detalle
+        ),
     )
+    if not capacidad.aplica:
+        st.caption(
+            "Capacidad hipotecaria: no aplica. " + capacidad.detalle.replace("$", "\\$")
+        )
 
     # --- Enganche ------------------------------------------------------------
     meses_enganche = r["meses_enganche"]

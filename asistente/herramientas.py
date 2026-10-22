@@ -488,6 +488,7 @@ def simular_hipoteca(
     con = mc.evaluar_hipoteca(historial, saldo, hipoteca, muestras)
     incremento = float(cfg["incremento_deficit_maximo"])
     meses_enganche = mc.meses_para_juntar(hipoteca.pago_inicial, historial, saldo)
+    capacidad = mc.capacidad_maxima(historial, saldo, hipoteca, muestras, incremento)
     return {
         "precio": _numero(precio),
         "enganche_pct": _numero(enganche_pct, 4),
@@ -500,9 +501,10 @@ def simular_hipoteca(
         "trayectorias": supuestos.trayectorias,
         "probabilidad_deficit_sin_hipoteca": _numero(sin.probabilidad_deficit, 4),
         "probabilidad_deficit_con_hipoteca": _numero(con.probabilidad_deficit, 4),
-        "capacidad_hipotecaria": _numero(
-            mc.capacidad_maxima(historial, saldo, hipoteca, muestras, incremento)
-        ),
+        # None con su motivo cuando no aplica: antes salia el tope de la
+        # busqueda (20,000,000) como si fuera la capacidad.
+        "capacidad_hipotecaria": _numero(capacidad.monto),
+        "capacidad_no_aplica": None if capacidad.aplica else capacidad.detalle,
         "incremento_deficit_maximo": incremento,
         "ahorro_mensual_promedio": _numero(historial.neto.mean()),
         "meses_para_reunir_pago_inicial": _numero(meses_enganche, 1),
@@ -521,6 +523,11 @@ def simular_hipoteca(
                 if meses_enganche is None
                 else f"Reuniria el pago inicial de ${hipoteca.pago_inicial:,.2f} "
                 f"en {meses_enganche:.1f} meses."
+            )
+            + (
+                f" Capacidad hipotecaria: vivienda de hasta ${capacidad.monto:,.2f}."
+                if capacidad.aplica
+                else f" Capacidad hipotecaria: no aplica. {capacidad.detalle}"
             )
         ),
     }

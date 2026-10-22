@@ -194,9 +194,12 @@ def test_hipoteca_da_lo_mismo_que_el_simulador(gold, tmp_path):
         con.probabilidad_deficit, abs=1e-4
     )
     assert resultado["cuota_mensual"] == pytest.approx(hipoteca.cuota_mensual, abs=0.01)
+    capacidad = mc.capacidad_maxima(historial, saldo, hipoteca, muestras, 0.05)
+    assert capacidad.aplica
     assert resultado["capacidad_hipotecaria"] == pytest.approx(
-        mc.capacidad_maxima(historial, saldo, hipoteca, muestras, 0.05), abs=0.01
+        capacidad.monto, abs=0.01
     )
+    assert resultado["capacidad_no_aplica"] is None
     assert resultado["meses_para_reunir_pago_inicial"] == pytest.approx(
         mc.meses_para_juntar(hipoteca.pago_inicial, historial, saldo), abs=0.05
     )
@@ -454,6 +457,19 @@ def test_el_log_escribe_meses_y_catalogo_tal_cual(caplog):
         h.normalizar("comparar_con_portafolio", {"variables": "capacidad_ahorro"})
     assert "original='2027-01' final=None regla=ultimos_meses_manda" in caplog.text
     assert "original='capacidad_ahorro' final=['capacidad_ahorro']" in caplog.text
+
+
+def test_hipoteca_sin_capacidad_calculable_dice_por_que(gold, tmp_path):
+    # CLI-2 gasta mas de lo que gana: riesgo sin hipoteca de 100 %.
+    resultado = h.ejecutar(
+        "simular_hipoteca", {"precio": 900000}, contexto(gold, tmp_path, "CLI-2")
+    )
+    assert resultado["probabilidad_deficit_sin_hipoteca"] == 1.0
+    assert resultado["capacidad_hipotecaria"] is None
+    assert "no hay una capacidad que calcular" in resultado["capacidad_no_aplica"]
+    assert "Capacidad hipotecaria: no aplica." in resultado["lectura"]
+    assert "20,000,000" not in resultado["lectura"]
+    assert es_json_valido(resultado)
 
 
 def test_comparacion_trae_la_lectura_armada(gold, tmp_path):
