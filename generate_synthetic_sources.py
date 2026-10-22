@@ -334,17 +334,51 @@ def generar_identidad(fecha_nacimiento: date, ciudad: str, ocupacion: str) -> di
     }
 
 
-def generar_clientes(n_clientes: int, fecha_ref: date) -> pd.DataFrame:
-    """Genera el perfil demográfico base de los clientes, con su PII."""
+RUTA_INGRESOS = Path(__file__).resolve().parent / "config" / "ingresos.yaml"
+
+
+def cargar_modelo_ingresos(ruta: Path = RUTA_INGRESOS) -> dict:
+    """Ingreso por ocupacion (config/ingresos.yaml). Se valida al cargar: una
+    ocupacion sin parametros generaria clientes sin ingreso."""
+    with open(ruta, encoding="utf-8") as f:
+        modelo = yaml.safe_load(f)
+    faltan = set(OCUPACIONES) - set(modelo.get("ocupaciones", {}))
+    if faltan:
+        raise ValueError(f"{ruta}: faltan ocupaciones {sorted(faltan)}")
+    for nombre, p in modelo["ocupaciones"].items():
+        if p["mediana"] <= 0 or p["sigma"] <= 0:
+            raise ValueError(f"{ruta}: {nombre} necesita mediana y sigma positivas")
+    return modelo
+
+
+def ingreso_declarado(ocupacion: str, modelo: dict) -> float:
+    """Un sorteo lognormal con la mediana y sigma de la ocupacion, con el
+    piso de un salario minimo donde aplica. Consume un solo numero de
+    np.random, como el sorteo anterior (lognormal unica para todos), asi que
+    el resto de los datos del cliente no se mueve."""
+    p = modelo["ocupaciones"][ocupacion]
+    ingreso = float(np.random.lognormal(mean=np.log(p["mediana"]), sigma=p["sigma"]))
+    if p.get("piso_salario_minimo"):
+        ingreso = max(ingreso, float(modelo["salario_minimo_mensual"]))
+    return ingreso
+
+
+def generar_clientes(
+    n_clientes: int, fecha_ref: date, modelo_ingresos: dict | None = None
+) -> pd.DataFrame:
+    """Genera el perfil demográfico base de los clientes, con su PII. El
+    ingreso depende de la ocupacion (config/ingresos.yaml)."""
+    modelo_ingresos = modelo_ingresos or cargar_modelo_ingresos()
     registros = []
     for i in range(n_clientes):
         fecha_nacimiento = fecha_entre(
             fecha_ref, relativedelta(years=70), relativedelta(years=18)
         )
-        ingreso_base = np.random.lognormal(
-            mean=9.8, sigma=0.5
-        )  # distribución realista de ingresos
+        # La ocupacion se sortea antes que el ingreso porque lo determina.
+        # Usa random (no np.random), asi que el orden no cambia ningun otro
+        # sorteo.
         ocupacion = random.choice(OCUPACIONES)
+        ingreso_base = ingreso_declarado(ocupacion, modelo_ingresos)
         ciudad = random.choice(CIUDADES)
         registros.append(
             {
@@ -815,6 +849,9 @@ def resolver_parametros(args) -> dict:
     )
     if escenario is not None:
         parametros["escenario_deriva"] = escenario.como_dict()
+    # Queda en el manifest: una sesion generada con otro modelo de ingresos
+    # se reconoce al reutilizarla.
+    parametros["modelo_ingresos"] = cargar_modelo_ingresos()
     return parametros
 
 
@@ -857,7 +894,9 @@ def generar_fuentes(out_dir: Path, parametros: dict) -> dict:
     (out_dir / "transacciones").mkdir(parents=True, exist_ok=True)
 
     print(f"Generando {parametros['clientes']} clientes...")
-    clientes_df = generar_clientes(parametros["clientes"], fecha_ref)
+    clientes_df = generar_clientes(
+        parametros["clientes"], fecha_ref, parametros.get("modelo_ingresos")
+    )
     clientes_df.to_csv(out_dir / "clientes.csv", index=False)
 
     print("Generando catálogo de productos...")
@@ -963,6 +1002,14 @@ def main(argv: list[str] | None = None):
             print(
                 "  Aviso: se genero con otra version del generador. Se reutiliza tal "
                 "cual; usa --forzar para regenerarla con la version actual."
+            )
+        if (
+            manifest["parametros"].get("modelo_ingresos")
+            != parametros["modelo_ingresos"]
+        ):
+            print(
+                "  Aviso: se genero con otro modelo de ingresos (config/ingresos.yaml). "
+                "Se reutiliza tal cual; usa --forzar para regenerarla."
             )
         exigir_continuacion(manifest_activa, manifest)
     else:

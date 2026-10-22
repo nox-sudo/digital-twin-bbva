@@ -90,6 +90,7 @@ Decisiones descartadas y por qué: Scala (PySpark cubre lo mismo sin costo de ap
 digital-twin-bbva/
 ├── config/
 │   ├── sesion.yaml               # Parámetros de la sesión de datos (semilla, fecha, volumen, escenario de deriva)
+│   ├── ingresos.yaml             # Ingreso declarado por ocupación (mediana, dispersión, piso de salario mínimo) y sus referencias
 │   ├── features.yaml             # Ventana de meses de las features de flujo (12)
 │   ├── business_rules.yaml       # Reglas de calidad de Silver, declarativas
 │   ├── politica_pii.yaml         # Qué datos personales se protegen en Silver, y cómo
