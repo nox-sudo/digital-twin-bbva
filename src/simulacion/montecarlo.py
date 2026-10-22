@@ -297,6 +297,25 @@ def meses_para_juntar(
     return faltante / ahorro_mensual
 
 
+RIESGO_SATURADO = "riesgo_saturado"
+SUPERA_TOPE = "supera_tope"
+
+
+@dataclass(frozen=True)
+class Capacidad:
+    """Capacidad hipotecaria: un monto, o "no aplica" con su motivo. Nunca
+    un monto fijo en lugar del motivo: antes, el tope de la busqueda
+    (20,000,000) se devolvia como si fuera la capacidad."""
+
+    monto: float | None
+    motivo: str | None = None
+    detalle: str = ""
+
+    @property
+    def aplica(self) -> bool:
+        return self.monto is not None
+
+
 def capacidad_maxima(
     historial: Historial,
     saldo_inicial: float,
@@ -305,7 +324,7 @@ def capacidad_maxima(
     incremento_maximo: float,
     precio_tope: float = 20_000_000,
     tolerancia: float = 10_000,
-) -> float:
+) -> Capacidad:
     """Precio maximo de vivienda (con las demas condiciones de `base`) con el
     que la hipoteca no sube la probabilidad de deficit mas de
     `incremento_maximo` sobre la del cliente sin hipoteca.
@@ -316,11 +335,29 @@ def capacidad_maxima(
     le atribuye a la hipoteca es el riesgo que agrega.
 
     Busqueda binaria: con las mismas muestras, la probabilidad solo puede
-    subir cuando sube el precio, asi que la frontera es unica."""
+    subir cuando sube el precio, asi que la frontera es unica.
+
+    No aplica en dos casos, y se dice cual:
+      - riesgo_saturado: sin hipoteca la probabilidad de deficit ya es tan
+        alta que sumarle el incremento llega a 100 %; ningun precio rompe el
+        criterio y la busqueda subia hasta el tope. Pasaba con todos los
+        clientes con 95 % o mas de riesgo sin hipoteca (136 de 500 en la
+        instancia del 2026-10-21).
+      - supera_tope: ni el precio tope sube el riesgo mas del incremento; la
+        frontera esta fuera del rango de busqueda."""
     riesgo_base = resumir(
         simular(historial, saldo_inicial, muestras)
     ).probabilidad_deficit
     limite = riesgo_base + incremento_maximo
+    if limite >= 1:
+        return Capacidad(
+            None,
+            RIESGO_SATURADO,
+            f"Sin la hipoteca ya queda en saldo negativo en el "
+            f"{riesgo_base * 100:.0f} % de los escenarios: ninguna hipoteca puede "
+            f"subir ese riesgo menos de {incremento_maximo * 100:.0f} puntos sin "
+            "llegar al 100 %, así que no hay una capacidad que calcular.",
+        )
 
     def cumple(precio: float) -> bool:
         hipoteca = Hipoteca(
@@ -338,13 +375,19 @@ def capacidad_maxima(
             <= limite
         )
 
-    bajo, alto = 0.0, precio_tope
+    bajo, alto = 0.0, float(precio_tope)
     if cumple(alto):
-        return alto
+        return Capacidad(
+            None,
+            SUPERA_TOPE,
+            f"Ni una vivienda de ${precio_tope:,.0f} sube el riesgo más de "
+            f"{incremento_maximo * 100:.0f} puntos: la capacidad está por encima del "
+            "rango que se busca.",
+        )
     while alto - bajo > tolerancia:
         medio = (bajo + alto) / 2
         if cumple(medio):
             bajo = medio
         else:
             alto = medio
-    return bajo
+    return Capacidad(bajo)

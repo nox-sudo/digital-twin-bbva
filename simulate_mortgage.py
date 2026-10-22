@@ -156,7 +156,12 @@ def main():
     )
     print(
         f"\nCapacidad hipotecaria (la hipoteca agrega a lo mas {incremento:.0%} "
-        f"de riesgo de deficit): vivienda de hasta {pesos(capacidad)}"
+        f"de riesgo de deficit): "
+        + (
+            f"vivienda de hasta {pesos(capacidad.monto)}"
+            if capacidad.aplica
+            else f"no aplica. {capacidad.detalle}"
+        )
     )
 
 
