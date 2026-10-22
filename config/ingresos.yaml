@@ -1,0 +1,66 @@
+# config/ingresos.yaml
+#
+# Ingreso mensual declarado de los clientes sinteticos (pesos de 2026), por
+# ocupacion. Lo usa generate_synthetic_sources.py al generar clientes.csv; el
+# perfil financiero (nomina, depositos, gasto, cuotas) se ancla a este ingreso.
+#
+# Poblacion objetivo: clientes bancarizados urbanos (las 10 ciudades del
+# generador), no todos los ocupados del pais. Un modelo de riesgo se entrena
+# con la poblacion que va a calificar, y los productos de credito exigen un
+# ingreso minimo. Por eso:
+#   - formales (con nomina o pension) anclados al empleo formal del IMSS;
+#   - informales (comerciante, independiente) cerca de 1 a 2 salarios
+#     minimos, el rango donde la ENOE concentra a la mayoria;
+#   - estudiantes por debajo de un salario minimo (beca, medio tiempo, apoyo
+#     familiar).
+#
+# Referencias (consultadas el 2026-10-21):
+#   - Salario minimo general 2026: 315.04 pesos diarios, 9,582.47 al mes
+#     (diario x 365 / 12). CONASAMI, DOF del 9 de diciembre de 2025.
+#   - Salario base de cotizacion promedio IMSS, cierre de 2025: 627.9 pesos
+#     diarios, unos 19,100 al mes (x 30.4). Boletin de afiliacion IMSS.
+#   - ENOE, diciembre de 2025 (citada en prensa): 45 % de los ocupados gana
+#     hasta un salario minimo y 30.9 % entre uno y dos. Es la poblacion de
+#     todo el pais, por eso no es el objetivo, solo el rango del segmento
+#     informal.
+#
+# Medianas y dispersiones calibradas, no tomadas de una fuente cada una: se
+# eligieron para que el promedio de los formales quede cerca del IMSS y los
+# informales entre 1 y 2 salarios minimos (ver la verificacion en el PR que
+# introdujo este archivo y en docs/technical-debt.md).
+#
+# Cada ocupacion: ingreso lognormal con esa mediana y sigma (dispersion en
+# escala logaritmica). piso_salario_minimo: nadie de esa ocupacion declara
+# menos de un salario minimo (empleo formal y pension minima garantizada).
+
+salario_minimo_mensual: 9582.47
+
+ocupaciones:
+  Empleado:
+    mediana: 15000
+    sigma: 0.50
+    piso_salario_minimo: true
+  Profesionista:
+    mediana: 20000
+    sigma: 0.55
+    piso_salario_minimo: true
+  Empresario:
+    mediana: 24000
+    sigma: 0.70
+    piso_salario_minimo: false
+  Jubilado:
+    mediana: 10500
+    sigma: 0.45
+    piso_salario_minimo: true
+  Comerciante:
+    mediana: 11000
+    sigma: 0.60
+    piso_salario_minimo: false
+  Independiente:
+    mediana: 12500
+    sigma: 0.65
+    piso_salario_minimo: false
+  Estudiante:
+    mediana: 5500
+    sigma: 0.60
+    piso_salario_minimo: false

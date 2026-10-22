@@ -275,6 +275,55 @@ supuestos de `config/simulacion.yaml`):
 Los demas clientes conservan el mismo monto. Todos los casos en el tope eran de
 riesgo saturado; `supera_tope` no aparecio en ninguna de las cuatro.
 
+### Ingresos sinteticos por encima de los de Mexico
+
+Registrado el 2026-10-21, al revisar la data para la presentacion: el ingreso
+declarado salia de una sola lognormal para todos (mediana de unos 18,000 al mes),
+sin relacion con la ocupacion (los estudiantes ganaban, en mediana, mas que los
+empleados). Contra el salario minimo de 2025, el 56 % de los clientes ganaba mas de
+dos salarios minimos; la ENOE de diciembre de 2025 da 24 % para todos los ocupados.
+
+Poblacion objetivo: clientes bancarizados urbanos, no todo el pais. Un modelo de
+riesgo se entrena con la poblacion que va a calificar y los productos de credito
+exigen un ingreso minimo; con la distribucion nacional (45 % hasta un salario
+minimo) casi nadie calificaria y el simulador solo diria que no.
+
+Resuelto en `feature/ingresos-mexicanos`:
+
+- **`config/ingresos.yaml`**: lognormal por ocupacion (mediana y sigma) con piso de un
+  salario minimo de 2026 (9,582.47 al mes) para empleados, profesionistas y
+  jubilados. Las referencias y por que son esas estan en el archivo. Los parametros
+  quedan en el manifest de la sesion (`modelo_ingresos`).
+- **Generador**: la ocupacion se sortea antes que el ingreso y el ingreso consume un
+  solo numero de `np.random`, como antes: fuera del ingreso, `clientes.csv` sale
+  identico al de la base anterior (comprobado columna por columna), y cuentas,
+  CETES y transacciones conservan sus conteos (979, 70, 125,064).
+
+Verificacion (5,000 clientes, semilla 42):
+
+| | Antes | Despues | Referencia |
+|---|---|---|---|
+| Hasta 1 / 1 a 2 / mas de 2 salarios minimos (2026) | 9 / 47 / 44 % (500 clientes) | 33 / 39 / 28 % | ENOE, todo el pais: 45 / 31 / 24 % (SM 2025) |
+| Ingreso medio de los formales | sin relacion con la ocupacion | 20,407 | IMSS, cierre de 2025: unos 19,100 |
+| Informales (sin estudiantes): hasta 2 salarios minimos | | 72 % | ENOE: la mayoria entre 0 y 2 |
+| Formales por debajo de un salario minimo | | 1.9 % (empresarios formales, sin piso) | |
+
+Efecto en el modelo, con el pipeline completo en un volumen aparte (la instancia no
+se toco) y `experimentos/auc_evento_posterior.py`:
+
+| | 500 clientes antes | 500 despues | 5,000 antes | 5,000 despues |
+|---|---|---|---|---|
+| AUC por pliegue | 0.741 +- 0.040 | 0.689 +- 0.071 | 0.804 +- 0.020 | 0.803 +- 0.012 |
+| AUC fuera de pliegue (min a max) | 0.726 a 0.748 | 0.674 a 0.702 | 0.798 a 0.809 | 0.799 a 0.804 |
+| Oraculo | 0.864 | 0.855 | 0.859 | 0.858 |
+| capacidad_ahorro, estimado / verdadero | | 0.53 | 0.89 | 0.90 |
+
+Con 5,000 clientes el modelo no cambia. Con 500 baja: es la muestra de 500 de esta
+semilla, no la calibracion (la recuperacion de coeficientes, que con 500 se dispersa,
+vuelve a 0.90 con 5,000). Pero la instancia de la presentacion es de 500 clientes, asi
+que al reconstruirla su AUC pasa de 0.741 a 0.689 y las cifras de
+`docs/guion-demo.md` cambian.
+
 
 ### El PSI reacciona tarde a una deriva reciente
 
