@@ -1,7 +1,7 @@
 # Guion de la demo
 
 Como reconstruir en cualquier maquina la instancia que se usa para presentar
-y un recorrido de unos 10 minutos por el dashboard sobre ella. La instancia
+y un recorrido de unos 11 minutos por el dashboard sobre ella. La instancia
 es la sesion base al 30 sep 2026 (500 clientes) mas 7 entregas mensuales con
 el escenario de deriva activo; el ultimo corte queda al 30 abr 2027.
 
@@ -86,6 +86,10 @@ las cifras de abajo cambiarian.
 
 ## Recorrido
 
+Entrar como `admin` (contraseña en `data/credenciales_prueba.md`): ve todas
+las vistas. Para mostrar lo que ve un cliente, cerrar sesión y entrar con su
+`cliente_id` (por ejemplo CLI-000001), o abrir "Vista del cliente" como admin.
+
 ### 1. Portafolio (2 min)
 
 Pregunta que responde: a quien tengo que mirar.
@@ -113,7 +117,31 @@ Ejemplo de riesgo alto: **CLI-000283**.
 Las metricas, el neto y el desglose usan la misma ventana de 12 meses; la
 grafica mes a mes muestra los 19 meses de historial.
 
-### 3. Simulador de hipoteca (2 min)
+### 3. Mi resumen, la vista del cliente (2 min)
+
+Lo que ve **CLI-000001** al entrar. Solo sus datos, sin selector de cliente,
+en frases cortas y en pesos:
+
+- Este mes (abr 2027): le entraron $11,486 y salieron $22,672; gastó $11,187
+  más de lo que le entró. En un mes normal gasta $986 más de lo que le entra.
+- Quincenas: le llegan unos $5,363 cada quincena; en may 2026 le llegaban
+  unos $11,212 (su ingreso bajó 52 %, el escenario de deriva).
+- A dónde se va su dinero (3 meses): servicios 28 %, pago de deuda 22 %,
+  hogar 11 %.
+- Su crédito: paso 1 de 6 de la escalera, pagos de deuda de $7,647 al mes,
+  42 % de su ingreso promedio; usa 21 % de su tarjeta.
+- Su riesgo, alto (68 %), explicado con sus propios valores SHAP. Lo sube:
+  3.5 años como cliente y deber 3.4 veces su ingreso de un mes. Lo baja: el
+  neto de sus transferencias entre personas.
+- ¿Me alcanza para algo de $15,000? De contado sí (tiene $31,501), pero sube
+  de 88 a 95 de cada 100 los escenarios en que se queda sin dinero algún mes.
+  A crédito a 12 meses con 45 % anual: $1,631 al mes con IVA sobre intereses.
+
+La explicación reproduce el score publicado: usa el modelo que lo produjo
+(el del pliegue de la validación cruzada). Contraste: CLI-000162 (riesgo
+bajo, 8 %) lo baja sobre todo que le quedan $12,905 al mes.
+
+### 4. Simulador de hipoteca (2 min)
 
 Con los parametros por defecto (vivienda de $900,000), dos clientes:
 
@@ -130,10 +158,14 @@ trayectorias remuestrean los meses del propio cliente mas un choque de
 perdida de ingreso; todos los escenarios usan los mismos numeros
 aleatorios, asi que la diferencia es la hipoteca, no el ruido.
 
-### 4. Observabilidad (3 min)
+### 5. Observabilidad (3 min)
 
 - Ultima corrida por capa: Bronze, Silver y Gold correctas, 8 corridas
-  registradas cada una; ninguna fila a cuarentena.
+  registradas cada una; ninguna fila a cuarentena. Si despues se vuelve a
+  correr el pipeline sobre la misma instancia (como al actualizar el codigo
+  el 23 oct 2026), Silver y Gold suman una corrida mas y la deriva un corte
+  repetido al 2027-04, con los mismos valores; Bronze no, porque no hay
+  archivos nuevos.
 - Duracion por corrida en escala logaritmica: una corrida fuera de lo normal
   se ve aunque las demas tarden segundos.
 - Deriva (PSI) contra la referencia congelada de la base:
