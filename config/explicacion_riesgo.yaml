@@ -8,6 +8,8 @@
 # formato: pesos | porcentaje | veces | anios | antiguedad | conteo | si_no |
 #          categoria
 # Las variables si_no usan frase_si / frase_no en vez de frase.
+# frase_negativo (opcional): la frase cuando el valor es negativo, con {valor}
+# en positivo ("gastas $4,091 mas de lo que te entra", no "te quedan -$4,091").
 
 factores_mostrados: 3
 
@@ -27,6 +29,7 @@ variables:
   capacidad_ahorro:
     formato: pesos
     frase: "Después de tus gastos y pagos te quedan {valor} al mes"
+    frase_negativo: "Gastas {valor} más de lo que te entra al mes"
   saldo_liquido_disponible:
     formato: pesos
     frase: "Tienes {valor} disponibles en tu cuenta"
@@ -42,6 +45,7 @@ variables:
   actividad_p2p:
     formato: pesos
     frase: "Entre lo que recibes y envías a otras personas, te quedan {valor} al mes"
+    frase_negativo: "A otras personas les envías {valor} más de lo que recibes al mes"
   edad_anios:
     formato: anios
     frase: "Tu edad ({valor})"

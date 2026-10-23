@@ -83,7 +83,9 @@ def test_variable_sin_frase_es_error(datos):
 @pytest.mark.parametrize(
     "variable, valor, esperado",
     [
-        ("capacidad_ahorro", -4091.4, "te quedan -$4,091 al mes"),
+        ("capacidad_ahorro", 4091.4, "te quedan $4,091 al mes"),
+        ("capacidad_ahorro", -4091.4, "Gastas $4,091 más de lo que te entra al mes"),
+        ("actividad_p2p", -300.0, "les envías $300 más de lo que recibes"),
         ("uso_linea_credito", 0.42, "Usas el 42 % del límite"),
         ("ratio_endeudamiento", 3.44, "3.4 veces"),
         ("antiguedad_dias", 1278, "3.5 años"),

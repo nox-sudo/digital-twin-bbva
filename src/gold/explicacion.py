@@ -115,6 +115,11 @@ def frase(variable: str, valor, cfg: dict) -> str:
     spec = cfg["variables"][variable]
     if spec["formato"] == "si_no":
         return spec["frase_si"] if valor and not pd.isna(valor) else spec["frase_no"]
+    negativo = isinstance(valor, (int, float)) and not pd.isna(valor) and valor < 0
+    if negativo and "frase_negativo" in spec:
+        return spec["frase_negativo"].format(
+            valor=_formatear(-valor, spec["formato"], cfg)
+        )
     return spec["frase"].format(valor=_formatear(valor, spec["formato"], cfg))
 
 
