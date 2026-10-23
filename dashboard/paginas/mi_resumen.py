@@ -23,6 +23,12 @@ usuario = acceso.requiere_rol("admin", "cliente")
 st.title("Mi resumen" if usuario.rol == "cliente" else "Vista del cliente")
 
 MESES_GASTO = 3
+# Montos del eje en miles ("$10k") para que no se corten en tarjetas
+# angostas; el cero como "$0" (el formato "$~s" lo mostraba como "$0k").
+EJE_PESOS = alt.Axis(
+    labelExpr="datum.value == 0 ? '$0' : '$' + format(datum.value / 1000, ',.0f') + 'k'",
+    tickCount=4,
+)
 
 
 @st.cache_data
@@ -140,7 +146,7 @@ if comun.gold_disponible():
             pendiente("El detalle por quincena")
         else:
             minimo = esc.cargar_config()["ingreso_variable"]["proporcion_depositos_min"]
-            st.markdown(md(vc.resumen_quincenas(q, minimo)["frase"]))
+            st.markdown(md(vc.resumen_quincenas(q, minimo, comun.nombre_mes)["frase"]))
             recientes = q[q["mes"].isin(sorted(q["mes"].unique())[-6:])].assign(
                 etiqueta=lambda d: d["mes"].map(comun.nombre_mes),
                 cual=lambda d: d["quincena"].map(
@@ -153,7 +159,7 @@ if comun.gold_disponible():
                 .encode(
                     x=alt.X("etiqueta:N", title=None, sort=None),
                     xOffset="cual:N",
-                    y=alt.Y("monto:Q", title=None, axis=alt.Axis(format="$~s")),
+                    y=alt.Y("monto:Q", title=None, axis=EJE_PESOS),
                     color=alt.Color(
                         "cual:N",
                         scale=alt.Scale(range=[comun.AZUL, comun.NARANJA]),
@@ -187,7 +193,7 @@ if comun.gold_disponible():
                 .mark_bar(color=comun.AZUL, cornerRadiusEnd=4)
                 .encode(
                     y=alt.Y("nombre:N", sort="-x", title=None),
-                    x=alt.X("total:Q", title=None, axis=alt.Axis(format="$~s")),
+                    x=alt.X("total:Q", title=None, axis=EJE_PESOS),
                     tooltip=[
                         alt.Tooltip("nombre:N", title="Categoría"),
                         alt.Tooltip("total:Q", title="Total", format="$,.0f"),

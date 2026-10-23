@@ -61,9 +61,23 @@ def resumen_mes(flujo: pd.DataFrame, nombre_mes) -> dict | None:
     }
 
 
-def resumen_quincenas(quincenas: pd.DataFrame, proporcion_depositos_min: float) -> dict:
+# Cambio del ingreso por quincena (ultimos meses contra los primeros de la
+# ventana) a partir del cual la frase lo menciona.
+CAMBIO_RELEVANTE = 0.10
+MESES_TENDENCIA = 3
+
+
+def resumen_quincenas(
+    quincenas: pd.DataFrame, proporcion_depositos_min: float, nombre_mes=str
+) -> dict:
     """Cuanto llega en cada quincena. Ingreso fijo (nomina) o variable
-    (mayoria de depositos), con el mismo umbral que la escalera financiera."""
+    (mayoria de depositos), con el mismo umbral que la escalera financiera.
+
+    Con nomina se dice lo que llego el ultimo mes, no el promedio del ano: si
+    el ingreso bajo, el promedio describiria un sueldo que ya no tiene. Si
+    cambio mas de CAMBIO_RELEVANTE contra el inicio de la ventana (con nomina,
+    el primer mes; con depositos, el promedio de los primeros
+    MESES_TENDENCIA meses contra los ultimos), la frase lo dice."""
     total = float(quincenas["monto"].sum())
     if total <= 0:
         return {
@@ -71,19 +85,38 @@ def resumen_quincenas(quincenas: pd.DataFrame, proporcion_depositos_min: float) 
             "frase": "En el último año no registramos ingresos en tu cuenta.",
         }
     variable = float(quincenas["depositos"].sum()) / total > proporcion_depositos_min
+    meses = sorted(quincenas["mes"].unique())
+    ultimo = quincenas[quincenas["mes"] == meses[-1]].set_index("quincena")["monto"]
     primera = float(quincenas.loc[quincenas["quincena"] == 1, "monto"].mean())
     segunda = float(quincenas.loc[quincenas["quincena"] == 2, "monto"].mean())
     minima = float(quincenas["monto"].min())
     sin_ingreso = int((quincenas["monto"] <= 0).sum())
+    inicio = float(
+        quincenas[quincenas["mes"].isin(meses[:MESES_TENDENCIA])]["monto"].mean()
+    )
+    reciente = float(
+        quincenas[quincenas["mes"].isin(meses[-MESES_TENDENCIA:])]["monto"].mean()
+    )
+    cambio = (reciente - inicio) / inicio if inicio > 0 else 0.0
+
     if not variable:
-        if round(primera) == round(segunda):
-            frase = (
-                f"Te llegan unos {pesos(primera)} cada quincena: el 15 y a fin de mes."
-            )
+        u1, u2 = float(ultimo.get(1, 0.0)), float(ultimo.get(2, 0.0))
+        if round(u1) == round(u2):
+            frase = f"Te llegan unos {pesos(u1)} cada quincena: el 15 y a fin de mes."
         else:
             frase = (
-                f"Te llegan en promedio {pesos(primera)} la primera quincena y "
-                f"{pesos(segunda)} la segunda."
+                f"En {nombre_mes(meses[-1])} te llegaron {pesos(u1)} la primera "
+                f"quincena y {pesos(u2)} la segunda."
+            )
+        # Nomina: el primer mes contra el ultimo, los dos que nombra la frase.
+        antes = float(quincenas[quincenas["mes"] == meses[0]]["monto"].mean())
+        ahora = (u1 + u2) / 2
+        cambio = (ahora - antes) / antes if antes > 0 else 0.0
+        if len(meses) > 1 and abs(cambio) >= CAMBIO_RELEVANTE:
+            frase += (
+                f" En {nombre_mes(meses[0])} te llegaban unos {pesos(antes)}: "
+                f"tu ingreso {'bajó' if cambio < 0 else 'subió'} "
+                f"{abs(cambio) * 100:.0f} %."
             )
     else:
         frase = (
@@ -97,11 +130,18 @@ def resumen_quincenas(quincenas: pd.DataFrame, proporcion_depositos_min: float) 
             )
         else:
             frase += f" La más baja fue de {pesos(minima)}."
+        if len(meses) > MESES_TENDENCIA and abs(cambio) >= CAMBIO_RELEVANTE:
+            frase += (
+                f" En los últimos {MESES_TENDENCIA} meses promedias {pesos(reciente)} "
+                f"por quincena, {abs(cambio) * 100:.0f} % "
+                f"{'menos' if cambio < 0 else 'más'} que al inicio."
+            )
     return {
         "variable": variable,
         "primera": primera,
         "segunda": segunda,
         "minima": minima,
+        "cambio": cambio,
         "frase": frase,
     }
 
@@ -167,10 +207,9 @@ def resumen_compra(resultado: dict) -> str:
         frase = f"Hoy no te alcanza: te faltan {pesos(precio - saldo)}."
         if meses is None:
             return frase + " Con lo que te queda cada mes ahora, no lo juntarías."
-        return (
-            frase
-            + f" Ahorrando como hasta ahora lo juntas en unos {math.ceil(meses)} meses."
-        )
+        n = math.ceil(meses)
+        plazo = "1 mes" if n <= 1 else f"unos {n} meses"
+        return frase + f" Ahorrando como hasta ahora lo juntas en {plazo}."
     frase = (
         f"Pagarías {pesos(resultado['cuota_mensual'])} al mes durante "
         f"{resultado['plazo_meses']} meses, ya con el IVA de "

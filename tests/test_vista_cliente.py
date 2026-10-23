@@ -85,6 +85,21 @@ def test_quincenas_de_nomina():
     assert r["frase"] == "Te llegan unos $4,791 cada quincena: el 15 y a fin de mes."
 
 
+def test_quincenas_de_nomina_que_baja():
+    # La nomina cae de 10,000 a 5,500 por quincena en el año: la frase dice lo
+    # del ultimo mes y el cambio, no el promedio (que seria ~7,750).
+    montos = [(q, q) for q in [10000 - 409.09 * i for i in range(12)]]
+    r = vc.resumen_quincenas(quincenas(montos), 0.5, nombre_mes)
+    assert r["frase"].startswith("Te llegan unos $5,500 cada quincena")
+    assert "En 2026-01 te llegaban unos $10,000: tu ingreso bajó 45 %." in r["frase"]
+
+
+def test_quincenas_sin_cambio_relevante_no_mencionan_tendencia():
+    montos = [(q, q) for q in [10000 - 50 * i for i in range(12)]]
+    r = vc.resumen_quincenas(quincenas(montos), 0.5, nombre_mes)
+    assert "te llegaban" not in r["frase"]
+
+
 def test_quincenas_de_ingreso_variable():
     r = vc.resumen_quincenas(quincenas([(3000, 5000), (0, 9000)] * 6, True), 0.5)
     assert r["variable"]
