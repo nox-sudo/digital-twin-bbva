@@ -76,16 +76,20 @@ def test_el_error_vuelve_al_modelo_y_puede_corregir(gold, tmp_path):
     assert "Permitidos" in modelo.recibidos[1][-1]["content"]
 
 
-def test_fuera_de_alcance_no_llama_al_modelo(gold, tmp_path):
+@pytest.mark.parametrize(
+    "pregunta, contiene",
+    [
+        ("¿Qué acciones me recomiendas comprar?", "inversión"),
+        ("¿Cuánto es mi ingreso en dólares?", "pesos mexicanos"),
+        # contexto() es de CLI-1: otro id se detiene con su respuesta fija.
+        ("¿Cuánto gana CLI-000005?", "CLI-1"),
+    ],
+)
+def test_fuera_de_alcance_no_llama_al_modelo(gold, tmp_path, pregunta, contiene):
     modelo = ModeloFalso()
-    r = c.responder(
-        "¿Qué acciones me recomiendas comprar?",
-        [],
-        contexto(gold, tmp_path),
-        modelo,
-        "2027-02",
-    )
+    r = c.responder(pregunta, [], contexto(gold, tmp_path), modelo, "2027-02")
     assert r.motivo == "fuera_de_alcance"
+    assert contiene in r.texto
     assert modelo.recibidos == []
 
 

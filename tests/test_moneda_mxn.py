@@ -25,7 +25,11 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from asistente import herramientas as h  # noqa: E402
-from asistente.alcance import RESPUESTA_INVERSION  # noqa: E402
+from asistente.alcance import (  # noqa: E402
+    RESPUESTA_INVERSION,
+    RESPUESTA_MONEDA,
+    RESPUESTA_OTRO_CLIENTE,
+)
 from datos_asistente import config_vistas, contexto, crear_gold  # noqa: E402
 from src.common.formato import formato_mxn  # noqa: E402
 from src.common.usuarios import Usuario  # noqa: E402
@@ -143,8 +147,12 @@ def test_lecturas_del_asistente_en_pesos(gold, tmp_path, cliente):
             assert problemas_de_moneda(texto) == [], (nombre, texto)
 
 
-def test_respuesta_fija_de_alcance():
-    assert problemas_de_moneda(RESPUESTA_INVERSION) == []
+@pytest.mark.parametrize(
+    "respuesta",
+    [RESPUESTA_INVERSION, RESPUESTA_MONEDA, RESPUESTA_OTRO_CLIENTE],
+)
+def test_respuestas_fijas_de_alcance(respuesta):
+    assert problemas_de_moneda(respuesta) == []
 
 
 # --- Vistas del dashboard (AppTest) ------------------------------------------

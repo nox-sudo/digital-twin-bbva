@@ -117,6 +117,11 @@ def prompt_sistema(ctx: Contexto, ultimo_mes: str) -> str:
         "argumentos con los valores validos que trae el mensaje. Si no se puede "
         "corregir, explica en una frase que dato falta; no repitas el mensaje "
         "tecnico.\n"
+        "- Las preguntas sobre los clientes en conjunto (cuantos clientes hay, "
+        "cuantos estan en riesgo alto, que proporcion gasta mas de lo que gana, "
+        "el portafolio) van con resumen_portafolio; no las contestes con los "
+        "datos del cliente. Un conteo o porcentaje de clientes sale solo de esa "
+        "herramienta.\n"
         "- Las herramientas sin argumentos (perfil_cliente, resumen_portafolio) "
         "se llaman sin argumentos.\n"
         "- No atribuyas causas a la probabilidad de impago: es la salida de un "
@@ -153,7 +158,7 @@ def responder(
     las preguntas y respuestas anteriores, de la mas antigua a la mas
     reciente. Un ErrorConexion del modelo se propaga: lo maneja la
     interfaz."""
-    fija = verificar_alcance(pregunta)
+    fija = verificar_alcance(pregunta, ctx.cliente_id)
     if fija is not None:
         return Respuesta(texto=fija, motivo="fuera_de_alcance")
 

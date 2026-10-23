@@ -818,7 +818,8 @@ HERRAMIENTAS = {
     "perfil_cliente": {
         "funcion": perfil_cliente,
         "descripcion": "Perfil, salud financiera (ingreso, gasto, capacidad de "
-        "ahorro, saldo, endeudamiento) y riesgo de impago del cliente.",
+        "ahorro, saldo, endeudamiento) y riesgo de impago del cliente de esta "
+        "conversacion. Solo de el, no del portafolio.",
         "parametros": {},
         "requeridos": [],
     },
@@ -849,8 +850,9 @@ HERRAMIENTAS = {
     },
     "comparar_con_portafolio": {
         "funcion": comparar_con_portafolio,
-        "descripcion": "Compara al cliente con el resto del portafolio: mediana "
-        "y proporcion de clientes con un valor menor o igual.",
+        "descripcion": "Donde queda este cliente frente a los demas, variable "
+        "por variable: mediana del portafolio y proporcion de clientes con un "
+        "valor menor o igual.",
         "parametros": {
             "variables": {
                 "type": "array",
@@ -932,9 +934,12 @@ HERRAMIENTAS = {
     },
     "resumen_portafolio": {
         "funcion": resumen_portafolio,
-        "descripcion": "Cifras del portafolio completo (ingreso mediano, "
-        "proporcion que gasta mas de lo que gana, probabilidad media de "
-        "impago, clientes por banda) y su cambio contra la sesion base.",
+        "descripcion": "Cifras de todos los clientes juntos, no de este "
+        "cliente: cuantos clientes hay y cuantos en cada banda de riesgo (bajo, "
+        "medio, alto), ingreso mediano, proporcion que gasta mas de lo que "
+        "gana, probabilidad media de impago y su cambio contra la sesion base. "
+        "Es la que responde '¿cuantos clientes...?' y las preguntas sobre el "
+        "portafolio.",
         "parametros": {},
         "requeridos": [],
     },
