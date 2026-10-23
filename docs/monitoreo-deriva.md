@@ -330,6 +330,28 @@ aproximacion sobre CSV de la tabla anterior. `actividad_p2p`, que con todo el
 historial llegaba a "vigilar" en la entrega 7 (0.118), queda estable: tambien
 derivaba por acumular historial, no por el escenario (que no toca el P2P).
 
+**Medicion con los ingresos calibrados a Mexico (2026-10-23).** Misma
+secuencia, con la sesion base regenerada con `config/ingresos.yaml`
+(referencia `ref_20261023_180316`; AUC 0.689 +- 0.071 y 81 positivos):
+
+| Variable | 2026-10 | 2026-11 | 2026-12 | 2027-01 | 2027-02 | 2027-03 | 2027-04 | Estado final |
+|---|---|---|---|---|---|---|---|---|
+| `capacidad_ahorro` | 0.007 | 0.037 | 0.061 | 0.134 | 0.221 | 0.370 | 0.591 | reentrenar |
+| `probabilidad_impago` (score) | 0.083 | 0.151 | 0.215 | 0.354 | 0.411 | 0.468 | 0.626 | reentrenar |
+| `estabilidad_ingreso` | 0.005 | 0.034 | 0.099 | 0.257 | 0.359 | 0.342 | 0.371 | reentrenar |
+| `gasto_promedio_3_meses` | 0.006 | 0.024 | 0.061 | 0.086 | 0.129 | 0.122 | 0.166 | vigilar |
+| `ingreso_mensual_promedio` | 0.002 | 0.005 | 0.011 | 0.034 | 0.072 | 0.060 | 0.077 | estable |
+| `gasto_mensual_total` | 0.002 | 0.003 | 0.004 | 0.009 | 0.016 | 0.025 | 0.038 | estable |
+| `proporcion_retiros` | 0.009 | 0.030 | 0.037 | 0.026 | 0.040 | 0.058 | 0.047 | estable |
+| `actividad_p2p` | 0.016 | 0.007 | 0.013 | 0.021 | 0.020 | 0.041 | 0.014 | estable |
+| `antiguedad_dias` | 0.032 | 0.115 | 0.334 | 0.828 | 0.860 | 1.007 | 1.658 | temporal |
+
+En el ultimo corte: 3 reentrenar, 1 vigilar, 12 estables y 2 temporales. Con
+ingresos con colas mas anchas la estabilidad del ingreso deriva antes
+(reentrenar en ene 2027 en vez de quedarse en vigilar) y el ingreso promedio
+queda estable. Las variables que el escenario no toca (retiros, P2P,
+antiguedad) dan lo mismo que antes.
+
 **Etiqueta de impago.** Sus coeficientes pre-registrados no cambian. Sus
 entradas observadas (capacidad de ahorro y ratio de endeudamiento) salen del
 feature store, asi que en las entregas pasan a usar la ventana. Es un cambio

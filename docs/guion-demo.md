@@ -35,7 +35,7 @@ construida.
    docker compose run --rm worker experimentos/auc_evento_posterior.py
    ```
 
-   Debe reportar 82 positivos y AUC por pliegue 0.741.
+   Debe reportar 81 positivos y AUC por pliegue 0.689.
 
 3. **Activar el escenario de deriva.** En `config/sesion.yaml`, poner
    `escenario_deriva.activo: true`. Es un cambio local: no se sube al repo.
@@ -88,28 +88,28 @@ las cifras de abajo cambiarian.
 
 Entrar como `admin` (contraseña en `data/credenciales_prueba.md`): ve todas
 las vistas. Para mostrar lo que ve un cliente, cerrar sesión y entrar con su
-`cliente_id` (por ejemplo CLI-000001), o abrir "Vista del cliente" como admin.
+`cliente_id` (por ejemplo CLI-000283), o abrir "Vista del cliente" como admin.
 
 ### 1. Portafolio (2 min)
 
 Pregunta que responde: a quien tengo que mirar.
 
-- Cabecera contra la base: ingreso mensual mediano $13,759 (-$2,002), 57 %
-  gastan mas de lo que ganan (+33.8 pts).
-- La probabilidad media (18.3 %, -2.2 pts) no sube: el modelo se reentrena
+- Cabecera contra la base: ingreso mensual mediano $9,797 (-$1,675), 58 %
+  gastan mas de lo que ganan (+34.2 pts).
+- La probabilidad media (18.7 %, -1.4 pts) no sube: el modelo se reentrena
   en cada corrida y la etiqueta se calibra a una tasa media de 15 %. La nota
   bajo las metricas lo explica; el deterioro se lee en las otras dos cifras
   y en Observabilidad.
-- Bandas: 309 bajo (62 %), 72 medio (14 %), 119 alto (24 %).
+- Bandas: 305 bajo (61 %), 83 medio (17 %), 112 alto (22 %).
 - Tabla "Clientes a revisar": seleccionar una fila abre al cliente.
 
 ### 2. Cliente (2 min)
 
 Ejemplo de riesgo alto: **CLI-000283**.
 
-- Probabilidad de impago 96.8 %. 26 anos, 1.2 anos de antiguedad.
-- Ingreso $30,387 al mes, capacidad de ahorro -$14,792, deuda / ingreso 5.50.
-- Ultimos 12 meses: neto promedio -$14,578 al mes; salidas mayores que
+- Probabilidad de impago 95.3 %. 26 anos, 1.2 anos de antiguedad.
+- Ingreso $55,535 al mes, capacidad de ahorro -$27,030, deuda / ingreso 5.50.
+- Ultimos 12 meses: neto promedio -$26,816 al mes; salidas mayores que
   entradas en 10 de 12 meses.
 - A donde se va el dinero: pago de deuda 26 %, suscripciones 15 %,
   servicios 13 %.
@@ -119,27 +119,29 @@ grafica mes a mes muestra los 19 meses de historial.
 
 ### 3. Mi resumen, la vista del cliente (2 min)
 
-Lo que ve **CLI-000001** al entrar. Solo sus datos, sin selector de cliente,
-en frases cortas y en pesos:
+El mismo **CLI-000283**, ahora como lo ve el cliente al entrar con su
+usuario: solo sus datos, sin selector de cliente, en frases cortas y en pesos.
 
-- Este mes (abr 2027): le entraron $11,486 y salieron $22,672; gastó $11,187
-  más de lo que le entró. En un mes normal gasta $986 más de lo que le entra.
-- Quincenas: le llegan unos $5,363 cada quincena; en may 2026 le llegaban
-  unos $11,212 (su ingreso bajó 52 %, el escenario de deriva).
-- A dónde se va su dinero (3 meses): servicios 28 %, pago de deuda 22 %,
-  hogar 11 %.
-- Su crédito: paso 1 de 6 de la escalera, pagos de deuda de $7,647 al mes,
-  42 % de su ingreso promedio; usa 21 % de su tarjeta.
-- Su riesgo, alto (68 %), explicado con sus propios valores SHAP. Lo sube:
-  3.5 años como cliente y deber 3.4 veces su ingreso de un mes. Lo baja: el
-  neto de sus transferencias entre personas.
-- ¿Me alcanza para algo de $15,000? De contado sí (tiene $31,501), pero sube
-  de 88 a 95 de cada 100 los escenarios en que se queda sin dinero algún mes.
-  A crédito a 12 meses con 45 % anual: $1,631 al mes con IVA sobre intereses.
+- Este mes (abr 2027): le entraron $32,876 y salieron $106,852. En un mes
+  normal gasta $16,658 más de lo que le entra.
+- Quincenas: le llegan unos $16,438 cada quincena; en may 2026 le llegaban
+  unos $34,368 (su ingreso bajó 52 %, el escenario de deriva).
+- A dónde se va su dinero (3 meses): pago de deuda 24 %, otros 18 %,
+  suscripciones 17 %.
+- Su crédito: paso 1 de 6 de la escalera, pagos de deuda de $25,513 al mes,
+  46 % de su ingreso promedio; usa 38 % de su tarjeta.
+- Su riesgo, alto, explicado con sus propios valores SHAP. Lo sube: debe 5.5
+  veces su ingreso de un mes, gasta $27,030 más de lo que le entra al mes y
+  gasta en compras unos $60,433 al mes.
+- ¿Me alcanza para algo de $15,000? De contado el saldo alcanza ($15,216),
+  pero con o sin la compra se queda sin dinero algún mes en 100 de cada 100
+  escenarios. A crédito a 12 meses con 45 % anual: $1,631 al mes con IVA
+  sobre intereses.
 
 La explicación reproduce el score publicado: usa el modelo que lo produjo
-(el del pliegue de la validación cruzada). Contraste: CLI-000162 (riesgo
-bajo, 8 %) lo baja sobre todo que le quedan $12,905 al mes.
+(el del pliegue de la validación cruzada). Contraste: **CLI-000162** (riesgo
+bajo, 5 %) lo baja sobre todo que le quedan $10,730 al mes; está en el paso 3
+(fondo de emergencia: su saldo cubre 1.1 meses de gastos).
 
 ### 4. Simulador de hipoteca (2 min)
 
@@ -147,10 +149,10 @@ Con los parametros por defecto (vivienda de $900,000), dos clientes:
 
 | | CLI-000001 | CLI-000162 |
 |---|---|---|
-| Riesgo sin hipoteca | 88 % | 4 % |
-| Riesgo con hipoteca | 100 % | 18 % |
-| Capacidad hipotecaria | $39,062 | $498,047 |
-| Enganche y gastos ($135,000) | No ahorra, no los reuniria | 10 meses |
+| Riesgo sin hipoteca | 89 % | 4 % |
+| Riesgo con hipoteca | 100 % | 25 % |
+| Capacidad hipotecaria | $48,828 | $410,156 |
+| Enganche y gastos ($135,000) | No ahorra, no los reuniria | 12 meses |
 
 Cuota mensual $8,361 en ambos. Riesgo = escenarios (de 5,000 trayectorias)
 en los que el saldo queda negativo en algun mes de los proximos 36. Las
@@ -161,35 +163,39 @@ aleatorios, asi que la diferencia es la hipoteca, no el ruido.
 ### 5. Observabilidad (3 min)
 
 - Ultima corrida por capa: Bronze, Silver y Gold correctas, 8 corridas
-  registradas cada una; ninguna fila a cuarentena. Si despues se vuelve a
-  correr el pipeline sobre la misma instancia (como al actualizar el codigo
-  el 23 oct 2026), Silver y Gold suman una corrida mas y la deriva un corte
-  repetido al 2027-04, con los mismos valores; Bronze no, porque no hay
-  archivos nuevos.
+  registradas cada una; ninguna fila a cuarentena.
 - Duracion por corrida en escala logaritmica: una corrida fuera de lo normal
   se ve aunque las demas tarden segundos.
 - Deriva (PSI) contra la referencia congelada de la base:
 
 | Corte | Score | capacidad_ahorro | estabilidad_ingreso | gasto_promedio_3_meses | ingreso_mensual_promedio |
 |---|---|---|---|---|---|
-| 2026-10 | 0.117 | 0.011 | 0.002 | 0.005 | 0.005 |
-| 2026-12 | 0.263 | 0.082 | 0.037 | 0.090 | 0.010 |
-| 2027-01 | 0.358 | 0.133 | 0.102 | 0.137 | 0.025 |
-| 2027-02 | 0.390 | 0.241 | 0.155 | 0.197 | 0.055 |
-| 2027-04 | 0.574 | 0.654 | 0.249 | 0.245 | 0.113 |
+| 2026-10 | 0.083 | 0.007 | 0.005 | 0.006 | 0.002 |
+| 2026-12 | 0.215 | 0.061 | 0.099 | 0.061 | 0.011 |
+| 2027-01 | 0.354 | 0.134 | 0.257 | 0.086 | 0.034 |
+| 2027-02 | 0.411 | 0.221 | 0.359 | 0.129 | 0.072 |
+| 2027-04 | 0.626 | 0.591 | 0.371 | 0.166 | 0.077 |
 
   Umbrales: 0.10 vigilar, 0.25 reentrenar. El score es lo primero que se
-  mueve (vigilar desde la primera entrega, reentrenar en dic 2026);
-  capacidad de ahorro cruza a reentrenar en mar 2027. Al ultimo corte: 2
-  reentrenar, 3 vigilar, 11 estables, 2 temporales (antiguedad y edad
-  derivan por el paso del tiempo y no alertan).
+  mueve (vigilar desde nov 2026, reentrenar en ene 2027); la estabilidad del
+  ingreso cruza a reentrenar en ene 2027 y la capacidad de ahorro en mar
+  2027. Al ultimo corte: 3 reentrenar, 1 vigilar, 12 estables, 2 temporales
+  (antiguedad y edad derivan por el paso del tiempo y no alertan).
 
 ## Preguntas probables
 
-- **Que tan bueno es el modelo?** AUC 0.741 +- 0.040 en validacion cruzada
-  (5 x 5) sobre la base, contra 0.864 del oraculo (la probabilidad verdadera,
+- **Que tan bueno es el modelo?** AUC 0.689 +- 0.071 en validacion cruzada
+  (5 x 5) sobre la base, contra 0.855 del oraculo (la probabilidad verdadera,
   que conoce el rasgo oculto y el choque). Sin las 3 variables de la
-  etiqueta baja a 0.681. `experimentos/auc_evento_posterior.py`.
+  etiqueta baja a 0.667. `experimentos/auc_evento_posterior.py`. Con 500
+  clientes el AUC depende mucho de la muestra: con los ingresos calibrados a
+  Mexico bajo de 0.741 a 0.689, mientras que con 5,000 clientes no cambio
+  (0.804 contra 0.803).
+- **Por que un cliente puede salir "bajo" y aun asi quedarse sin dinero en
+  el simulador?** Miden cosas distintas: el modelo ordena el riesgo de
+  atrasarse en pagos con todo el historial, el Monte Carlo remuestrea su
+  flujo. CLI-000001 tiene riesgo bajo (9 %) y aun asi en 89 de cada 100
+  escenarios se queda sin dinero algun mes; su ingreso bajo 52 % en el ano.
 - **Por que no sube la probabilidad media?** Ver Portafolio: calibracion a
   tasa fija en cada reentrenamiento.
 - **Los datos son reales?** No: sinteticos, reproducibles con la semilla 42 y
