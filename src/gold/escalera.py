@@ -404,7 +404,7 @@ def calcular(
         tasas = cfg["pago_comprometido"]["tasas_anuales"]
         supuestos.append(
             "Pago de deuda estimado con las tasas del catálogo (tarjeta "
-            f"{tasas['tarjeta_credito'] * 100:.0f} %, prestamo "
+            f"{tasas['tarjeta_credito'] * 100:.0f} %, préstamo "
             f"{tasas['prestamo_personal'] * 100:.0f} %) más IVA, y el pago mínimo "
             "de tarjeta de Banxico."
         )
