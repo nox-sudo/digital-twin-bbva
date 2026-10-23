@@ -16,6 +16,9 @@ Ademas guarda la probabilidad de cada cliente calculada FUERA DE PLIEGUE
 que no vio su etiqueta. predict_risk.py publica esa en Gold para los
 clientes con etiqueta; predecirlos con el modelo final, que si los vio,
 daba probabilidades sobreajustadas (decenas de clientes por encima de 90 %).
+Guarda tambien los 5 modelos de los pliegues y el pliegue de cada cliente:
+la vista del cliente explica su score con los valores SHAP del modelo que
+lo produjo (src/gold/explicacion.py).
 
 El AUC que imprime sale de UN solo split 80/20; con pocos positivos en
 prueba oscila mucho (ver docs/technical-debt.md y experimentos/), asi que
@@ -45,7 +48,6 @@ from sklearn.metrics import (  # noqa: E402
 )
 from sklearn.model_selection import (  # noqa: E402
     StratifiedKFold,
-    cross_val_predict,
     train_test_split,
 )
 from xgboost import XGBClassifier  # noqa: E402
@@ -80,14 +82,31 @@ def nuevo_modelo(y: pd.Series) -> XGBClassifier:
     )
 
 
-def probabilidad_fuera_de_pliegue(x: pd.DataFrame, y: pd.Series) -> pd.DataFrame:
+def probabilidad_fuera_de_pliegue(
+    x: pd.DataFrame, y: pd.Series
+) -> tuple[pd.DataFrame, list[XGBClassifier]]:
     """Probabilidad de cada cliente predicha por un modelo entrenado sin el
-    (5 pliegues estratificados, semilla fija)."""
+    (5 pliegues estratificados, semilla fija), el pliegue de cada cliente y
+    los 5 modelos. Mismo resultado que cross_val_predict con los mismos
+    pliegues; el ciclo explicito es para conservar los modelos."""
     pliegues = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-    probabilidades = cross_val_predict(
-        nuevo_modelo(y), x, y, cv=pliegues, method="predict_proba"
-    )[:, 1]
-    return pd.DataFrame({"cliente_id": x.index, "probabilidad": probabilidades})
+    probabilidad = pd.Series(float("nan"), index=x.index)
+    pliegue = pd.Series(-1, index=x.index)
+    modelos = []
+    for i, (entrena, prueba) in enumerate(pliegues.split(x, y)):
+        modelo = nuevo_modelo(y)
+        modelo.fit(x.iloc[entrena], y.iloc[entrena])
+        probabilidad.iloc[prueba] = modelo.predict_proba(x.iloc[prueba])[:, 1]
+        pliegue.iloc[prueba] = i
+        modelos.append(modelo)
+    oof = pd.DataFrame(
+        {
+            "cliente_id": x.index,
+            "probabilidad": probabilidad.values,
+            "pliegue": pliegue.values,
+        }
+    )
+    return oof, modelos
 
 
 def entrenar(
@@ -96,6 +115,7 @@ def entrenar(
     model_out: Path,
     shap_out: Path,
     oof_out: Path | None = None,
+    pliegues_out: Path | None = None,
 ):
     """Entrena XGBoost, evalua contra el conjunto de prueba, genera
     el grafico SHAP, y guarda el modelo. Retorna las metricas para el
@@ -142,9 +162,12 @@ def entrenar(
     logger.info("Modelo guardado en %s", model_out)
 
     if oof_out is not None:
-        oof = probabilidad_fuera_de_pliegue(x, y)
+        oof, modelos_pliegue = probabilidad_fuera_de_pliegue(x, y)
         oof_out.parent.mkdir(parents=True, exist_ok=True)
         oof.to_parquet(oof_out, index=False)
+        if pliegues_out is not None:
+            joblib.dump(modelos_pliegue, pliegues_out)
+            logger.info("Modelos de los pliegues guardados en %s", pliegues_out)
         logger.info(
             "Probabilidad fuera de pliegue guardada en %s: %d clientes, AUC %.3f",
             oof_out,
@@ -195,6 +218,7 @@ def main():
     parser.add_argument(
         "--oof-out", default="models/probabilidad_fuera_de_pliegue.parquet"
     )
+    parser.add_argument("--pliegues-out", default="models/risk_model_pliegues.joblib")
     args = parser.parse_args()
 
     try:
@@ -206,6 +230,7 @@ def main():
             Path(args.model_out),
             Path(args.shap_out),
             Path(args.oof_out),
+            Path(args.pliegues_out),
         )
     except Exception:
         logger.exception("Fallo el entrenamiento del modelo")
