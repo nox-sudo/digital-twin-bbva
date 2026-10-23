@@ -1,0 +1,83 @@
+# config/explicacion_riesgo.yaml
+#
+# Como se cuenta al cliente cada variable del modelo de riesgo en la vista
+# "Mi resumen" (src/gold/explicacion.py). El peso de cada variable sale de
+# los valores SHAP del propio cliente; aqui solo vive la redaccion.
+#
+# frase: el hecho, en segunda persona, con {valor} ya formateado.
+# formato: pesos | porcentaje | veces | anios | antiguedad | conteo | si_no |
+#          categoria
+# Las variables si_no usan frase_si / frase_no en vez de frase.
+
+factores_mostrados: 3
+
+variables:
+  ingreso_mensual_promedio:
+    formato: pesos
+    frase: "Te entran en promedio {valor} al mes"
+  estabilidad_ingreso:
+    formato: pesos
+    frase: "Tu ingreso cambia de un mes a otro, en promedio {valor}"
+  gasto_mensual_total:
+    formato: pesos
+    frase: "Gastas en compras unos {valor} al mes"
+  gasto_promedio_3_meses:
+    formato: pesos
+    frase: "En los últimos 3 meses gastaste {valor} al mes"
+  capacidad_ahorro:
+    formato: pesos
+    frase: "Después de tus gastos y pagos te quedan {valor} al mes"
+  saldo_liquido_disponible:
+    formato: pesos
+    frase: "Tienes {valor} disponibles en tu cuenta"
+  ratio_endeudamiento:
+    formato: veces
+    frase: "Lo que debes equivale a {valor} tu ingreso de un mes"
+  uso_linea_credito:
+    formato: porcentaje
+    frase: "Usas el {valor} del límite de tu tarjeta"
+  frecuencia_transacciones:
+    formato: conteo
+    frase: "Haces unos {valor} movimientos al mes"
+  actividad_p2p:
+    formato: pesos
+    frase: "Entre lo que recibes y envías a otras personas, te quedan {valor} al mes"
+  edad_anios:
+    formato: anios
+    frase: "Tu edad ({valor})"
+  antiguedad_dias:
+    formato: antiguedad
+    frase: "Llevas {valor} como cliente"
+  ingreso_declarado:
+    formato: pesos
+    frase: "Declaraste un ingreso de {valor} al mes"
+  numero_productos:
+    formato: conteo
+    frase: "Tienes {valor} productos con el banco"
+  tiene_tarjeta_credito:
+    formato: si_no
+    frase_si: "Tienes tarjeta de crédito"
+    frase_no: "No tienes tarjeta de crédito"
+  tiene_prestamo_personal:
+    formato: si_no
+    frase_si: "Tienes un préstamo personal"
+    frase_no: "No tienes préstamo personal"
+  proporcion_retiros:
+    formato: porcentaje
+    frase: "El {valor} de tus movimientos son retiros en efectivo"
+  categoria_gasto_dominante:
+    formato: categoria
+    frase: "En lo que más gastas es {valor}"
+
+# Nombre de cada categoria de gasto en la frase de categoria_gasto_dominante.
+categorias:
+  comida: comida
+  transporte: transporte
+  entretenimiento: entretenimiento
+  servicios: servicios
+  salud: salud
+  educacion: educación
+  hogar: el hogar
+  ropa: ropa
+  suscripciones: suscripciones
+  otros: otras cosas

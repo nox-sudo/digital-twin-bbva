@@ -33,6 +33,8 @@ from src.common.logging_utils import PipelineRunLogger  # noqa: E402
 from src.gold.kpi_definitions import KPI_REGISTRY, cargar_ventana  # noqa: E402
 from src.gold.movimientos import (  # noqa: E402
     TABLA_MOVIMIENTOS,
+    TABLA_QUINCENAS,
+    ingresos_quincenales,
     movimientos_mensuales,
 )
 
@@ -130,11 +132,12 @@ def main():
         movimientos = movimientos_mensuales(  # noqa: F841
             silver_context["transacciones"]
         )
+        quincenas = ingresos_quincenales(silver_context["transacciones"])  # noqa: F841
 
         # CREATE OR REPLACE dentro de una transaccion: si la creacion falla,
         # gold_kpis conserva la corrida anterior. Antes se hacia DROP y luego
         # CREATE, y un fallo entre ambos dejaba la base analitica sin tabla.
-        # Las dos tablas van en la misma transaccion: o se publican ambas de
+        # Las tres tablas van en la misma transaccion: o se publican todas de
         # esta corrida, o ninguna.
         con = duckdb.connect(args.out)
         try:
@@ -147,6 +150,10 @@ def main():
                     f"CREATE OR REPLACE TABLE {TABLA_MOVIMIENTOS} "
                     "AS SELECT * FROM movimientos"
                 )
+                con.execute(
+                    f"CREATE OR REPLACE TABLE {TABLA_QUINCENAS} "
+                    "AS SELECT * FROM quincenas"
+                )
                 con.execute("COMMIT")
             except Exception:
                 con.execute("ROLLBACK")
@@ -155,13 +162,16 @@ def main():
             filas_movimientos = con.execute(
                 f"SELECT COUNT(*) FROM {TABLA_MOVIMIENTOS}"
             ).fetchone()[0]
+            filas_quincenas = con.execute(
+                f"SELECT COUNT(*) FROM {TABLA_QUINCENAS}"
+            ).fetchone()[0]
         finally:
             con.close()
 
         print(
             f"\nGold escrito en {args.out}: {total_filas} filas "
             f"({len(catalogo)} KPIs x clientes); {TABLA_MOVIMIENTOS}: "
-            f"{filas_movimientos} filas"
+            f"{filas_movimientos} filas; {TABLA_QUINCENAS}: {filas_quincenas} filas"
         )
 
     except Exception as e:

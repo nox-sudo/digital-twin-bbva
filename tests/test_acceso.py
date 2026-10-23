@@ -192,7 +192,7 @@ def test_login_equivocado_no_entra(vistas):
 
 @pytest.mark.parametrize(
     "usuario, titulo",
-    [("admin", "Portafolio"), ("CLI-1", "Cliente")],
+    [("admin", "Portafolio"), ("CLI-1", "Mi resumen")],
 )
 def test_login_lleva_a_la_vista_de_su_rol(vistas, usuario, titulo):
     at = correr(RAIZ / "dashboard" / "app.py")
@@ -214,11 +214,12 @@ def test_paginas_por_rol():
     assert titulos("admin") == [
         "Portafolio",
         "Cliente",
+        "Vista del cliente",
         "Simulador de hipoteca",
         "Asistente",
         "Observabilidad",
     ]
-    # Un cliente no tiene Portafolio ni Observabilidad.
+    # Un cliente no tiene Portafolio, la vista 360 ni Observabilidad.
     assert titulos("cliente") == ["Mi resumen", "Simulador de hipoteca", "Asistente"]
     assert set(acceso.PAGINAS_POR_ROL) == set(acceso.u.ROLES)
     for paginas in acceso.PAGINAS_POR_ROL.values():
@@ -228,7 +229,7 @@ def test_paginas_por_rol():
         acceso.paginas_por_rol("otro", PAGINAS)
 
 
-@pytest.mark.parametrize("pagina", ["portafolio.py", "observabilidad.py"])
+@pytest.mark.parametrize("pagina", ["portafolio.py", "cliente.py", "observabilidad.py"])
 @pytest.mark.parametrize("usuario", [None, CLIENTE_1])
 def test_vistas_de_admin_cerradas_a_clientes(vistas, pagina, usuario):
     at = correr(PAGINAS / pagina, usuario)
@@ -238,7 +239,7 @@ def test_vistas_de_admin_cerradas_a_clientes(vistas, pagina, usuario):
     assert not at.metric and not at.dataframe
 
 
-@pytest.mark.parametrize("pagina", ["cliente.py", "simulador.py", "asistente.py"])
+@pytest.mark.parametrize("pagina", ["mi_resumen.py", "simulador.py", "asistente.py"])
 def test_vistas_de_cliente_piden_sesion(vistas, pagina):
     at = correr(PAGINAS / pagina)
     at.run()
@@ -247,10 +248,15 @@ def test_vistas_de_cliente_piden_sesion(vistas, pagina):
 
 
 def metricas(at) -> list[str]:
-    return [m.value for m in at.metric]
+    """Cifras y textos con datos del cliente (st.metric y st.markdown)."""
+    return [m.value for m in at.metric] + [str(m.value) for m in at.markdown]
 
 
-@pytest.mark.parametrize("pagina", ["cliente.py", "simulador.py"])
+def selector_de_cliente(at) -> list:
+    return [s for s in at.selectbox if s.label == "Cliente"]
+
+
+@pytest.mark.parametrize("pagina", ["mi_resumen.py", "simulador.py"])
 def test_un_cliente_no_ve_datos_de_otro(vistas, pagina):
     # Lo que ve el admin de cada cliente, como referencia.
     admin = {}
@@ -266,7 +272,7 @@ def test_un_cliente_no_ve_datos_de_otro(vistas, pagina):
     at.query_params["cliente_id"] = "CLI-2"
     at.run()
     assert not at.exception, [e.value for e in at.exception]
-    assert not at.selectbox, "un cliente no debe poder elegir cliente"
+    assert not selector_de_cliente(at), "un cliente no debe poder elegir cliente"
     assert metricas(at) == admin["CLI-1"]
     assert "CLI-2" not in textos(at)
 

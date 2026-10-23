@@ -11,7 +11,7 @@ import streamlit as st
 from dashboard import acceso, comun
 
 st.title("Cliente")
-acceso.requiere_rol("admin", "cliente")
+acceso.requiere_rol("admin")
 
 cfg = comun.config()
 

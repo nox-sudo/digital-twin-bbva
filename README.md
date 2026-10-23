@@ -92,6 +92,7 @@ digital-twin-bbva/
 │   ├── sesion.yaml               # Parámetros de la sesión de datos (semilla, fecha, volumen, escenario de deriva)
 │   ├── ingresos.yaml             # Ingreso declarado por ocupación (mediana, dispersión, piso de salario mínimo) y sus referencias
 │   ├── escalera_financiera.yaml  # Pasos y umbrales de la escalera financiera, con fuente (CONDUSEF, Banxico)
+│   ├── explicacion_riesgo.yaml   # Frase de cada variable del modelo para explicar el riesgo al cliente
 │   ├── mercado_mx.yaml           # Cifras de mercado de referencia con fuente: Banxico, CAT, IVA sobre intereses
 │   ├── features.yaml             # Ventana de meses de las features de flujo (12)
 │   ├── business_rules.yaml       # Reglas de calidad de Silver, declarativas
@@ -126,7 +127,8 @@ digital-twin-bbva/
 │   │   ├── kpi_definitions.py    # Lógica de cálculo de cada KPI
 │   │   ├── risk_features.py      # Feature store y gold_creditos_cliente: construir, persistir y leer
 │   │   ├── escalera.py           # Escalera financiera: paso del cliente con umbrales de CONDUSEF
-│   │   ├── movimientos.py        # gold_movimientos_mensuales: transacciones por cliente y mes
+│   │   ├── explicacion.py        # Riesgo de un cliente explicado con sus valores SHAP (modelo que produjo el score)
+│   │   ├── movimientos.py        # gold_movimientos_mensuales y gold_ingresos_quincenales
 │   │   ├── etiquetas_impago.py   # Modelo latente de la etiqueta de impago (módulo puro)
 │   │   └── etiquetas_gold.py     # Lectura/escritura de gold_etiquetas_impago y verificación del esquema
 │   ├── monitoreo/
@@ -146,7 +148,8 @@ digital-twin-bbva/
 │   ├── acceso.py                 # Login, páginas por rol y cliente de la sesión (cliente_actual)
 │   ├── datos.py                  # Consultas de solo lectura a Gold y a los logs (sin Streamlit)
 │   ├── comun.py                  # Caché, formato y paleta compartidos
-│   └── paginas/                  # portafolio.py, cliente.py, simulador.py, observabilidad.py
+│   ├── vista_cliente.py          # Frases de la vista Mi resumen (sin Streamlit)
+│   └── paginas/                  # portafolio.py, cliente.py, mi_resumen.py, simulador.py, asistente.py, observabilidad.py
 ├── tests/
 │   ├── conftest.py
 │   ├── test_validation.py        # Pruebas del motor de Silver
@@ -164,6 +167,8 @@ digital-twin-bbva/
 │   ├── test_asistente_origen.py  # Guardas de datos inventados y de vivienda
 │   ├── test_asistente_alcance.py # Verificación previa de alcance
 │   ├── test_acceso.py            # Login y roles: solo hashes, credenciales ignoradas por git, un cliente no ve a otro
+│   ├── test_explicacion.py       # SHAP por cliente: reproduce el score, modelo del pliegue, frases
+│   ├── test_vista_cliente.py     # Mi resumen: 1 salario mínimo, $20,000, ingreso variable, sin crédito; aislamiento
 │   ├── test_escalera.py          # Escalera financiera: un cliente por paso, sin crédito, ingreso variable, pagos omitidos
 │   ├── test_moneda_mxn.py        # Montos en pesos y nada en dólares: vistas (AppTest), asistente y escalera
 │   ├── test_sesiones.py          # Reproducibilidad y reuso de sesiones de datos
@@ -275,6 +280,8 @@ Dos reportes, para preguntas distintas:
 ```bash
 uv run --group dashboard streamlit run dashboard/app.py
 ```
+
+**Mi resumen (vista del cliente).** Lo que ve un cliente al entrar, en frases cortas y en pesos: lo que le entró y salió este mes, su ingreso por quincena (`gold_ingresos_quincenales`), a dónde se va su dinero, su crédito (paso de la escalera financiera, pago mensual de deudas y uso de tarjeta), su riesgo explicado con sus propios valores SHAP (lo que más lo sube y lo que más lo baja, con el modelo que produjo su score) y "¿me alcanza para...?" con el mismo Monte Carlo del simulador (a crédito, con IVA sobre intereses y sin suponer la tasa). El admin la abre como "Vista del cliente" para cualquier cliente. Si Gold o los modelos vienen de una corrida anterior a estas tablas, cada tarjeta lo dice en vez de fallar.
 
 **Inicio de sesión.** El dashboard pide usuario y contraseña, con dos roles: `admin` ve todas las vistas y elige al cliente; un cliente entra con su `cliente_id` y solo ve sus propios datos (Mi resumen, Simulador y Asistente), sin selector. El cliente sale de la sesión, nunca de la URL ni de un argumento del asistente. Los usuarios se crean a partir de los clientes de Gold, con contraseñas aleatorias nuevas en cada corrida:
 

@@ -349,3 +349,65 @@ def tendencia_psi(historico: pd.DataFrame) -> pd.DataFrame:
         .sort_values(["variable", "fecha_corte"])
         .reset_index(drop=True)
     )
+
+
+# ---------------------------------------------------------------------------
+# Vista del cliente
+# ---------------------------------------------------------------------------
+
+
+def tabla_existe(con, nombre: str) -> bool:
+    return bool(
+        con.execute(
+            "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = ?",
+            [nombre],
+        ).fetchone()[0]
+    )
+
+
+def ingresos_quincenales(
+    ruta_duckdb: str, cliente_id: str, ventana_meses: int
+) -> pd.DataFrame | None:
+    """Ingreso por mes y quincena de los ultimos ventana_meses meses, con la
+    parte que llego por deposito (ingreso variable). Una quincena sin
+    ingreso vale 0. None si Gold aun no tiene gold_ingresos_quincenales
+    (una corrida anterior a la tabla)."""
+    with conexion_gold(ruta_duckdb) as con:
+        if not tabla_existe(con, "gold_ingresos_quincenales"):
+            return None
+        mes_corte = con.execute(
+            "SELECT MAX(mes) FROM gold_movimientos_mensuales"
+        ).fetchone()[0]
+        if mes_corte is None:
+            return pd.DataFrame(columns=["mes", "quincena", "monto", "depositos"])
+        desde = inicio_ventana(mes_corte, ventana_meses)
+        df = con.execute(
+            """
+            SELECT mes, quincena,
+                   SUM(monto_total) AS monto,
+                   SUM(CASE WHEN tipo_transaccion = 'deposito'
+                            THEN monto_total ELSE 0 END) AS depositos
+            FROM gold_ingresos_quincenales
+            WHERE cliente_id = ? AND mes BETWEEN ? AND ?
+            GROUP BY mes, quincena
+            """,
+            [cliente_id, desde, mes_corte],
+        ).fetchdf()
+    meses = [str(p) for p in pd.period_range(desde, mes_corte, freq="M")]
+    completo = pd.MultiIndex.from_product([meses, [1, 2]], names=["mes", "quincena"])
+    return (
+        df.set_index(["mes", "quincena"])
+        .reindex(completo, fill_value=0.0)
+        .reset_index()
+    )
+
+
+def creditos_cliente(ruta_duckdb: str, cliente_id: str) -> pd.DataFrame | None:
+    """Tarjetas y prestamos del cliente (gold_creditos_cliente). None si Gold
+    aun no tiene la tabla."""
+    with conexion_gold(ruta_duckdb) as con:
+        if not tabla_existe(con, "gold_creditos_cliente"):
+            return None
+        return con.execute(
+            "SELECT * FROM gold_creditos_cliente WHERE cliente_id = ?", [cliente_id]
+        ).fetchdf()

@@ -228,6 +228,24 @@ levantar Spark.
 | `monto_total` | Suma de `monto` con el signo de Silver: positivo para entradas, negativo para salidas. El neto de un mes es la suma simple |
 | `n_movimientos` | Numero de transacciones agregadas |
 
+## Gold: gold_ingresos_quincenales
+
+Ingresos (`nomina` y `deposito`, el mismo criterio que los KPIs) por cliente,
+mes y quincena (`src/gold/movimientos.py`). La primera quincena va del dia 1
+al 15 y la segunda del 16 al fin de mes. La escribe `transform_gold.py` en la
+misma transaccion que `gold_kpis` y `gold_movimientos_mensuales`; la lee la
+vista "Mi resumen" para decir cuanto llega en cada quincena. Sin PII. Una
+quincena sin ingreso no tiene fila.
+
+| Columna | Descripcion |
+|---|---|
+| `cliente_id` | |
+| `mes` | `AAAA-MM` |
+| `quincena` | 1 (dias 1 a 15) o 2 (dia 16 al fin de mes) |
+| `tipo_transaccion` | `nomina` o `deposito` |
+| `monto_total` | Suma de `monto`, positiva |
+| `n_movimientos` | Numero de transacciones agregadas |
+
 ## Gold: gold_creditos_cliente
 
 Una fila por cuenta de credito (tarjeta o prestamo personal), sin PII. La

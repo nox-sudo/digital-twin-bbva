@@ -16,6 +16,11 @@ resumen_portafolio: data/calidad/resumen_portafolio
 monitoreo_psi: config/monitoreo_psi.yaml
 # Usuarios del dashboard (generate_credentials.py): solo hashes argon2id.
 usuarios: data/auth/usuarios.duckdb
+# Modelo de riesgo y probabilidades fuera de pliegue (train_model.py), para
+# explicar el score de cada cliente con sus valores SHAP en "Mi resumen".
+modelo: models/risk_model.joblib
+probabilidad_oof: models/probabilidad_fuera_de_pliegue.parquet
+modelos_pliegues: models/risk_model_pliegues.joblib
 
 # Bandas de riesgo sobre probabilidad_impago. Son una decision de
 # operacion (a partir de que probabilidad se revisa a un cliente), no una

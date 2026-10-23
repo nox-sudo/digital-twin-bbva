@@ -33,8 +33,9 @@ from src.common.usuarios import Usuario  # noqa: E402
 RAIZ = Path(__file__).resolve().parents[1]
 
 # Lo que produce formato_mxn (0 decimales por defecto).
-# El monto termina donde termina el formato: "$8360.73" no pasa.
-MONTO_MXN = re.compile(r"-?\$\d{1,3}(?:,\d{3})*(?:\.\d+)?(?: MXN)?(?![\d,])")
+# El monto termina donde termina el formato: "$8360.73" o "$1,0000" no pasan;
+# una coma de puntuacion despues del monto ("$600, 6 %") si.
+MONTO_MXN = re.compile(r"-?\$\d{1,3}(?:,\d{3})*(?:\.\d+)?(?: MXN)?(?!\d|,\d)")
 OTRA_MONEDA = [
     re.compile(r"\bUSD\b"),
     re.compile(r"US\$"),
@@ -77,6 +78,7 @@ def textos(valor) -> list[str]:
         "Riesgo de 18.3 % a 15 años en 36 meses",
         "No doy recomendaciones de inversión. ¿Compro dólares ahora?",
         "Enganche y gastos (\\$135,000): no los reuniría.",
+        "Comida ($14,400, 60 %) y otros ($9,600, 40 %).",
     ],
 )
 def test_textos_validos(texto):
@@ -91,6 +93,7 @@ def test_textos_validos(texto):
         "Son $500 dólares",
         "Ganas 1,000 dólares",
         "Cuota de $8360.73",
+        "Cuota de $1,0000",
         "Tienes $ 1,000",
     ],
 )
@@ -175,7 +178,8 @@ ADMIN = Usuario("admin", "admin")
     [
         ("portafolio.py", ADMIN, None),
         ("cliente.py", ADMIN, "CLI-2"),
-        ("cliente.py", Usuario("CLI-1", "cliente"), None),
+        ("mi_resumen.py", ADMIN, "CLI-2"),
+        ("mi_resumen.py", Usuario("CLI-1", "cliente"), None),
         ("simulador.py", ADMIN, "CLI-1"),
         ("simulador.py", Usuario("CLI-2", "cliente"), None),
         ("observabilidad.py", ADMIN, None),

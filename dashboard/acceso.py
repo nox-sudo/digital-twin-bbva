@@ -34,6 +34,7 @@ PAGINAS_POR_ROL = {
         "Negocio": [
             ("portafolio.py", "Portafolio"),
             ("cliente.py", "Cliente"),
+            ("mi_resumen.py", "Vista del cliente"),
             ("simulador.py", "Simulador de hipoteca"),
             ("asistente.py", "Asistente"),
         ],
@@ -41,7 +42,7 @@ PAGINAS_POR_ROL = {
     },
     "cliente": {
         "Mis finanzas": [
-            ("cliente.py", "Mi resumen"),
+            ("mi_resumen.py", "Mi resumen"),
             ("simulador.py", "Simulador de hipoteca"),
             ("asistente.py", "Asistente"),
         ],

@@ -29,6 +29,10 @@ from pyspark.sql import DataFrame
 from pyspark.sql import functions as F
 
 TABLA_MOVIMIENTOS = "gold_movimientos_mensuales"
+TABLA_QUINCENAS = "gold_ingresos_quincenales"
+# Mismo criterio de ingreso que los KPIs (src/gold/kpi_definitions.py):
+# nomina y depositos; las transferencias P2P no son ingreso.
+TIPOS_INGRESO = ("nomina", "deposito")
 
 
 def movimientos_mensuales(transacciones: DataFrame) -> pd.DataFrame:
@@ -43,5 +47,27 @@ def movimientos_mensuales(transacciones: DataFrame) -> pd.DataFrame:
             F.count("*").alias("n_movimientos"),
         )
         .orderBy("cliente_id", "mes", "tipo_transaccion", "categoria")
+    )
+    return agregado.toPandas()
+
+
+def ingresos_quincenales(transacciones: DataFrame) -> pd.DataFrame:
+    """Ingresos por quincena: la primera va del dia 1 al 15 y la segunda del
+    16 al fin de mes. La vista del cliente la usa para decir cuanto le llega
+    y cuando (la nomina se paga el 15 y el ultimo dia); el agregado mensual
+    no conserva ese corte.
+
+    Grano: (cliente_id, mes, quincena, tipo_transaccion). Una quincena sin
+    ingresos no tiene fila."""
+    agregado = (
+        transacciones.filter(F.col("tipo_transaccion").isin(*TIPOS_INGRESO))
+        .withColumn("mes", F.date_format("fecha", "yyyy-MM"))
+        .withColumn("quincena", F.when(F.dayofmonth("fecha") <= 15, 1).otherwise(2))
+        .groupBy("cliente_id", "mes", "quincena", "tipo_transaccion")
+        .agg(
+            F.sum("monto").cast("double").alias("monto_total"),
+            F.count("*").alias("n_movimientos"),
+        )
+        .orderBy("cliente_id", "mes", "quincena", "tipo_transaccion")
     )
     return agregado.toPandas()
