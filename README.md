@@ -166,6 +166,7 @@ digital-twin-bbva/
 │   ├── test_asistente_conversacion.py  # Bucle de conversación con un modelo falso (sin Ollama)
 │   ├── test_asistente_origen.py  # Guardas de datos inventados y de vivienda
 │   ├── test_asistente_alcance.py # Verificación previa de alcance
+│   ├── test_eval_asistente.py    # Calificación de la evaluación del asistente y banco bien formado
 │   ├── test_acceso.py            # Login y roles: solo hashes, credenciales ignoradas por git, un cliente no ve a otro
 │   ├── test_explicacion.py       # SHAP por cliente: reproduce el score, modelo del pliegue, frases
 │   ├── test_vista_cliente.py     # Mi resumen: 1 salario mínimo, $20,000, ingreso variable, sin crédito; aislamiento
@@ -186,13 +187,16 @@ digital-twin-bbva/
 │   ├── diccionario-datos.md      # Columnas, tipos, reglas y tratamiento de PII
 │   ├── ejecucion-local.md        # Guía para correr el proyecto en otra máquina
 │   ├── guion-demo.md             # Reconstruir la instancia de la demo y recorrido del dashboard
+│   ├── evaluacion-asistente.md   # Evaluación del asistente con preguntas no vistas: resultados y fallas
 │   ├── seguridad.md              # Secretos, clasificación de datos por capa, auditoría
 │   ├── monitoreo-deriva.md       # PSI: qué mide, línea base congelada, data drift vs concept drift
 │   ├── pruebas-robustez.md       # Las 5 brechas de robustez: qué se probó, resultado y cobertura
 │   └── technical-debt.md         # Deuda técnica conocida
 ├── experimentos/
 │   ├── auc_evento_posterior.py   # Evalúa el modelo contra el evento posterior: CV, oráculo, signos y orden
-│   └── sondeo_herramientas.py    # Qué herramienta del asistente elige el modelo local, por pregunta y corrida
+│   ├── sondeo_herramientas.py    # Qué herramienta del asistente elige el modelo local, por pregunta y corrida
+│   ├── eval_asistente.py         # Evaluación del asistente completo con preguntas no vistas (métricas deterministas)
+│   └── eval_asistente.yaml       # Banco de preguntas de la evaluación (v1)
 ├── models/                       # Modelo entrenado y gráfico SHAP (se regeneran)
 ├── .github/workflows/ci.yml      # Lint, tests, smoke test Bronze→Silver→Gold→modelo
 ├── main.py                       # CLI unico: python main.py <paso> [opciones]
@@ -382,6 +386,7 @@ La documentación técnica vive en el repositorio y se actualiza en el mismo PR 
 | [docs/diccionario-datos.md](docs/diccionario-datos.md) | Columnas por entidad y capa: tipos, reglas de calidad, tratamiento de PII, KPIs y feature store |
 | [docs/seguridad.md](docs/seguridad.md) | Secretos, clasificación de datos por capa, protección de PII, auditoría del repositorio y riesgos aceptados |
 | [docs/ejecucion-local.md](docs/ejecucion-local.md) | Cómo correr el proyecto en otra máquina, comandos de `demo.sh` y problemas comunes |
+| [docs/evaluacion-asistente.md](docs/evaluacion-asistente.md) | Evaluación del asistente con 24 preguntas no vistas, 3 clientes y 3 repeticiones: resultados por categoría, fallas reales y de la métrica, revisión manual |
 | [docs/guion-demo.md](docs/guion-demo.md) | Cómo reconstruir en otra máquina la instancia de la presentación (base y 7 entregas con deriva), cifras esperadas y recorrido del dashboard |
 | [docs/pruebas-robustez.md](docs/pruebas-robustez.md) | Las 5 brechas de robustez probadas con datos sucios, su resultado y qué parte tiene prueba automatizada |
 | [docs/technical-debt.md](docs/technical-debt.md) | Deuda técnica conocida (incluye la evaluación de las etiquetas de impago), con fecha de última verificación |
