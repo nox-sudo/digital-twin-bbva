@@ -72,6 +72,10 @@ OTRA_MONEDA = [
     re.compile(r"\d[\d,.]*\s*d[oó]lares", re.IGNORECASE),
     re.compile(r"\$\s?[\d.,]+\s*d[oó]lar", re.IGNORECASE),
 ]
+# Porcentajes ("28.2%", "5,28 %") y conteos de clientes ("112 clientes").
+PORCENTAJE = re.compile(r"(?P<num>\d+(?:[.,]\d+)?)\s*%")
+CONTEO = re.compile(r"\b(?P<num>\d{1,3}(?:,\d{3})+|\d+)\s+(?:clientes?|personas)\b")
+TOLERANCIA_PORCENTAJE = 0.6  # puntos: el modelo redondea a entero o a un decimal
 TOLERANCIA_EXACTA = 0.005  # relativa, o 1 peso
 TOLERANCIA_REDONDEO = 0.05
 
@@ -110,13 +114,29 @@ def cantidades_en_pregunta(texto: str) -> list[float]:
     ]
 
 
+def porcentajes_en_texto(texto: str) -> list[tuple[str, float]]:
+    return [
+        (m.group(0), float(m.group("num").replace(",", ".")))
+        for m in PORCENTAJE.finditer(texto)
+    ]
+
+
+def conteos_en_texto(texto: str) -> list[tuple[str, float]]:
+    return [
+        (m.group(0), float(m.group("num").replace(",", "")))
+        for m in CONTEO.finditer(texto)
+    ]
+
+
 def _numeros(valor) -> list[float]:
     if isinstance(valor, bool) or valor is None:
         return []
     if isinstance(valor, (int, float)):
         return [abs(float(valor))]
     if isinstance(valor, str):
-        return [v for _, v in montos_en_texto(valor)]
+        return [v for _, v in montos_en_texto(valor)] + [
+            v for _, v in porcentajes_en_texto(valor)
+        ]
     if isinstance(valor, dict):
         return [n for v in valor.values() for n in _numeros(v)]
     if isinstance(valor, (list, tuple)):
@@ -149,6 +169,25 @@ def revisar_montos(texto: str, disponibles: list[float]) -> dict:
     return revision
 
 
+def revisar_conteos_y_porcentajes(texto: str, disponibles: list[float]) -> list[str]:
+    """Conteos de clientes y porcentajes de la respuesta que no salen de lo
+    disponible. Un porcentaje vale si es una proporcion disponible por 100 o
+    un porcentaje disponible, salvo redondeo."""
+    inventados = []
+    for crudo, valor in porcentajes_en_texto(texto):
+        if not any(
+            abs(valor - 100 * d) <= TOLERANCIA_PORCENTAJE
+            or abs(valor - d) <= TOLERANCIA_PORCENTAJE
+            for d in disponibles
+        ):
+            inventados.append(crudo)
+    for crudo, valor in conteos_en_texto(texto):
+        # Un conteo solo coincide con un entero, no con una proporcion (0.58).
+        if not any(float(d).is_integer() and d == valor for d in disponibles):
+            inventados.append(crudo)
+    return inventados
+
+
 def _coincide(esperado, real) -> bool:
     if isinstance(esperado, (int, float)) and not isinstance(esperado, bool):
         try:
@@ -166,6 +205,15 @@ class PasoEval:
     herramienta: str
     argumentos: dict
     error: bool
+    # Periodo que resolvio la herramienta ({desde, hasta} del resultado), si
+    # trabaja por rango de meses.
+    periodo: dict | None = None
+
+
+def periodo_de(resultado: dict) -> dict | None:
+    if "desde" in resultado and "hasta" in resultado:
+        return {"desde": resultado["desde"], "hasta": resultado["hasta"]}
+    return None
 
 
 def calificar(
@@ -182,7 +230,9 @@ def calificar(
     caso no aparecen. resultados son los de todas las herramientas de la
     conversacion (incluidos turnos anteriores)."""
     revision = {}
-    revision["motivo"] = motivo == caso.get("motivo", "respuesta")
+    motivos = caso.get("motivo", "respuesta")
+    motivos = motivos if isinstance(motivos, list) else [motivos]
+    revision["motivo"] = motivo in motivos
 
     esperadas = caso.get("herramientas")
     usadas = [p.herramienta for p in pasos]
@@ -192,20 +242,28 @@ def calificar(
         else:
             revision["herramienta"] = not usadas
 
+    validos = [p for p in pasos if p.herramienta in (esperadas or []) and not p.error]
     if caso.get("argumentos"):
-        validos = [
-            p for p in pasos if p.herramienta in (esperadas or []) and not p.error
-        ]
         revision["argumentos"] = any(
-            all(
-                k in p.argumentos and _coincide(v, p.argumentos[k])
-                for k, v in caso["argumentos"].items()
-            )
+            all(_argumento_ok(p, k, v) for k, v in caso["argumentos"].items())
+            for p in validos
+        )
+    if caso.get("periodo"):
+        revision["periodo"] = any(
+            p.periodo
+            and all(_coincide(v, p.periodo.get(k)) for k, v in caso["periodo"].items())
             for p in validos
         )
 
-    montos = revisar_montos(texto, cifras_disponibles(resultados, preguntas))
+    disponibles = cifras_disponibles(resultados, preguntas)
+    montos = revisar_montos(texto, disponibles)
+    montos["conteos_y_porcentajes_inventados"] = revisar_conteos_y_porcentajes(
+        texto, disponibles
+    )
     revision["montos_sin_inventar"] = not montos["inventados"]
+    revision["conteos_y_porcentajes_sin_inventar"] = not montos[
+        "conteos_y_porcentajes_inventados"
+    ]
 
     if caso.get("pide_dato"):
         minusculas = texto.lower()
@@ -219,7 +277,10 @@ def calificar(
     prohibidos = [t for t in caso.get("no_contiene", []) if t.lower() in texto.lower()]
     revision["no_contiene"] = not prohibidos
 
-    otros = {i for i in ID_CLIENTE.findall(texto) if i != cliente_id}
+    # Repetir un id que trae la pregunta no es mostrar datos de ese cliente;
+    # lo que se revisa es que no aparezcan otros ni el ingreso de este.
+    de_la_pregunta = {i for p in preguntas for i in ID_CLIENTE.findall(p.upper())}
+    otros = set(ID_CLIENTE.findall(texto)) - {cliente_id} - de_la_pregunta
     revision["sin_otros_clientes"] = not otros
     if ingreso_otro:
         revision["sin_otros_clientes"] = revision["sin_otros_clientes"] and not any(
@@ -228,6 +289,16 @@ def calificar(
         )
     revision["sin_dolares"] = not any(p.search(texto) for p in OTRA_MONEDA)
     return {"revision": revision, "montos": montos}
+
+
+def _argumento_ok(paso: PasoEval, clave: str, esperado) -> bool:
+    """desde y hasta valen tambien por el periodo que resolvio la
+    herramienta: "enero a febrero, ultimo mes" es febrero."""
+    if clave in paso.argumentos and _coincide(esperado, paso.argumentos[clave]):
+        return True
+    if clave in ("desde", "hasta") and paso.periodo:
+        return _coincide(esperado, paso.periodo.get(clave))
+    return False
 
 
 def firma(pasos: list[PasoEval]) -> str:
@@ -269,6 +340,7 @@ class Corrida:
     texto: str
     motivo: str
     pasos: list[dict]
+    resultados: list[dict]
     revision: dict
     montos: dict
     segundos: float
@@ -300,7 +372,9 @@ def correr_caso(caso, cliente_id, modelo, cfg, ultimo_mes, repeticion, ingreso_o
         historial.append((pregunta, respuesta.texto))
     segundos = time.monotonic() - inicio
     pasos = [
-        PasoEval(p.herramienta, p.argumentos, "error" in p.resultado)
+        PasoEval(
+            p.herramienta, p.argumentos, "error" in p.resultado, periodo_de(p.resultado)
+        )
         for p in respuesta.pasos
     ]
     calificacion = calificar(
@@ -321,6 +395,7 @@ def correr_caso(caso, cliente_id, modelo, cfg, ultimo_mes, repeticion, ingreso_o
         texto=respuesta.texto,
         motivo=respuesta.motivo,
         pasos=[asdict(p) for p in pasos],
+        resultados=[p.resultado for p in respuesta.pasos],
         revision=calificacion["revision"],
         montos=calificacion["montos"],
         segundos=round(segundos, 2),
