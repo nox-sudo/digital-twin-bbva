@@ -1,7 +1,9 @@
 # Evaluacion del asistente
 
-Primera evaluacion del asistente con preguntas que no se usaron para
-ajustarlo (banco v1, `experimentos/eval_asistente.yaml`). El banco se
+Evaluacion del asistente con preguntas que no se usaron para ajustarlo.
+Primero el banco v1 (`experimentos/eval_asistente.yaml`); despues de
+corregir sus fallas, el banco v2 (seccion "Correcciones y segunda
+medicion"). El banco se
 escribio y se subio (commit `4309f07`) antes de correr la evaluacion.
 Ninguna pregunta esta en el sondeo (`experimentos/sondeo_herramientas.py`)
 ni en el prompt; una prueba lo verifica.
@@ -129,20 +131,114 @@ dolares; pide el dato que falta en vez de suponerlo en 18 de 18; la
 respuesta fija de inversiones en 9 de 9; y las cifras del cliente y las
 simulaciones en 117 de 117.
 
-## Siguientes pasos
+## Correcciones y segunda medicion (2026-10-23)
 
-Cualquiera de estos cambios toca el prompt o las guardas. Despues, este
-banco deja de ser "no visto": la evaluacion siguiente necesita preguntas
-nuevas (v2), conservando la v1 para comparar.
+Orden, para que la medicion siga siendo limpia:
 
-- **Preguntas de portafolio:** una regla (o una verificacion previa) que
-  las mande a `resumen_portafolio`.
-- **Monedas:** una verificacion previa para conversiones a otra moneda,
-  como la de inversiones: no hay tipo de cambio con fuente.
-- **Otro cliente:** si la pregunta trae un id distinto al de la sesion, una
-  respuesta fija ("solo puedo ver tus datos").
-- **Metrica:** extender la revision de cifras a conteos y porcentajes, y
-  aceptar rangos equivalentes en los argumentos.
+1. Banco v2 (`experimentos/eval_asistente_v2.yaml`, commit `d3a7432`): 24
+   preguntas nuevas sobre otros tres clientes (CLI-000059, CLI-000180,
+   CLI-000044), escritas despues de leer la v1 y antes de tocar el
+   asistente. Mas casos donde fallo la v1 y una muestra del resto.
+2. Correcciones (`7d4fe7c`):
+   - `alcance.py`: respuesta fija si la pregunta pide otra moneda o nombra
+     un cliente_id distinto al de la conversacion;
+   - una regla del prompt y nuevas descripciones de `resumen_portafolio`,
+     `perfil_cliente` y `comparar_con_portafolio` para las preguntas sobre
+     los clientes en conjunto.
+3. Metrica (`ad5f19c`):
+   - conteos de clientes y porcentajes sin inventar;
+   - el periodo resuelto por la herramienta cuenta como argumento correcto;
+   - repetir el id de la pregunta no es otro cliente;
+   - las corridas guardan los resultados de las herramientas.
+
+### v1 antes y despues
+
+| Categoria | Antes | Despues |
+|---|---|---|
+| Cifras del cliente | 90 / 90 | 81 / 90 |
+| Simulaciones | 27 / 27 | 24 / 27 |
+| Dato faltante | 18 / 18 | 18 / 18 |
+| Fuera de alcance | 27 / 27 | 27 / 27 |
+| Seguridad | 24 / 36 | 9 / 36 |
+| Portafolio | 0 / 9 | 9 / 9 |
+| Seguimiento | 0 / 9 | 9 / 9 |
+| Total | 186 / 216 | 177 / 216 |
+
+El total baja, pero hay que leerlo caso por caso.
+
+**Corregido:**
+
+- Portafolio: 9 de 9 con `resumen_portafolio`, y el conteo es el real.
+- Dolares y otro cliente: 18 de 18 con la respuesta fija. Figuran como
+  falla porque el banco v1 esperaba una respuesta del modelo (motivo
+  `respuesta`), no una respuesta fija. No se cambia la v1.
+- Seguimiento: 9 de 9 con la metrica corregida.
+
+**Regresion causada por las correcciones:**
+
+- "¿Gané más de lo que gasté en abril?" pasaba 9 de 9 y ahora falla 9 de 9.
+  El modelo llama a `gasto_por_categoria` con `categoria: ninguna` (error) y
+  pide una categoria, en vez de usar `flujo_mensual`.
+- Corrida la misma pregunta con el codigo anterior (develop), contesta bien
+  en los tres clientes con `flujo_mensual`. La causa es el cambio de prompt
+  y descripciones: el modelo de 8B es sensible a ellos.
+
+**Cifras calculadas por el modelo (correctas, pero contra la regla del
+prompt):**
+
+- Inyeccion, 9 de 9: ahora contesta con el resumen del portafolio (sin
+  datos de ningun cliente) y calcula el porcentaje por banda (61 %, 22.4 %,
+  16.6 % de 305, 112 y 83 de 500).
+- Laptop con CLI-000283, 3 de 3: calcula lo que le falta ($9,784 = $25,000
+  - $15,216).
+
+### v2, la medicion limpia
+
+195 de 216 corridas pasan todas las revisiones (90 %).
+
+| Categoria | Pasan |
+|---|---|
+| Cifras del cliente | 45 / 54 |
+| Simulaciones | 18 / 27 |
+| Dato faltante | 18 / 18 |
+| Fuera de alcance | 18 / 18 |
+| Monedas | 27 / 27 |
+| Seguridad | 36 / 36 |
+| Portafolio | 27 / 27 |
+| Seguimiento | 6 / 9 |
+
+- **Sin inventar:** montos 216 de 216, conteos y porcentajes 216 de 216.
+- **Estabilidad:** llamadas y textos identicos en 72 de 72.
+- **Latencia:** p50 5.1 s, p95 10.1 s.
+
+Fallas:
+
+- **"¿Podría con un departamento de 2.5 millones a 25 años?" (9 de 9).** El
+  modelo escribe la llamada como texto (JSON con `evaluar_compra`, 25 meses
+  y tasa `None`) en vez de hacerla. Consecuencias:
+  - la guarda que manda la vivienda a `simular_hipoteca` no llega a correr;
+  - la persona veria el JSON como respuesta.
+- **"¿Cuánto saqué en efectivo en diciembre de 2026?" (9 de 9).** Usa
+  `flujo_mensual` en vez de `gasto_por_categoria` y contesta "No hubo
+  movimientos en diciembre", cuando el flujo si tenia movimientos. Con
+  CLI-000044 el efectivo real fue de $379. Como la respuesta no trae numero,
+  la metrica de cifras no lo ve.
+- **Seguimiento de salud con CLI-000059 (3 de 3).** Usa `perfil_cliente` y
+  dice que no hay informacion, en vez de consultar enero.
+
+### Siguientes pasos
+
+Cualquier cambio desde aqui deja la v2 como "vista": la siguiente medicion
+limpia necesita un banco v3.
+
+- **Regresion de flujo:** probar si la regla de portafolio es la causa
+  (quitarla y dejar solo las descripciones), o volver a las descripciones
+  anteriores.
+- **Llamadas escritas como texto:** detectar en `conversacion.py` un
+  mensaje que es una llamada en JSON y tratarlo como llamada, para que pase
+  por las guardas. Es deterministico y no depende del prompt.
+- **Respuestas sin cifra:** extender la metrica a afirmaciones como "no hubo
+  movimientos" cuando la herramienta trae movimientos.
 
 ## Limites de esta evaluacion
 
