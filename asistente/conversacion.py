@@ -15,6 +15,9 @@ redacta la respuesta con lo que devolvieron.
      esa es la respuesta. Antes de ejecutar, asistente/origen.py descarta o
      rechaza datos que el usuario no dio (precio, plazo, tasa...) y redirige
      una vivienda evaluada como compra general a la hipoteca.
+     Si el modelo escribe la llamada como texto (un JSON con el nombre de
+     una herramienta) en vez de hacerla, se trata como llamada: asi pasa por
+     las mismas guardas y la persona no ve el JSON.
 
 El bucle no depende de LangChain: recibe cualquier objeto con
 invoke(mensajes) -> {"content": str, "tool_calls": [...]}, asi que las
@@ -24,6 +27,7 @@ adaptador real (grupo de dependencias "asistente").
 
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -34,6 +38,11 @@ from asistente.herramientas import RAIZ, Contexto, ejecutar, esquemas
 from asistente.origen import revisar_llamada
 
 log = logging.getLogger(__name__)
+
+# Bloque ```json ... ``` alrededor de una llamada escrita como texto.
+_CERCA = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
+# Valores de Python que el modelo escribe dentro del JSON.
+_PYTHON_A_JSON = [(r"\bNone\b", "null"), (r"\bTrue\b", "true"), (r"\bFalse\b", "false")]
 
 SIN_RESPUESTA = (
     "No pude armar una respuesta con los datos disponibles. Intenta con una "
@@ -117,11 +126,6 @@ def prompt_sistema(ctx: Contexto, ultimo_mes: str) -> str:
         "argumentos con los valores validos que trae el mensaje. Si no se puede "
         "corregir, explica en una frase que dato falta; no repitas el mensaje "
         "tecnico.\n"
-        "- Las preguntas sobre los clientes en conjunto (cuantos clientes hay, "
-        "cuantos estan en riesgo alto, que proporcion gasta mas de lo que gana, "
-        "el portafolio) van con resumen_portafolio; no las contestes con los "
-        "datos del cliente. Un conteo o porcentaje de clientes sale solo de esa "
-        "herramienta.\n"
         "- Las herramientas sin argumentos (perfil_cliente, resumen_portafolio) "
         "se llaman sin argumentos.\n"
         "- No atribuyas causas a la probabilidad de impago: es la salida de un "
@@ -143,6 +147,31 @@ def _mensajes_iniciales(
         mensajes.append({"role": "assistant", "content": respuesta})
     mensajes.append({"role": "user", "content": pregunta})
     return mensajes
+
+
+def llamada_en_texto(texto: str) -> dict | None:
+    """La llamada a herramienta que el modelo escribio como texto, o None.
+    Solo cuenta si todo el texto es un objeto JSON con el nombre de una
+    herramienta y sus argumentos ("parameters" o "arguments")."""
+    texto = (texto or "").strip()
+    cerca = _CERCA.match(texto)
+    if cerca:
+        texto = cerca.group(1)
+    if not (texto.startswith("{") and texto.endswith("}")):
+        return None
+    for patron, reemplazo in _PYTHON_A_JSON:
+        texto = re.sub(patron, reemplazo, texto)
+    try:
+        objeto = json.loads(texto)
+    except json.JSONDecodeError:
+        return None
+    nombres = {e["function"]["name"] for e in esquemas()}
+    if not isinstance(objeto, dict) or objeto.get("name") not in nombres:
+        return None
+    argumentos = objeto.get("parameters", objeto.get("arguments", {}))
+    if not isinstance(argumentos, dict):
+        return None
+    return {"name": objeto["name"], "args": argumentos, "id": "texto"}
 
 
 def responder(
@@ -170,6 +199,12 @@ def responder(
     for _ in range(max_vueltas):
         mensaje = modelo.invoke(mensajes)
         llamadas = mensaje.get("tool_calls") or []
+        if not llamadas:
+            en_texto = llamada_en_texto(mensaje.get("content") or "")
+            if en_texto is not None:
+                log.info("llamada escrita como texto: herramienta=%s", en_texto["name"])
+                llamadas = [en_texto]
+                mensaje = {"content": "", "tool_calls": llamadas}
         if not llamadas:
             texto = (mensaje.get("content") or "").strip()
             if not texto:
