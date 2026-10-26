@@ -76,16 +76,20 @@ def test_el_error_vuelve_al_modelo_y_puede_corregir(gold, tmp_path):
     assert "Permitidos" in modelo.recibidos[1][-1]["content"]
 
 
-def test_fuera_de_alcance_no_llama_al_modelo(gold, tmp_path):
+@pytest.mark.parametrize(
+    "pregunta, contiene",
+    [
+        ("¿Qué acciones me recomiendas comprar?", "inversión"),
+        ("¿Cuánto es mi ingreso en dólares?", "pesos mexicanos"),
+        # contexto() es de CLI-1: otro id se detiene con su respuesta fija.
+        ("¿Cuánto gana CLI-000005?", "CLI-1"),
+    ],
+)
+def test_fuera_de_alcance_no_llama_al_modelo(gold, tmp_path, pregunta, contiene):
     modelo = ModeloFalso()
-    r = c.responder(
-        "¿Qué acciones me recomiendas comprar?",
-        [],
-        contexto(gold, tmp_path),
-        modelo,
-        "2027-02",
-    )
+    r = c.responder(pregunta, [], contexto(gold, tmp_path), modelo, "2027-02")
     assert r.motivo == "fuera_de_alcance"
+    assert contiene in r.texto
     assert modelo.recibidos == []
 
 
@@ -201,3 +205,65 @@ def test_ajustes_de_origen_llegan_en_el_resultado(gold, tmp_path):
     assert paso.resultado["tasa_anual"] == 0.11  # la de la configuracion
     assert len(paso.resultado["ajustes"]) == 2
     assert "ajustes" in json.loads(modelo.recibidos[1][-1]["content"])
+
+
+# --- Llamadas escritas como texto (evaluacion v2) ------------------------------
+
+JSON_DEPARTAMENTO = (
+    '{"name": "evaluar_compra", "parameters": {"precio": 2500000, "forma_pago": '
+    '"credito", "plazo_meses": 25, "tasa_anual": None}}'
+)
+
+
+def test_llamada_en_texto_tal_como_la_escribio_el_modelo():
+    llamada_ = c.llamada_en_texto(JSON_DEPARTAMENTO)
+    assert llamada_["name"] == "evaluar_compra"
+    assert llamada_["args"] == {
+        "precio": 2500000,
+        "forma_pago": "credito",
+        "plazo_meses": 25,
+        "tasa_anual": None,
+    }
+
+
+@pytest.mark.parametrize(
+    "contenido, nombre",
+    [
+        (
+            '```json\n{"name": "perfil_cliente", "parameters": {}}\n```',
+            "perfil_cliente",
+        ),
+        (
+            '{"name": "flujo_mensual", "arguments": {"ultimos_meses": 3}}',
+            "flujo_mensual",
+        ),
+        ('{"name": "no_existe", "parameters": {}}', None),
+        ('Tu gasto fue de $300. {"name": "perfil_cliente", "parameters": {}}', None),
+        ("Tu riesgo es bajo.", None),
+        ('{"name": "perfil_cliente", "parameters": [1, 2]}', None),
+        ("{no es json}", None),
+    ],
+)
+def test_que_cuenta_como_llamada_en_texto(contenido, nombre):
+    llamada_ = c.llamada_en_texto(contenido)
+    assert (llamada_["name"] if llamada_ else None) == nombre
+
+
+def test_la_llamada_en_texto_pasa_por_las_guardas(gold, tmp_path):
+    # Vivienda pedida como compra general: la guarda la manda a la hipoteca,
+    # igual que si la llamada hubiera llegado como tool_call.
+    modelo = ModeloFalso(texto(JSON_DEPARTAMENTO), texto("Listo."))
+    r = c.responder(
+        "¿Podría con un departamento de 2.5 millones a 25 años?",
+        [],
+        contexto(gold, tmp_path),
+        modelo,
+        "2027-02",
+    )
+    assert r.texto == "Listo."
+    assert [p.herramienta for p in r.pasos] == ["simular_hipoteca"]
+    assert "plazo_meses" not in r.pasos[0].argumentos
+    # Al modelo le vuelve como llamada con su resultado, no como texto.
+    segunda = modelo.recibidos[1]
+    assert segunda[-2]["tool_calls"][0]["name"] == "evaluar_compra"
+    assert segunda[-1]["role"] == "tool"
