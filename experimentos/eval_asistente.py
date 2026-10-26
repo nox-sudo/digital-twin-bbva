@@ -75,6 +75,9 @@ OTRA_MONEDA = [
 # Porcentajes ("28.2%", "5,28 %") y conteos de clientes ("112 clientes").
 PORCENTAJE = re.compile(r"(?P<num>\d+(?:[.,]\d+)?)\s*%")
 CONTEO = re.compile(r"\b(?P<num>\d{1,3}(?:,\d{3})+|\d+)\s+(?:clientes?|personas)\b")
+# Plazo de una hipoteca que afirma la respuesta ("a 25 años"); debe ser el
+# que se simulo.
+PLAZO_AFIRMADO = re.compile(r"\b(5|10|15|20|25|30)\s*a[nñ]os\b", re.IGNORECASE)
 TOLERANCIA_PORCENTAJE = 0.6  # puntos: el modelo redondea a entero o a un decimal
 TOLERANCIA_EXACTA = 0.005  # relativa, o 1 peso
 TOLERANCIA_REDONDEO = 0.05
@@ -227,8 +230,9 @@ def calificar(
     ingreso_otro: float | None = None,
 ) -> dict:
     """Revisiones de un caso. Cada una es True/False; las que no aplican al
-    caso no aparecen. resultados son los de todas las herramientas de la
-    conversacion (incluidos turnos anteriores)."""
+    caso no aparecen. resultados son los de las herramientas del ultimo turno:
+    en un seguimiento, una cifra del turno anterior no vale para contestar la
+    pregunta nueva (en la v2, "$2,115" de salud salia de otro resultado)."""
     revision = {}
     motivos = caso.get("motivo", "respuesta")
     motivos = motivos if isinstance(motivos, list) else [motivos]
@@ -264,6 +268,11 @@ def calificar(
     revision["conteos_y_porcentajes_sin_inventar"] = not montos[
         "conteos_y_porcentajes_inventados"
     ]
+
+    plazos = {r["plazo_anios"] for r in resultados if "plazo_anios" in r}
+    if plazos:
+        afirmados = {int(n) for n in PLAZO_AFIRMADO.findall(texto)}
+        revision["plazo_afirmado"] = afirmados <= plazos
 
     if caso.get("pide_dato"):
         minusculas = texto.lower()
@@ -355,7 +364,7 @@ def correr_caso(caso, cliente_id, modelo, cfg, ultimo_mes, repeticion, ingreso_o
     from asistente.herramientas import Contexto
 
     ctx = Contexto.desde_config(cliente_id)
-    historial, resultados, preguntas = [], [], []
+    historial, preguntas = [], []
     inicio = time.monotonic()
     for pregunta in turnos_de(caso):
         preguntas.append(pregunta)
@@ -368,7 +377,6 @@ def correr_caso(caso, cliente_id, modelo, cfg, ultimo_mes, repeticion, ingreso_o
             cfg.max_vueltas,
             cfg.historial_turnos,
         )
-        resultados += [p.resultado for p in respuesta.pasos]
         historial.append((pregunta, respuesta.texto))
     segundos = time.monotonic() - inicio
     pasos = [
@@ -382,7 +390,7 @@ def correr_caso(caso, cliente_id, modelo, cfg, ultimo_mes, repeticion, ingreso_o
         respuesta.texto,
         respuesta.motivo,
         pasos,
-        resultados,
+        [p.resultado for p in respuesta.pasos],
         preguntas,
         cliente_id,
         ingreso_otro,
