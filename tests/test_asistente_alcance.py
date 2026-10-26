@@ -105,3 +105,27 @@ def test_el_log_no_copia_el_id(caplog):
     with caplog.at_level("INFO", logger="asistente.alcance"):
         verificar_alcance("Saldo de CLI-000005", "CLI-000001")
     assert "otro_cliente" in caplog.text and "CLI-000005" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "pregunta",
+    [
+        "¿Vale la pena meter dinero en criptomonedas?",
+        "¿Es buena idea invertir en un fondo de inversión?",
+        "¿Vale la pena invertir mi ahorro en acciones?",
+    ],
+)
+def test_recomendaciones_con_otras_palabras(pregunta):
+    assert verificar_alcance(pregunta, "CLI-000001") == RESPUESTA_INVERSION
+
+
+@pytest.mark.parametrize(
+    "pregunta",
+    [
+        "¿Vale la pena comprar una casa de 900 mil?",
+        "¿Cuánto debo meter de enganche?",
+        "¿Es buena idea pedir un crédito de 40 mil?",
+    ],
+)
+def test_vale_la_pena_sin_inversion_pasa(pregunta):
+    assert verificar_alcance(pregunta, "CLI-000001") is None

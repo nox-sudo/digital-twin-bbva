@@ -33,11 +33,15 @@ from pathlib import Path
 
 import yaml
 
-from asistente.alcance import verificar_alcance
+from asistente.alcance import RESPUESTA_OTRO_CLIENTE, verificar_alcance
 from asistente.herramientas import RAIZ, Contexto, ejecutar, esquemas
 from asistente.origen import revisar_llamada
 
 log = logging.getLogger(__name__)
+
+# Un cliente_id en la respuesta final. Si es de otro cliente, el modelo lo
+# invento: ninguna herramienta devuelve datos de otros clientes.
+_ID_CLIENTE = re.compile(r"\bCLI-\d{6}\b", re.IGNORECASE)
 
 # Bloque ```json ... ``` alrededor de una llamada escrita como texto.
 _CERCA = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
@@ -149,6 +153,14 @@ def _mensajes_iniciales(
     return mensajes
 
 
+def menciona_otro_cliente(texto: str, cliente_id: str) -> bool:
+    """La respuesta nombra un cliente_id distinto al de la conversacion. En la
+    evaluacion v2 el modelo invento una lista de cinco clientes con su
+    probabilidad; la respuesta se cambia por la fija de otro cliente."""
+    ids = {i.upper() for i in _ID_CLIENTE.findall(texto)}
+    return bool(ids - {cliente_id.upper()})
+
+
 def llamada_en_texto(texto: str) -> dict | None:
     """La llamada a herramienta que el modelo escribio como texto, o None.
     Solo cuenta si todo el texto es un objeto JSON con el nombre de una
@@ -209,6 +221,13 @@ def responder(
             texto = (mensaje.get("content") or "").strip()
             if not texto:
                 return Respuesta(texto=SIN_RESPUESTA, motivo="sin_texto", pasos=pasos)
+            if menciona_otro_cliente(texto, ctx.cliente_id):
+                log.info("respuesta con otro cliente_id: se cambio por la fija")
+                return Respuesta(
+                    texto=RESPUESTA_OTRO_CLIENTE.format(cliente_id=ctx.cliente_id),
+                    motivo="fuera_de_alcance",
+                    pasos=pasos,
+                )
             return Respuesta(texto=texto, motivo="respuesta", pasos=pasos)
         mensajes.append(
             {

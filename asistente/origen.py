@@ -97,8 +97,24 @@ def _aparece(valor, numeros: set[float]) -> bool:
     return any(abs(valor - n) <= max(abs(n) * 0.005, 1e-9) for n in numeros)
 
 
-def _a_hipoteca(argumentos: dict) -> dict:
-    """Argumentos de evaluar_compra en terminos de simular_hipoteca."""
+_ANIOS = re.compile(r"\b(\d{1,2})\s*anos?\b")
+
+
+def _anios_de_la_pregunta(pregunta: str) -> int | None:
+    """Plazo en anios que escribio el usuario ("a 25 años"), si es uno de los
+    que acepta simular_hipoteca."""
+    for cifra in _ANIOS.findall(_sin_acentos(pregunta)):
+        if int(cifra) in PLAZOS_ANIOS:
+            return int(cifra)
+    return None
+
+
+def _a_hipoteca(argumentos: dict, pregunta: str = "") -> dict:
+    """Argumentos de evaluar_compra en terminos de simular_hipoteca. El plazo
+    sale de plazo_meses si es un numero de anios valido; si no, del plazo en
+    anios de la pregunta. En la evaluacion v2 el modelo escribio
+    plazo_meses=25 para "a 25 años": se descartaba y la respuesta afirmaba
+    25 anios sobre una simulacion a 20."""
     nuevos = {
         k: argumentos[k]
         for k in ("precio", "enganche_pct", "tasa_anual")
@@ -110,6 +126,8 @@ def _a_hipoteca(argumentos: dict) -> dict:
         anios = None
     if anios is not None and anios in PLAZOS_ANIOS:
         nuevos["plazo_anios"] = int(anios)
+    elif _anios_de_la_pregunta(pregunta) is not None:
+        nuevos["plazo_anios"] = _anios_de_la_pregunta(pregunta)
     return nuevos
 
 
@@ -125,7 +143,7 @@ def revisar_llamada(
     actual = _sin_acentos(textos_usuario[-1]) if textos_usuario else ""
     if nombre == "evaluar_compra" and VIVIENDA.search(actual):
         decision.nombre = "simular_hipoteca"
-        decision.argumentos = _a_hipoteca(decision.argumentos)
+        decision.argumentos = _a_hipoteca(decision.argumentos, textos_usuario[-1])
         decision.notas.append(
             "La pregunta es sobre vivienda: se uso simular_hipoteca en lugar de "
             "evaluar_compra."
