@@ -79,7 +79,10 @@ jobs:
   # Pruebas unitarias del motor de validacion. Corre en paralelo a lint
   # y docker-compose-validate porque no depende de ninguno de los dos.
   unit-tests:
-    name: Pruebas unitarias
+    # El nombre es el del check requerido en la regla de develop y main
+    # (proteccion-develop-main): si cambia aqui, hay que cambiarlo alla en el
+    # mismo momento, o los PR quedan esperando un check que nunca llega.
+    name: Pruebas unitarias (motor de validacion)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
