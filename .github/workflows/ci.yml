@@ -14,6 +14,12 @@ on:
         description: "Numero de meses para el smoke test"
         default: "2"
 
+# Un push nuevo a la misma rama o PR cancela la corrida anterior, que ya
+# quedo obsoleta. En develop y main no se cancela: cada merge se verifica.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
 
   # Job rapido, sin Java/PySpark: corre en segundos, siempre primero.
@@ -23,6 +29,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
       - run: uv python install 3.11
       - run: uv sync --frozen
       - run: uv run flake8 . --max-line-length=100 --exclude=.venv
@@ -71,7 +79,7 @@ jobs:
   # Pruebas unitarias del motor de validacion. Corre en paralelo a lint
   # y docker-compose-validate porque no depende de ninguno de los dos.
   unit-tests:
-    name: Pruebas unitarias (motor de validacion)
+    name: Pruebas unitarias
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -80,12 +88,25 @@ jobs:
           distribution: temurin
           java-version: "21"
       - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
       - run: uv python install 3.11
       # El grupo dashboard trae Streamlit y argon2-cffi para las pruebas de
       # las vistas con AppTest (tests/test_moneda_mxn.py) y del login
       # (tests/test_acceso.py), sobre el Gold de las fixtures.
       - run: uv sync --frozen --group dashboard
-      - run: uv run --group dashboard pytest tests/ -v
+      # En CI estan todas las dependencias (Java, Streamlit, argon2, libomp
+      # de Linux), asi que ninguna prueba deberia omitirse. Un importorskip
+      # que se dispara por una dependencia faltante dejaria pasar el job en
+      # verde sin probar nada; por eso cualquier "skipped" falla aqui.
+      - name: Pruebas (sin omitidas)
+        run: |
+          set -o pipefail
+          uv run --group dashboard pytest tests/ -v -rs | tee /tmp/pytest.log
+          if tail -n 1 /tmp/pytest.log | grep -qE '[0-9]+ skipped'; then
+            echo "ERROR: hay pruebas omitidas en CI (ver resumen arriba)"
+            exit 1
+          fi
 
   # Smoke test del pipeline completo con volumen pequeno, para que sea
   # rapido en cada PR. El volumen es parametrizable via
@@ -106,6 +127,8 @@ jobs:
           distribution: temurin
           java-version: "21"
       - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
       - run: uv python install 3.11
       - run: uv sync --frozen
 
