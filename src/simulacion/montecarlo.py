@@ -314,7 +314,10 @@ def meses_para_juntar(
 
 
 RIESGO_SATURADO = "riesgo_saturado"
+AHORRO_NEGATIVO = "ahorro_negativo"
+NO_ALCANZA_MINIMO = "no_alcanza_minimo"
 SUPERA_TOPE = "supera_tope"
+MOTIVOS_NO_APLICA = (RIESGO_SATURADO, AHORRO_NEGATIVO, NO_ALCANZA_MINIMO, SUPERA_TOPE)
 
 
 @dataclass(frozen=True)
@@ -340,6 +343,7 @@ def capacidad_maxima(
     incremento_maximo: float,
     precio_tope: float = 20_000_000,
     tolerancia: float = 10_000,
+    precio_minimo: float = 0.0,
 ) -> Capacidad:
     """Precio maximo de vivienda (con las demas condiciones de `base`) con el
     que la hipoteca no sube la probabilidad de deficit mas de
@@ -353,12 +357,18 @@ def capacidad_maxima(
     Busqueda binaria: con las mismas muestras, la probabilidad solo puede
     subir cuando sube el precio, asi que la frontera es unica.
 
-    No aplica en dos casos, y se dice cual:
+    No aplica en cuatro casos, y se dice cual:
       - riesgo_saturado: sin hipoteca la probabilidad de deficit ya es tan
         alta que sumarle el incremento llega a 100 %; ningun precio rompe el
         criterio y la busqueda subia hasta el tope. Pasaba con todos los
         clientes con 95 % o mas de riesgo sin hipoteca (136 de 500 en la
         instancia del 2026-10-21).
+      - ahorro_negativo: en promedio gasta mas de lo que le entra. Cerca de
+        la saturacion el criterio incremental pierde sentido (pasar de 92 %
+        a 97 % cuenta como 5 puntos) y estos clientes salian con capacidad.
+      - no_alcanza_minimo: ni la vivienda de `precio_minimo` (la social mas
+        barata, config/mercado_mx.yaml) cumple el criterio. Antes salian
+        montos como 19,531, el primer paso de la busqueda.
       - supera_tope: ni el precio tope sube el riesgo mas del incremento; la
         frontera esta fuera del rango de busqueda."""
     riesgo_base = resumir(
@@ -373,6 +383,15 @@ def capacidad_maxima(
             f"{riesgo_base * 100:.0f} % de los escenarios: ninguna hipoteca puede "
             f"subir ese riesgo menos de {incremento_maximo * 100:.0f} puntos sin "
             "llegar al 100 %, así que no hay una capacidad que calcular.",
+        )
+    ahorro_medio = float(historial.neto.mean())
+    if ahorro_medio <= 0:
+        return Capacidad(
+            None,
+            AHORRO_NEGATIVO,
+            "En promedio gasta más de lo que le entra "
+            f"({formato_mxn(-ahorro_medio, estilo='cliente')} al mes): cualquier "
+            "cuota agranda ese faltante, así que no hay una capacidad que calcular.",
         )
 
     def cumple(precio: float) -> bool:
@@ -391,7 +410,17 @@ def capacidad_maxima(
             <= limite
         )
 
-    bajo, alto = 0.0, float(precio_tope)
+    if precio_minimo > 0 and not cumple(precio_minimo):
+        return Capacidad(
+            None,
+            NO_ALCANZA_MINIMO,
+            "Ni una vivienda social de "
+            f"{formato_mxn(precio_minimo, estilo='cliente')} (el precio mínimo, "
+            "según la Sociedad Hipotecaria Federal) cabe sin subir el riesgo más de "
+            f"{incremento_maximo * 100:.0f} puntos.",
+        )
+
+    bajo, alto = float(precio_minimo), float(precio_tope)
     if cumple(alto):
         return Capacidad(
             None,

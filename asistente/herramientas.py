@@ -40,7 +40,11 @@ import yaml
 
 from dashboard import datos
 from src.common.formato import formato_mxn
-from src.common.mercado import cargar_mercado, iva_sobre_intereses
+from src.common.mercado import (
+    cargar_mercado,
+    iva_sobre_intereses,
+    precio_minimo_vivienda,
+)
 from src.gold import escalera as esc
 from src.simulacion import montecarlo as mc
 
@@ -511,7 +515,14 @@ def simular_hipoteca(
     con = mc.evaluar_hipoteca(historial, saldo, hipoteca, muestras)
     incremento = float(cfg["incremento_deficit_maximo"])
     meses_enganche = mc.meses_para_juntar(hipoteca.pago_inicial, historial, saldo)
-    capacidad = mc.capacidad_maxima(historial, saldo, hipoteca, muestras, incremento)
+    capacidad = mc.capacidad_maxima(
+        historial,
+        saldo,
+        hipoteca,
+        muestras,
+        incremento,
+        precio_minimo=precio_minimo_vivienda(),
+    )
     return {
         "precio": _numero(precio),
         "enganche_pct": _numero(enganche_pct, 4),

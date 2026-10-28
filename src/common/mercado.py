@@ -2,8 +2,8 @@
 src/common/mercado.py
 
 Cifras de mercado de config/mercado_mx.yaml (tasas de referencia, CAT,
-IVA sobre intereses). Las leen el simulador, el asistente y las compras a
-credito; cada cifra trae su fuente y fechas.
+IVA sobre intereses, precio minimo de vivienda). Las leen el simulador, el
+asistente y las compras a credito; cada cifra trae su fuente y fechas.
 """
 
 from pathlib import Path
@@ -29,3 +29,10 @@ def iva_sobre_intereses(producto: str, mercado: dict | None = None) -> float:
     ):
         raise ValueError(f"Producto sin regla de IVA en mercado_mx.yaml: {producto!r}")
     return float(iva["tasa_general"]["valor"]) if iva["intereses"][producto] else 0.0
+
+
+def precio_minimo_vivienda(mercado: dict | None = None) -> float:
+    """Precio minimo de una vivienda social (SHF): por debajo, la capacidad
+    hipotecaria no alcanza para ninguna vivienda."""
+    mercado = mercado or cargar_mercado()
+    return float(mercado["vivienda_social_precio_minimo"]["valor"])

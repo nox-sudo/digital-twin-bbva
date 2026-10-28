@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from asistente import herramientas as h  # noqa: E402
 from dashboard import datos  # noqa: E402
+from src.common import mercado  # noqa: E402
 from src.gold.resumen_portafolio import escribir_historico  # noqa: E402
 from src.simulacion import montecarlo as mc  # noqa: E402
 from datos_asistente import contexto, crear_gold  # noqa: E402
@@ -199,7 +200,14 @@ def test_hipoteca_da_lo_mismo_que_el_simulador(gold, tmp_path):
         con.probabilidad_deficit, abs=1e-4
     )
     assert resultado["cuota_mensual"] == pytest.approx(hipoteca.cuota_mensual, abs=0.01)
-    capacidad = mc.capacidad_maxima(historial, saldo, hipoteca, muestras, 0.05)
+    capacidad = mc.capacidad_maxima(
+        historial,
+        saldo,
+        hipoteca,
+        muestras,
+        0.05,
+        precio_minimo=mercado.precio_minimo_vivienda(),
+    )
     assert capacidad.aplica
     assert resultado["capacidad_hipotecaria"] == pytest.approx(
         capacidad.monto, abs=0.01
