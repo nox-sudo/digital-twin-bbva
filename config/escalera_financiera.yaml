@@ -80,6 +80,15 @@ ingreso_variable:
   tipo_fuente: propia
   fecha_consulta: 2026-10-21
 
+# Ingreso reciente: si el promedio de los ultimos meses es menor que el
+# ingreso de referencia (promedio o mes menor), se usa el reciente; el gasto
+# es el mayor entre el de la ventana y el de esos meses. Un cliente cuya
+# nomina bajo hace poco se mide con lo que gana hoy, no con su promedio.
+ingreso_reciente:
+  meses: 3
+  tipo_fuente: propia
+  fecha_consulta: 2026-10-27
+
 # Supuestos del pago mensual comprometido (opcion C: comprometido como
 # medida, pagado como senal).
 pago_comprometido:

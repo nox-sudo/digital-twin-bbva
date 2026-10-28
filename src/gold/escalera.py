@@ -30,6 +30,13 @@ variable (la mayor parte llega como depositos), que usa el mes con menor
 ingreso de la ventana, como pide CONDUSEF. Un mes sin ingreso no cuenta como
 "el mes con menor ingreso": ese es el caso del fondo de emergencia.
 
+Ingreso reciente (regla del proyecto, 2026-10-27): si el promedio de los
+ultimos meses (ingreso_reciente.meses) es menor que esa referencia, se usa
+el reciente. El promedio de 12 meses de un cliente con nomina que bajo hace
+poco describe lo que ganaba, no lo que gana. Por lo mismo, el gasto es el
+mayor entre el promedio de la ventana y el de esos ultimos meses, y el
+ahorro se mide con el menor de los dos ingresos.
+
 Lee Gold (DuckDB, solo lectura): gold_features_cliente,
 gold_movimientos_mensuales y gold_creditos_cliente. Sin Spark.
 """
@@ -196,6 +203,8 @@ def _metricas(meses, mov, saldo, creditos, cfg) -> tuple[dict, dict]:
     pagado_mes = -_serie(mov, meses, lambda m: m["categoria"] == "pago_deuda")
 
     ingreso_promedio = float(ingreso_mes.mean()) if len(meses) else 0.0
+    n_reciente = cfg["ingreso_reciente"]["meses"]
+    ingreso_reciente = float(ingreso_mes.tail(n_reciente).mean()) if len(meses) else 0.0
     total_ingreso = float(ingreso_mes.sum())
     variable = bool(
         total_ingreso > 0
@@ -207,7 +216,19 @@ def _metricas(meses, mov, saldo, creditos, cfg) -> tuple[dict, dict]:
         ingreso_referencia = float(con_ingreso.min())
     else:
         ingreso_referencia = ingreso_promedio
-    gasto_mensual = float(salidas_mes.mean()) if len(meses) else 0.0
+    ingreso_bajo_reciente = 0 < ingreso_reciente < ingreso_referencia
+    if ingreso_bajo_reciente:
+        ingreso_referencia = ingreso_reciente
+    ingreso_ahorro = (
+        min(ingreso_promedio, ingreso_reciente)
+        if ingreso_reciente > 0
+        else ingreso_promedio
+    )
+    gasto_mensual = (
+        max(float(salidas_mes.mean()), float(salidas_mes.tail(n_reciente).mean()))
+        if len(meses)
+        else 0.0
+    )
 
     comprometido = pago_comprometido(creditos, cfg)
     tarjetas = creditos[creditos["tipo_cuenta"] == "tarjeta_credito"]
@@ -216,7 +237,10 @@ def _metricas(meses, mov, saldo, creditos, cfg) -> tuple[dict, dict]:
     metricas = {
         "ingreso_mensual_promedio": ingreso_promedio,
         "ingreso_variable": variable,
+        "ingreso_reciente": ingreso_reciente,
+        "ingreso_bajo_reciente": ingreso_bajo_reciente,
         "ingreso_referencia": ingreso_referencia,
+        "ingreso_ahorro": ingreso_ahorro,
         "gasto_mensual": gasto_mensual,
         "saldo_liquido": float(saldo or 0.0),
         "pago_comprometido": comprometido,
@@ -234,8 +258,8 @@ def _metricas(meses, mov, saldo, creditos, cfg) -> tuple[dict, dict]:
             float(saldo or 0.0) / gasto_mensual if gasto_mensual > 0 else None
         ),
         "tasa_ahorro": (
-            (ingreso_promedio - gasto_mensual) / ingreso_promedio
-            if ingreso_promedio > 0
+            (ingreso_ahorro - gasto_mensual) / ingreso_ahorro
+            if ingreso_ahorro > 0
             else None
         ),
         "tiene_tarjeta": len(tarjetas) > 0,
@@ -321,11 +345,15 @@ def _lectura(paso: str, m: dict, cumplimiento: dict, cfg: dict) -> str:
     estilo cliente."""
     u = cfg["umbrales"]
     pesos = lambda v: formato_mxn(v, estilo="cliente")  # noqa: E731
-    referencia = (
-        f"tu mes de menor ingreso ({pesos(m['ingreso_referencia'])})"
-        if m["ingreso_variable"]
-        else f"tu ingreso de {pesos(m['ingreso_referencia'])} al mes"
-    )
+    if m["ingreso_bajo_reciente"]:
+        referencia = (
+            f"tu ingreso de los últimos {cfg['ingreso_reciente']['meses']} meses "
+            f"({pesos(m['ingreso_referencia'])} al mes)"
+        )
+    elif m["ingreso_variable"]:
+        referencia = f"tu mes de menor ingreso ({pesos(m['ingreso_referencia'])})"
+    else:
+        referencia = f"tu ingreso de {pesos(m['ingreso_referencia'])} al mes"
     if paso == "pagos_deuda":
         if m["razon_pagos_deuda"] is None:
             texto = (
@@ -360,7 +388,7 @@ def _lectura(paso: str, m: dict, cumplimiento: dict, cfg: dict) -> str:
         if ahorro is None:
             texto = "No registramos ingreso para medir cuánto ahorras."
         else:
-            meta = u["ahorro_min"]["valor"] * m["ingreso_mensual_promedio"]
+            meta = u["ahorro_min"]["valor"] * m["ingreso_ahorro"]
             texto = (
                 f"Ahorras el {ahorro * 100:.0f} % de tu ingreso. La meta es al menos "
                 f"el {u['ahorro_min']['valor'] * 100:.0f} %, unos {pesos(meta)} al mes."
@@ -399,6 +427,11 @@ def calcular(
         supuestos.append(
             "Ingreso variable: la deuda se compara con el mes de menor ingreso de "
             "los últimos meses (CONDUSEF)."
+        )
+    if metricas["ingreso_bajo_reciente"]:
+        supuestos.append(
+            f"Tu ingreso de los últimos {cfg['ingreso_reciente']['meses']} meses es "
+            "menor que tu promedio: usamos el más bajo."
         )
     if metricas["tiene_tarjeta"] or metricas["tiene_prestamo"]:
         tasas = cfg["pago_comprometido"]["tasas_anuales"]
