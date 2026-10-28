@@ -229,3 +229,21 @@ def test_ningun_cliente_sale_con_el_tope_como_capacidad(ingreso, salidas, saldo)
     else:
         assert resultado.motivo in (mc.RIESGO_SATURADO, mc.SUPERA_TOPE)
         assert resultado.detalle
+
+
+def test_deficit_en_el_horizonte_del_modelo():
+    """Solo cuenta los primeros meses de las mismas trayectorias, con el
+    saldo inicial (columna 0) igual que en la probabilidad completa."""
+    saldos = np.array(
+        [
+            [-1.0, 5.0, 5.0, 5.0, 5.0],  # negativo al inicio
+            [10.0, 5.0, -1.0, 5.0, 5.0],  # negativo en el mes 2
+            [10.0, 5.0, 5.0, 5.0, -1.0],  # negativo en el mes 4
+            [10.0, 5.0, 5.0, 5.0, 5.0],
+        ]
+    )
+    r = mc.resumir(saldos, horizonte_comparable=2)
+    assert r.probabilidad_deficit_horizonte == pytest.approx(0.5)
+    assert r.probabilidad_deficit == pytest.approx(0.75)
+    assert mc.resumir(saldos).probabilidad_deficit_horizonte is None
+    assert mc.resumir(saldos, 4).probabilidad_deficit_horizonte == pytest.approx(0.75)
