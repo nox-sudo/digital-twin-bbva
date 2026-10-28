@@ -242,6 +242,10 @@ activar una entrega que cambie cualquier archivo ya entregado
 `clientes.csv` y `cuentas.json`. Si estas entidades pasan a cambiar entre
 entregas, hay que decidir de forma explicita como versionarlas.
 
+Mientras tanto, la escalera no cuenta en el pago comprometido un prestamo
+cuyo plazo termino antes del mes de corte, aunque Gold le muestre saldo
+(`prestamo_vigente` en `src/gold/escalera.py`).
+
 ## Resueltos
 
 ### Capacidad hipotecaria con ahorro negativo o por debajo de cualquier vivienda

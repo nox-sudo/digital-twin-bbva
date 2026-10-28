@@ -271,6 +271,38 @@ def test_pago_minimo_de_tarjeta_segun_banxico():
     assert esc.pago_minimo_tarjeta(0, 100_000, 0.45, 0.16, cfg) == 0
 
 
+def test_prestamo_vigente_al_mes_de_corte():
+    # Abierto en enero de 2026 a 12 meses: la ultima cuota vence en enero 2027.
+    assert esc.prestamo_vigente("2026-01-22", 12, "2026-12")
+    assert not esc.prestamo_vigente("2026-01-22", 12, "2027-01")
+    assert not esc.prestamo_vigente(pd.Timestamp("2026-01-22"), 12, "2027-04")
+    # Sin corte o sin fecha no se puede saber: decide el saldo.
+    assert esc.prestamo_vigente("2026-01-22", 12, None)
+    assert esc.prestamo_vigente(None, 12, "2027-04")
+
+
+def test_prestamo_con_plazo_terminado_no_compromete_pago():
+    """El saldo de Gold es el de la fecha base; si al corte ya termino el
+    plazo, el prestamo no suma al pago comprometido aunque tenga saldo."""
+    cfg = esc.cargar_config()
+    creditos = pd.DataFrame(
+        [
+            {
+                "tipo_cuenta": "prestamo_personal",
+                "saldo_actual": 30_000.0,
+                "limite_credito": None,
+                "monto_original": 81_000.0,
+                "plazo_meses": 12,
+                "fecha_apertura": pd.Timestamp("2026-01-22").date(),
+            }
+        ]
+    )
+    vigente = esc.pago_comprometido(creditos, cfg, "2026-12")
+    assert vigente > 0
+    assert esc.pago_comprometido(creditos, cfg) == vigente
+    assert esc.pago_comprometido(creditos, cfg, "2027-04") == 0
+
+
 def test_cada_umbral_trae_su_fuente():
     cfg = esc.cargar_config()
     externas = list(cfg["umbrales"].values()) + [

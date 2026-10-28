@@ -258,7 +258,7 @@ sin leer Silver.
 | `cliente_id` | string | |
 | `cuenta_id` | string | |
 | `tipo_cuenta` | string | `tarjeta_credito` o `prestamo_personal` |
-| `saldo_actual` | double | MXN |
+| `saldo_actual` | double | MXN, a la fecha base de la sesion. En prestamos, el de la tabla de amortizacion (0 si el plazo ya termino) |
 | `limite_credito` | double | MXN; solo tarjetas |
 | `monto_original` | double | MXN; solo prestamos |
 | `plazo_meses` | int | Solo prestamos |

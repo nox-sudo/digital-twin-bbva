@@ -490,17 +490,25 @@ def generar_cuentas(clientes_df: pd.DataFrame, fecha_ref: date) -> list[dict]:
             tasa_mensual = TASA_PRESTAMO_PERSONAL / 12
             monto = cuota_objetivo * (1 - (1 + tasa_mensual) ** -plazo) / tasa_mensual
             monto = max(10000.0, round(float(monto), -2))
+            apertura = fecha_entre(
+                fecha_ref, relativedelta(years=2), relativedelta(months=1)
+            ).isoformat()
+            # El saldo sale de la tabla de amortizacion: lo que queda tras las
+            # cuotas vencidas hasta el ultimo mes completo de la fecha base (0
+            # si el plazo ya termino). Antes era un sorteo; se sigue haciendo
+            # para no desfasar el generador global (cambiarian los CETES y
+            # todo lo que sigue).
+            np.random.uniform(0.3, 1.0)
+            cuotas_vencidas = _meses_desde_apertura(
+                apertura, *meses_a_generar(fecha_ref, 1)[0]
+            )
             cuentas.append(
                 {
                     "cuenta_id": f"CTA-{contador:06d}",
                     "cliente_id": cliente["cliente_id"],
                     "tipo_cuenta": TIPOS_CUENTA[2],
-                    "fecha_apertura": fecha_entre(
-                        fecha_ref, relativedelta(years=2), relativedelta(months=1)
-                    ).isoformat(),
-                    "saldo_actual": round(
-                        float(monto * np.random.uniform(0.3, 1.0)), 2
-                    ),
+                    "fecha_apertura": apertura,
+                    "saldo_actual": _saldo_prestamo(monto, plazo, cuotas_vencidas),
                     "monto_original": monto,
                     "plazo_meses": plazo,
                     "moneda": "MXN",
@@ -556,6 +564,28 @@ def _cuota_prestamo(monto: float, plazo_meses: int) -> float:
     """Pago mensual fijo de un prestamo (amortizacion francesa)."""
     tasa_mensual = TASA_PRESTAMO_PERSONAL / 12
     return monto * tasa_mensual / (1 - (1 + tasa_mensual) ** -plazo_meses)
+
+
+def _meses_desde_apertura(fecha_apertura: str, anio: int, mes: int) -> int:
+    """Meses de calendario entre el mes de apertura y (anio, mes). La cuota k
+    de un prestamo (1 a plazo_meses) vence en el mes k despues del de
+    apertura: el mes de apertura no paga y el ultimo pago es el mes plazo."""
+    apertura = date.fromisoformat(fecha_apertura)
+    return (anio - apertura.year) * 12 + (mes - apertura.month)
+
+
+def _saldo_prestamo(monto: float, plazo_meses: int, cuotas_pagadas: int) -> float:
+    """Saldo de un prestamo tras cuotas_pagadas cuotas de la amortizacion
+    francesa (las mismas de _cuota_prestamo). 0 al terminar el plazo."""
+    k = min(max(cuotas_pagadas, 0), plazo_meses)
+    if k == plazo_meses:
+        return 0.0
+    tasa_mensual = TASA_PRESTAMO_PERSONAL / 12
+    crecimiento = (1 + tasa_mensual) ** k
+    cuota = _cuota_prestamo(monto, plazo_meses)
+    return round(
+        float(monto * crecimiento - cuota * (crecimiento - 1) / tasa_mensual), 2
+    )
 
 
 def generar_perfiles(
@@ -630,6 +660,16 @@ def generar_perfiles(
             "cuotas": cuotas,
         }
     return perfiles
+
+
+def _cuota_vigente(deuda: dict, anio: int, mes: int) -> bool:
+    """True si la deuda tiene pago que hacer en (anio, mes). Las tarjetas
+    siempre; un prestamo, del mes 1 al mes plazo_meses despues de su
+    apertura."""
+    if deuda["tipo_cuenta"] != "prestamo_personal":
+        return True
+    transcurridos = _meses_desde_apertura(deuda["fecha_apertura"], anio, mes)
+    return 1 <= transcurridos <= deuda["plazo_meses"]
 
 
 def _montos_que_suman(total: float, n: int) -> np.ndarray:
@@ -770,21 +810,22 @@ def generar_transacciones_mes(
 
         # Pago de deudas: la cuota es fija por cuenta (perfil); que se pague
         # o no en un mes depende de la puntualidad del cliente. Un cliente
-        # impuntual deja huella en los datos, no solo en la etiqueta.
+        # impuntual deja huella en los datos, no solo en la etiqueta. Un
+        # prestamo no paga antes de existir ni despues de liquidarse.
         for deuda in deudas_por_cliente.get(cliente_id, []):
             sorteo = random.random()
             paga = sorteo < perfil["puntualidad"]
-            if (
-                afectado
-                and paga
-                and sorteo >= perfil["puntualidad"] - caida_puntualidad
-            ):
-                # Pago que se habria hecho sin escenario. Se consume el mismo
+            omitido_por_deriva = (
+                afectado and sorteo >= perfil["puntualidad"] - caida_puntualidad
+            )
+            if paga and (omitido_por_deriva or not _cuota_vigente(deuda, anio, mes)):
+                # Pago que se habria hecho sin escenario, o cuota de un
+                # prestamo fuera de su plazo. Se consume el mismo
                 # sorteo de fecha que haria el pago, para no desfasar el
                 # generador global (todo lo que sigue en el mes cambiaria), y
                 # el contador avanza igual: queda un hueco en la numeracion y
                 # los ids de las filas siguientes son los mismos que sin
-                # escenario. Silver solo exige ids unicos.
+                # escenario ni plazo. Silver solo exige ids unicos.
                 random.choice([5, 10, 20])
                 tx_id += 1
                 continue
