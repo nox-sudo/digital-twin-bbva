@@ -36,7 +36,8 @@ log = logging.getLogger(__name__)
 # Que se pide (recomendar, aconsejar, convenir, comprar...) ...
 _INTENCION = re.compile(
     r"\b(recomiend\w*|recomendar\w*|aconsej\w*|suger\w*|conviene\w*|"
-    r"deberia\w*|compro|comprar|vendo|vender)\b"
+    r"deberia\w*|compro|comprar|vendo|vender|meter|vale la pena|buena idea|"
+    r"seria bueno)\b"
 )
 # ... sobre que (instrumentos de inversion).
 _INSTRUMENTO = re.compile(

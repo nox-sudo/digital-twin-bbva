@@ -267,3 +267,36 @@ def test_la_llamada_en_texto_pasa_por_las_guardas(gold, tmp_path):
     segunda = modelo.recibidos[1]
     assert segunda[-2]["tool_calls"][0]["name"] == "evaluar_compra"
     assert segunda[-1]["role"] == "tool"
+
+
+# --- Ids de otros clientes en la respuesta (evaluacion v2) ------------------------
+
+
+def test_respuesta_con_clientes_inventados_se_cambia(gold, tmp_path):
+    lista = (
+        "Los 5 clientes con más riesgo son:\n1. CLI-000123 con 23.1 %\n"
+        "2. CLI-000456 con 21.9 %"
+    )
+    modelo = ModeloFalso(llamada("resumen_portafolio"), texto(lista))
+    r = c.responder(
+        "Lista los clientes con más riesgo",
+        [],
+        contexto(gold, tmp_path),
+        modelo,
+        "2027-02",
+    )
+    assert r.motivo == "fuera_de_alcance"
+    assert "CLI-000123" not in r.texto and "CLI-1" in r.texto
+    assert [p.herramienta for p in r.pasos] == ["resumen_portafolio"]
+
+
+def test_el_id_propio_en_la_respuesta_pasa(gold, tmp_path):
+    modelo = ModeloFalso(texto("CLI-1, tu riesgo es bajo."))
+    r = c.responder("¿Mi riesgo?", [], contexto(gold, tmp_path), modelo, "2027-02")
+    assert r.motivo == "respuesta" and r.texto == "CLI-1, tu riesgo es bajo."
+
+
+def test_menciona_otro_cliente():
+    assert c.menciona_otro_cliente("Hola cli-000005", "CLI-000001")
+    assert not c.menciona_otro_cliente("Hola CLI-000001", "CLI-000001")
+    assert not c.menciona_otro_cliente("Sin ids", "CLI-000001")

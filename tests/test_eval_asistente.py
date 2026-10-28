@@ -337,3 +337,31 @@ def test_banco_v2():
     for caso in v2["casos"]:
         for h in caso.get("herramientas", []):
             assert h in HERRAMIENTAS, (caso["id"], h)
+
+
+# --- Revisiones agregadas tras la v3 -----------------------------------------
+
+
+@pytest.mark.parametrize(
+    "texto, ok",
+    [
+        ("Con la hipoteca a 25 años la cuota es de $22,053.", True),
+        ("Con un departamento a 25 años la cuota sería de $23,224.", False),
+        ("La cuota es de $22,053.", True),
+    ],
+)
+def test_plazo_afirmado(texto, ok):
+    resultados = [{"plazo_anios": 25, "cuota_mensual": 22052.54}]
+    if not ok:
+        resultados = [{"plazo_anios": 20, "cuota_mensual": 23224.24}]
+    r = ev.calificar(
+        {"pregunta": "x"}, texto, "respuesta", [], resultados, ["a 25 años"], "CLI-1"
+    )
+    assert r["revision"]["plazo_afirmado"] == ok
+
+
+def test_sin_hipoteca_no_se_revisa_el_plazo():
+    r = ev.calificar(
+        {"pregunta": "x"}, "Llevas 5 años", "respuesta", [], [{"total": 3}], [], "CLI-1"
+    )
+    assert "plazo_afirmado" not in r["revision"]

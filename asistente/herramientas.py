@@ -827,7 +827,9 @@ HERRAMIENTAS = {
         "funcion": gasto_por_categoria,
         "descripcion": "Salidas del cliente (en que gasta) por categoria en un "
         "rango de meses; sin rango, los ultimos 12. Sin categoria devuelve el "
-        "desglose de todas, que es lo que responde 'en que se me va el dinero'.",
+        "desglose de todas, que es lo que responde 'en que se me va el dinero'. "
+        "Solo salidas: para comparar lo que entro con lo que salio, o saber si "
+        "gasto mas de lo que gano, usa flujo_mensual.",
         "parametros": {
             "desde": _MES,
             "hasta": _MES,

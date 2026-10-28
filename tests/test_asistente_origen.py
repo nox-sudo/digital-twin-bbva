@@ -139,3 +139,32 @@ def test_vivienda_solo_mira_la_pregunta_actual():
         ],
     )
     assert decision.nombre == "evaluar_compra" and decision.notas == []
+
+
+@pytest.mark.parametrize(
+    "argumentos, pregunta, plazo",
+    [
+        # Evaluacion v2: plazo en meses que en realidad eran anios.
+        (
+            {"precio": 2500000, "plazo_meses": 25},
+            "¿Un departamento de 2.5 millones a 25 años?",
+            25,
+        ),
+        (
+            {"precio": 1800000},
+            "¿Cómo me iría con un depa de 1.8 millones a 30 años?",
+            30,
+        ),
+        ({"precio": 900000, "plazo_meses": 240}, "¿Una casa de 900 mil a 20 años?", 20),
+        ({"precio": 950000}, "¿Me alcanza para una hipoteca de 950 mil?", None),
+        # 7 anios no es un plazo del simulador: se usa el default.
+        ({"precio": 900000}, "¿Una casa de 900 mil a 7 años?", None),
+    ],
+)
+def test_vivienda_conserva_el_plazo_en_anios_de_la_pregunta(
+    argumentos, pregunta, plazo
+):
+    d = revisar_llamada("evaluar_compra", argumentos, [pregunta])
+    assert d.nombre == "simular_hipoteca" and d.rechazo is None
+    assert d.argumentos.get("plazo_anios") == plazo
+    assert "plazo_meses" not in d.argumentos
