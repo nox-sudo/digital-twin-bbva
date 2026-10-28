@@ -15,6 +15,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from asistente.alcance import (  # noqa: E402
+    RESPUESTA_AZAR,
     RESPUESTA_INVERSION,
     RESPUESTA_MONEDA,
     RESPUESTA_OTRO_CLIENTE,
@@ -129,3 +130,19 @@ def test_recomendaciones_con_otras_palabras(pregunta):
 )
 def test_vale_la_pena_sin_inversion_pasa(pregunta):
     assert verificar_alcance(pregunta, "CLI-000001") is None
+
+
+@pytest.mark.parametrize(
+    "pregunta",
+    [
+        "¿Qué números juego en la lotería?",
+        "¿Qué resultado pongo en la quiniela?",
+        "¿En qué casino me conviene apostar?",
+    ],
+)
+def test_juegos_de_azar(pregunta):
+    assert verificar_alcance(pregunta) == RESPUESTA_AZAR
+
+
+def test_gasto_en_juegos_de_azar_pasa():
+    assert verificar_alcance("¿Cuánto gasté en la lotería este año?") is None

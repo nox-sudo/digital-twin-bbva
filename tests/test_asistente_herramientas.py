@@ -158,6 +158,11 @@ def test_flujo_cuadra_con_el_dashboard(gold, tmp_path):
         list(esperado["neto"])
     )
     assert resultado["neto_promedio"] == pytest.approx(esperado["neto"].mean())
+    # Los conteos de meses van calculados (evaluaciones v3 y v4).
+    negativos = list(esperado.loc[esperado["neto"] < 0, "mes"])
+    assert resultado["meses_negativos"] == negativos
+    assert resultado["meses_con_neto_negativo"] == len(negativos)
+    assert resultado["meses_con_neto_positivo"] == int((esperado["neto"] > 0).sum())
     assert resultado["meses_con_neto_negativo"] == 4
 
 

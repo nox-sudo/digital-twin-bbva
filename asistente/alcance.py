@@ -4,13 +4,17 @@ asistente/alcance.py
 Verificacion previa de alcance: preguntas que el asistente no contesta y que
 se responden con un texto fijo, sin llamar al modelo.
 
-Tres reglas, en este orden:
+Cuatro reglas, en este orden:
 
   - Recomendaciones de inversion (que comprar, en que invertir). El
     asistente responde sobre el flujo, el gasto y el riesgo del cliente con
     datos de Gold; una recomendacion de inversion no sale de esos datos y el
     sondeo mostro que el modelo, en vez de negarse, llamaba a una
     herramienta y armaba una respuesta.
+  - Juegos de azar (loteria, quiniela, apuestas). Tampoco salen de los
+    datos; en la evaluacion v4 el modelo llamo a gastos en "otros" para
+    "¿Qué números juego en la lotería?" y contesto "No hubo movimientos".
+    Una pregunta de gasto ("¿cuánto gasté en la lotería?") si pasa.
   - Otra moneda (dolares, euros...). No hay un tipo de cambio con fuente; en
     la evaluacion v1 (docs/evaluacion-asistente.md) el modelo etiquetaba
     pesos como USD o inventaba la conversion en 9 de 9 corridas.
@@ -56,6 +60,14 @@ RESPUESTA_INVERSION = (
     "con el portafolio o simular una hipoteca."
 )
 
+_AZAR = re.compile(r"\b(loteria|quiniela|melate|apuesta\w*|apostar|casino)\b")
+_GASTO = re.compile(r"\bgast\w*")
+RESPUESTA_AZAR = (
+    "No doy números ni pronósticos para juegos de azar. Puedo ayudarte con el "
+    "flujo de efectivo, los gastos por categoría, el riesgo de impago, la "
+    "comparación con el portafolio o simular una compra."
+)
+
 # Monedas distintas al peso mexicano.
 _OTRA_MONEDA = re.compile(
     r"\b(dolar|dolares|usd|euro|euros|eur|libras? esterlinas?|yenes|yen|"
@@ -90,6 +102,9 @@ def verificar_alcance(pregunta: str, cliente_id: str | None = None) -> str | Non
     ):
         log.info("fuera de alcance: regla=recomendacion_inversion")
         return RESPUESTA_INVERSION
+    if _AZAR.search(texto) and not _GASTO.search(texto):
+        log.info("fuera de alcance: regla=juegos_de_azar")
+        return RESPUESTA_AZAR
     if _OTRA_MONEDA.search(texto):
         log.info("fuera de alcance: regla=otra_moneda")
         return RESPUESTA_MONEDA

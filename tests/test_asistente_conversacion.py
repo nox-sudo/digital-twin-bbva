@@ -300,3 +300,59 @@ def test_menciona_otro_cliente():
     assert c.menciona_otro_cliente("Hola cli-000005", "CLI-000001")
     assert not c.menciona_otro_cliente("Hola CLI-000001", "CLI-000001")
     assert not c.menciona_otro_cliente("Sin ids", "CLI-000001")
+
+
+# --- "No hubo movimientos" con datos (evaluacion v4) ----------------------------
+
+
+def test_negar_movimientos_que_hay_se_cambia_por_la_lectura(gold, tmp_path):
+    modelo = ModeloFalso(
+        llamada("flujo_mensual", {"desde": "2027-01", "hasta": "2027-01"}),
+        texto("No hubo movimientos."),
+    )
+    r = c.responder(
+        "¿Gasté más de lo que gané en enero de 2027?",
+        [],
+        contexto(gold, tmp_path),
+        modelo,
+        "2027-02",
+    )
+    assert r.motivo == "respuesta"
+    assert r.texto.startswith("En 2027-01 entraron $")
+    assert "neto de $" in r.texto
+
+
+def test_sin_movimientos_de_verdad_se_deja(gold, tmp_path):
+    # CLI-2 no tiene comida en la ventana: la herramienta trae sin_movimientos.
+    modelo = ModeloFalso(
+        llamada("gasto_por_categoria", {"categoria": "comida"}),
+        texto("No hubo movimientos en comida."),
+    )
+    r = c.responder(
+        "¿Cuánto gasté en comida?",
+        [],
+        contexto(gold, tmp_path, "CLI-2"),
+        modelo,
+        "2027-02",
+    )
+    assert r.pasos[0].resultado["sin_movimientos"] is True
+    assert r.texto == "No hubo movimientos en comida."
+
+
+def test_lectura_de_varios_meses_y_de_categorias():
+    flujo = {
+        "desde": "2027-01",
+        "hasta": "2027-03",
+        "meses": [{"mes": "2027-01"}, {"mes": "2027-02"}, {"mes": "2027-03"}],
+        "neto_promedio": -1200.0,
+        "meses_con_neto_negativo": 2,
+    }
+    assert "2 de 3 meses" in c.lectura("flujo_mensual", flujo)
+    gastos = {
+        "desde": "2026-11",
+        "hasta": "2026-11",
+        "total_salidas": 5000.0,
+        "categorias": [{"categoria": "hogar", "total": 2000.0}],
+    }
+    assert "hogar" in c.lectura("gasto_por_categoria", gastos)
+    assert c.lectura("perfil_cliente", {}) is None

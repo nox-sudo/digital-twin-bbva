@@ -365,3 +365,67 @@ def test_sin_hipoteca_no_se_revisa_el_plazo():
         {"pregunta": "x"}, "Llevas 5 años", "respuesta", [], [{"total": 3}], [], "CLI-1"
     )
     assert "plazo_afirmado" not in r["revision"]
+
+
+# --- Revisiones agregadas tras la v4 -----------------------------------------
+
+
+def test_bancos_sin_preguntas_ni_clientes_repetidos():
+    from experimentos.sondeo_herramientas import PREGUNTAS
+
+    rutas = [ev.RAIZ / "experimentos" / "eval_asistente.yaml"] + [
+        ev.RAIZ / "experimentos" / f"eval_asistente_v{n}.yaml" for n in range(2, 6)
+    ]
+    vistas, clientes = set(PREGUNTAS), set()
+    for n, ruta in enumerate(rutas, start=1):
+        banco = ev.cargar_banco(ruta)
+        assert banco["version"] == n
+        preguntas = {p for c in banco["casos"] for p in ev.turnos_de(c)}
+        assert not preguntas & vistas, ruta.name
+        assert not set(banco["clientes"]) & clientes, ruta.name
+        vistas |= preguntas
+        clientes |= set(banco["clientes"])
+        for caso in banco["casos"]:
+            for h in caso.get("herramientas", []):
+                assert h in HERRAMIENTAS, (ruta.name, caso["id"], h)
+
+
+@pytest.mark.parametrize(
+    "texto, inventados",
+    [
+        ("Gastaste de más en 2 meses de los últimos 6.", []),
+        ("Gastaste de más en 4 de los últimos 6 meses.", ["4 de los últimos 6 meses"]),
+        ("En 3 meses te sobró dinero.", ["3 meses"]),
+        # 12 meses: el largo de la lista que devolvio la herramienta.
+        ("En los últimos 12 meses gastaste de más en 2 meses.", []),
+        # Un plazo con decimales no es un conteo: no se lee "6 meses" en "16.6".
+        ("Reunirías el pago inicial en 16.6 meses.", []),
+        ("Podrías reunirlo en aproximadamente 1.3 meses.", []),
+    ],
+)
+def test_conteos_de_meses(texto, inventados):
+    resultados = [
+        {
+            "meses": [{"mes": f"2026-{m:02d}", "neto": 1.5} for m in range(1, 13)],
+            "meses_con_neto_negativo": 2,
+        }
+    ]
+    r = ev.calificar(
+        {"pregunta": "x"}, texto, "respuesta", [], resultados, ["los últimos 6"], "C"
+    )
+    assert r["montos"]["conteos_y_porcentajes_inventados"] == inventados
+
+
+@pytest.mark.parametrize(
+    "texto, resultados, esperado",
+    [
+        ("No hubo movimientos.", [{"sin_movimientos": False}], False),
+        ("No hay información en ese mes.", [{"sin_movimientos": False}], False),
+        ("No hubo movimientos.", [{"sin_movimientos": True}], True),
+        ("Entraron $5,000.", [{"sin_movimientos": False}], True),
+        ("No hubo movimientos.", [{"total": 3}], None),
+    ],
+)
+def test_sin_negar_datos(texto, resultados, esperado):
+    r = ev.calificar({"pregunta": "x"}, texto, "respuesta", [], resultados, [], "C")
+    assert r["revision"].get("sin_negar_datos") == esperado
