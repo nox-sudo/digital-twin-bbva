@@ -88,30 +88,33 @@ vivienda_social_precio_minimo:
   fecha_consulta: 2026-10-27
   nota: "Minimo de la vivienda Social (mas de 24,500 UDIs; la Minima va de 0 a 24,500). Los rangos en UDIs son del DOF del 2 de septiembre de 2003 y SHF los convierte a pesos con la UDI de 8.73626. Para actualizar, tomar el minimo de Social de la publicacion mas reciente (CAT en gob.mx/shf)."
 
-# Tasas de productos de consumo: pendientes de verificar contra Banxico
-# (indicadores basicos de credito) o CONDUSEF. El generador usa las de su
-# catalogo sintetico (catalogo_productos.json), que no son de mercado.
+# Tasas de referencia de mercado (Banxico, SIE). Las de tarjeta y prestamo
+# personal son bimestrales y Banxico las publica con meses de rezago. El
+# generador usa las de su catalogo sintetico (catalogo_productos.json), que no
+# son de mercado.
 tarjeta_credito_tasa:
-  valor: null
-  estado: pendiente de verificar contra Banxico o CONDUSEF
-  fuente: null
-  url: null
-  tipo_fuente: null
-  fecha_dato: null
-  fecha_consulta: 2026-10-22
+  # Clientes no totaleros: los que no liquidan el saldo y pagan intereses.
+  valor: 0.3629
+  fuente: "Banco de Mexico, SIE, cuadro CF840, tasa efectiva promedio ponderado por saldo de tarjetas de credito, clientes no totaleros (con y sin promociones)"
+  url: https://www.banxico.org.mx/SieInternet/consultarDirectorioInternetAction.do?sector=18&accion=consultarCuadro&idCuadro=CF840&locale=es
+  tipo_fuente: primaria
+  fecha_dato: 2026-02-28
+  fecha_consulta: 2026-10-27
+  nota: "Bimestre enero-febrero de 2026. Todos los clientes: 22.82 %; no totaleros sin promociones: 51.34 %."
 prestamo_personal_tasa:
-  valor: null
-  estado: pendiente de verificar contra Banxico o CONDUSEF
-  fuente: null
-  url: null
-  tipo_fuente: null
-  fecha_dato: null
-  fecha_consulta: 2026-10-22
+  valor: 0.3908
+  fuente: "Banco de Mexico, SIE, cuadro CF815, tasas de interes promedio ponderado por saldo de creditos al consumo no revolventes, creditos personales, cartera comparable"
+  url: https://www.banxico.org.mx/SieInternet/consultarDirectorioInternetAction.do?sector=18&accion=consultarCuadro&idCuadro=CF815&locale=es
+  tipo_fuente: primaria
+  fecha_dato: 2026-02-28
+  fecha_consulta: 2026-10-27
+  nota: "Bimestre enero-febrero de 2026, creditos vigentes. Los otorgados en el ultimo bimestre: 46.57 %."
 cetes_tasa:
-  valor: null
-  estado: pendiente de verificar contra Banxico
-  fuente: null
-  url: null
-  tipo_fuente: null
-  fecha_dato: null
-  fecha_consulta: 2026-10-22
+  # Cetes a 28 dias, tasa de rendimiento de la subasta primaria semanal.
+  valor: 0.0622
+  fuente: "Banco de Mexico, SIE, cuadro CF107, valores gubernamentales, Cetes a 28 dias, tasa de rendimiento"
+  url: https://www.banxico.org.mx/SieInternet/consultarDirectorioInternetAction.do?sector=22&accion=consultarCuadro&idCuadro=CF107&locale=es
+  tipo_fuente: primaria
+  fecha_dato: 2026-10-27
+  fecha_consulta: 2026-10-27
+  nota: "Subasta del 27 de octubre de 2026; el SIE la registra a su fecha de colocacion, 29 de octubre. Semanas previas: 6.23 % y 6.25 %."
