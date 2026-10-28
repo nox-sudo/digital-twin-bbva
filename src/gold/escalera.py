@@ -21,6 +21,10 @@ la medida y el pagado es la senal.
   - Comprometido: cuota fija del prestamo (monto original, plazo, tasa con IVA
     sobre intereses) mas el pago minimo de la tarjeta segun Banxico (el mayor
     entre 1.5 % del saldo mas intereses con IVA, y 1.25 % del limite).
+    Un prestamo cuenta solo si tiene saldo y le quedan cuotas al mes de corte
+    (el ultimo de gold_movimientos_mensuales): el saldo de Gold es el de la
+    fecha base de la sesion, y entre esa fecha y el corte el plazo puede
+    haber terminado.
   - Pagado: pagos de deuda observados en gold_movimientos_mensuales. Solo se
     usa para decir si en los ultimos meses dejo de pagar; no mueve el paso.
 ratio_endeudamiento (saldo entre ingreso) no se usa aqui: es otra medida.
@@ -117,6 +121,17 @@ def cuota_prestamo(
     return monto * i / (1 - (1 + i) ** -plazo_meses)
 
 
+def prestamo_vigente(fecha_apertura, plazo_meses, mes_corte: str | None) -> bool:
+    """True si al mes de corte ("AAAA-MM") le quedan cuotas al prestamo: la
+    ultima vence plazo_meses meses despues del mes de apertura. Sin corte,
+    fecha o plazo no se puede saber y cuenta como vigente (decide el saldo)."""
+    if mes_corte is None or pd.isna(fecha_apertura) or pd.isna(plazo_meses):
+        return True
+    apertura = pd.Timestamp(fecha_apertura)
+    anio, mes = (int(x) for x in mes_corte.split("-"))
+    return (anio - apertura.year) * 12 + (mes - apertura.month) < int(plazo_meses)
+
+
 def pago_minimo_tarjeta(
     saldo: float, limite: float, tasa_anual: float, iva: float, cfg_minimo: dict
 ) -> float:
@@ -133,13 +148,17 @@ def pago_minimo_tarjeta(
     return min(minimo, saldo)
 
 
-def pago_comprometido(creditos: pd.DataFrame, cfg: dict) -> float:
+def pago_comprometido(
+    creditos: pd.DataFrame, cfg: dict, mes_corte: str | None = None
+) -> float:
     pc = cfg["pago_comprometido"]
     tasas, iva = pc["tasas_anuales"], pc["iva_intereses"]["valor"]
     total = 0.0
     for _, c in creditos.iterrows():
         if c["tipo_cuenta"] == "prestamo_personal":
-            if (c["saldo_actual"] or 0) > 0:
+            if (c["saldo_actual"] or 0) > 0 and prestamo_vigente(
+                c.get("fecha_apertura"), c["plazo_meses"], mes_corte
+            ):
                 total += cuota_prestamo(
                     c["monto_original"],
                     c["plazo_meses"],
@@ -230,7 +249,7 @@ def _metricas(meses, mov, saldo, creditos, cfg) -> tuple[dict, dict]:
         else 0.0
     )
 
-    comprometido = pago_comprometido(creditos, cfg)
+    comprometido = pago_comprometido(creditos, cfg, meses[-1] if meses else None)
     tarjetas = creditos[creditos["tipo_cuenta"] == "tarjeta_credito"]
     limite = float(tarjetas["limite_credito"].fillna(0).sum())
 
