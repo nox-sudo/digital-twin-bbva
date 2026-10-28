@@ -24,6 +24,14 @@ def config_simulacion() -> dict:
         return yaml.safe_load(f)
 
 
+@st.cache_data
+def horizonte_modelo() -> int:
+    """Meses del horizonte de la etiqueta de impago (config/etiquetas_impago.yaml):
+    el riesgo del modelo y el del simulador se comparan en ese plazo."""
+    with open(comun.RAIZ / "config" / "etiquetas_impago.yaml", encoding="utf-8") as f:
+        return int(yaml.safe_load(f)["horizonte_meses"])
+
+
 @st.cache_data(show_spinner="Simulando escenarios...")
 def correr(
     version: float,
@@ -58,8 +66,9 @@ def correr(
     historial = mc.historial_cliente(gold, cliente_id)
     saldo = mc.saldo_inicial_cliente(gold, cliente_id)
     muestras = mc.muestrear(len(historial.meses), supuestos)
-    sin = mc.resumir(mc.simular(historial, saldo, muestras))
-    con = mc.evaluar_hipoteca(historial, saldo, hipoteca, muestras)
+    horizonte = horizonte_modelo()
+    sin = mc.resumir(mc.simular(historial, saldo, muestras), horizonte)
+    con = mc.evaluar_hipoteca(historial, saldo, hipoteca, muestras, horizonte)
     incremento = float(cfg["incremento_deficit_maximo"])
     return {
         "supuestos": supuestos,
@@ -133,6 +142,13 @@ if comun.gold_disponible():
         f"escenarios simulados el saldo de {cliente_id} queda negativo en algún mes "
         f"de los próximos {meses}. Sin hipoteca: "
         f"**{sin.probabilidad_deficit * 100:.0f} de cada 100**."
+    )
+    st.caption(
+        f"En los próximos {horizonte_modelo()} meses, el horizonte del modelo de "
+        f"riesgo: {con.probabilidad_deficit_horizonte * 100:.0f} de cada 100 con "
+        f"hipoteca y {sin.probabilidad_deficit_horizonte * 100:.0f} sin ella. El "
+        "modelo estima la probabilidad de impago en ese plazo; el simulador, la de "
+        "quedar en saldo negativo, así que las dos cifras no tienen por qué coincidir."
     )
 
     m1, m2, m3, m4 = st.columns(4)
