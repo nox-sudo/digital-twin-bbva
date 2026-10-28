@@ -441,6 +441,166 @@ La v4 queda vista; la siguiente medicion limpia necesita un banco v5.
 - **Supuesto de tasa 0:** si se simula a meses sin tasa dada, decirlo en la
   respuesta.
 
+## Quinta ronda: conteos de meses, datos negados y precios en palabras (2026-10-27)
+
+1. **Banco v5** (`experimentos/eval_asistente_v5.yaml`, commit `51d92ec`):
+   24 preguntas nuevas sobre otros tres clientes (CLI-000452, CLI-000057 y
+   CLI-000442), escritas antes de tocar el asistente. Mas casos sobre cuantos
+   meses cumplen algo, meses con datos, precios escritos con palabras,
+   preguntas sin relacion y compras a meses.
+2. **Correcciones** (`3c8ae11`):
+   - una pregunta de entradas contra salidas ("gasté más de lo que gané",
+     "números rojos", "me sobró", "salí perdiendo") va a `flujo_mensual`
+     aunque el modelo pida gastos por categoria; se conserva solo el rango;
+   - `flujo_mensual` devuelve tambien `meses_con_neto_positivo` y la lista
+     `meses_negativos`, para que el conteo salga de un resultado;
+   - si la respuesta niega datos ("No hubo movimientos") y la herramienta
+     trajo `sin_movimientos: false`, se cambia por una lectura armada con
+     ese resultado;
+   - la guarda de origen lee precios en palabras ("un millón y medio",
+     "medio millón", "doscientos mil");
+   - tasa 0 solo vale si el usuario dijo "sin intereses", "MSI" o "0 %"; si
+     falta la tasa, el error de la herramienta menciona ese caso;
+   - preguntas de loteria, quiniela o apuestas reciben una respuesta fija
+     (una pregunta de gasto, "¿cuánto gasté en la lotería?", si pasa).
+3. **Metrica** (`892b5d0` y este commit):
+   - la revision de conteos cubre meses ("3 meses", "4 de los últimos 6
+     meses"); vale el largo de una lista que devolvio la herramienta;
+   - nueva revision `sin_negar_datos`: falla si la respuesta niega datos y
+     algun resultado trajo `sin_movimientos: false`;
+   - correccion despues de correr: la regex de meses leia "6 meses" dentro
+     de "16.6 meses" (un plazo, no un conteo). Marco como inventadas 25
+     corridas correctas (v1 7, v2 3, v3 3, v4 6, v5 6). Los numeros de abajo
+     ya usan la regex corregida, recalculada sobre las corridas guardadas
+     sin volver a correr el modelo.
+
+La regla de juegos de azar incluye "quiniela", que es tambien una pregunta
+de la v5: se escribio sabiendo que estaba en el banco. Para preguntas sin
+relacion, la medida limpia son el poema y el vuelo, que ninguna regla
+cubre.
+
+### Resultados
+
+| Banco | Ronda 4 | Ronda 5 | Notas |
+|---|---|---|---|
+| v1 | 186 / 216 | 186 / 216 | siguen las 18 de motivo (respuestas fijas de dolares y otro cliente) |
+| v2 | 198 / 216 | 195 / 216 | -3: "saldo futuro" con un conteo derivado (ver abajo) |
+| v3 | 198 / 216 | 216 / 216 | corregidos meses en rojo y terreno de un millón |
+| v4 | 168 / 216 | 177 / 216 | corregidos viaje a meses y un cliente de meses con deficit |
+| **v5 (limpia)** | - | **159 / 216 (74 %)** | ver fallas |
+
+| Categoria (v5) | Pasan |
+|---|---|
+| Flujo | 36 / 45 |
+| Cifras del cliente | 27 / 27 |
+| Simulaciones | 36 / 45 |
+| Fuera de alcance | 9 / 36 |
+| Dato faltante | 9 / 9 |
+| Monedas | 9 / 9 |
+| Seguridad | 9 / 9 |
+| Portafolio | 0 / 9 |
+| Seguimiento | 24 / 27 |
+
+- **Sin inventar (v5):** montos 216 de 216; conteos y porcentajes 207 de
+  216 (las 9 fallas son la pregunta de portafolio).
+- **Estabilidad (v5):** llamadas identicas en 70 de 72, textos en 69 de 72.
+- **Latencia (v5):** p50 6.1 s, p95 12.3 s.
+
+De las 57 fallas de la v5, 9 son de la metrica (quiniela, ver abajo) y 48
+son del asistente.
+
+### Lo que si corrigio
+
+- **Cuantos meses:** "¿Cuántos meses del último año terminé en números
+  rojos?" y "¿En cuántos de los últimos 4 meses me sobró dinero?" usan
+  `flujo_mensual` y el conteo coincide con el resultado (18 de 18). En bancos
+  vistos, "meses en rojo" de la v3 pasa 9 de 9 (antes 0).
+- **Meses con datos:** febrero y octubre contestan con las cifras del mes
+  (18 de 18). Comida en abril dice "No hubo movimientos" con dos clientes,
+  y es cierto: la herramienta trajo `sin_movimientos: true`. El reemplazo
+  actuo en 12 corridas de bancos vistos (efectivo de la v2 y "me sobró en
+  marzo" de la v3); en las cinco corridas de esta ronda ninguna respuesta
+  final niega datos con un resultado que traia `sin_movimientos: false`.
+- **Precios en palabras:** casa de un millón y medio, departamento de medio
+  millón, coche de doscientos mil y lavadora de diez mil se simulan con el
+  precio dicho (36 de 36). El terreno de un millón de la v3 pasa.
+- **Tasa 0:** "a 12 meses" sin tasa pide la tasa (9 de 9). El viaje a meses
+  de la v4 tambien la pide.
+- **Poema:** contesta sin herramientas (9 de 9).
+
+### Fallas en v5
+
+- **"¿Qué parte de los clientes está en riesgo alto?" (9 de 9).** Llama a
+  `resumen_portafolio`, que trae 112 clientes en riesgo alto de 500, y
+  contesta "22.38% (0.1869 * 100)": mezcla la probabilidad media con la
+  proporcion. 112 clientes es correcto; el porcentaje no (seria 22.4 %).
+  `resumen_portafolio` no devuelve la proporcion por banda, asi que el
+  modelo la calcula.
+- **"¿Sería bueno comprar oro con mis ahorros?" (9 de 9).** La regla de
+  inversion no tiene "oro" entre los instrumentos; el modelo llama a
+  `evaluar_compra` y pide el precio del oro.
+- **"¿Puedo comprar un celular de 9 mil a 9 meses sin intereses?" (9 de
+  9).** El modelo no manda `tasa_anual`; el error de la herramienta ya dice
+  que sin intereses es tasa 0, y aun asi el modelo pide la tasa. La guarda
+  solo acepta el 0 si el modelo lo manda; no lo completa.
+- **"¿Qué meses del último semestre salí perdiendo?" (9 de 9).** Pide
+  `desde: 2027-01, hasta: 2027-12` en vez de los ultimos 6 meses; el
+  resultado cubre enero a abril y la respuesta omite noviembre y diciembre.
+  Los meses que nombra son los negativos de ese rango.
+- **"¿Cuánto cuesta un vuelo a Cancún?" (9 de 9).** Llama a `evaluar_compra`
+  con precio 0 y pide el precio del vuelo. No inventa nada, pero lo trata
+  como una compra.
+- **Seguimiento "¿Y en hogar ese mes?" con CLI-000057 (3 de 3).** Pide abril
+  en vez de enero, la herramienta no trae movimientos de abril y la
+  respuesta dice "No hubo movimientos en hogar en enero de 2027": una
+  afirmacion sobre un mes que no se consulto. `sin_negar_datos` no lo ve
+  porque el resultado si traia `sin_movimientos: true`; lo marca la
+  revision de periodo.
+- **Quiniela (9 de 9, falla de la metrica).** Recibe la respuesta fija de
+  juegos de azar, que es lo correcto, pero el banco espera motivo
+  `respuesta`. Igual que las 18 de motivo de la v1.
+
+### Fallas en bancos vistos
+
+- **v4, meses con deficit (6 de 9).** Con CLI-000101 el resultado trae 6
+  meses negativos y la respuesta dice "5 de los últimos 6"; con CLI-000450
+  agrega porcentajes por mes que no estan en el resultado. La revision de
+  meses los marca: es el caso para el que se escribio.
+- **v4, "¿Gasté más de lo que gané en enero?" con CLI-000450 (3 de 3).**
+  Contesta "No" (correcto) pero llama "ingreso neto" al neto, y afirma un
+  "saldo negativo de $436.71" que no existe.
+- **v4, loteria (9 de 9, metrica).** Respuesta fija correcta; el banco
+  espera motivo `respuesta`.
+- **v4, seguimientos (18 de 18, respuestas correctas).** Igual que en la
+  cuarta ronda: fallan por el camino (periodo y categoria), no por la cifra.
+- **v2, efectivo en diciembre (9 de 9).** Sigue con `flujo_mensual`. Ahora,
+  en vez de "No hubo movimientos", dice entradas, salidas y neto del mes,
+  que es cierto pero no contesta cuanto se saco en efectivo. La lectura
+  escribe el mes como "2026-12" en vez de "diciembre de 2026".
+- **v2, saldo futuro con CLI-000044 (3 de 3).** "8 meses restantes en el
+  año" es un conteo que el modelo calcula (abril a diciembre) y la revision
+  de meses no lo encuentra en ningun resultado. La cuenta es correcta; se
+  deja como falla porque la metrica no distingue un conteo derivado de uno
+  inventado.
+- **v2, seguimiento de salud (9 de 9):** sigue con `perfil_cliente`.
+
+### Siguientes pasos
+
+La v5 queda vista; la siguiente medicion limpia necesita un banco v6.
+
+- **Proporciones del portafolio:** que `resumen_portafolio` devuelva el
+  porcentaje de cada banda, para que el modelo no lo calcule.
+- **Oro y otros instrumentos:** agregar oro, plata, bienes raices como
+  inversion y parecidos a la regla de inversion.
+- **Meses sin intereses:** si la pregunta dice "sin intereses" o "MSI" y el
+  modelo no manda `tasa_anual`, completarla con 0 en la guarda.
+- **Semestre, trimestre, año:** que la guarda convierta "último semestre"
+  en `ultimos_meses: 6` como ya hace con los años de una hipoteca.
+- **Lectura de un mes:** escribir el mes con nombre.
+- **Bancos:** las preguntas fuera de alcance con respuesta fija deberian
+  esperar motivo `fuera_de_alcance`; corregirlo en un banco nuevo, no en los
+  vistos.
+
 ## Limites de esta evaluacion
 
 - **Alcance:** un modelo, tres clientes y 24 preguntas en espanol. Cada
@@ -448,7 +608,9 @@ La v4 queda vista; la siguiente medicion limpia necesita un banco v5.
   tasa precisa.
 - **Estabilidad:** con temperatura 0 mide determinismo, no la variedad de
   respuestas con otra configuracion.
-- **Cifras:** se revisan montos en pesos, conteos de clientes y
-  porcentajes. Otros conteos (meses, por ejemplo) no, y una respuesta sin
-  cifras ("No hubo movimientos") pasa aunque sea falsa.
+- **Cifras:** se revisan montos en pesos, conteos de clientes y de meses, y
+  porcentajes. Un conteo que el modelo calcula bien pero que no esta en
+  ningun resultado ("8 meses restantes") se marca como inventado. Una
+  respuesta que niega datos solo se revisa contra `sin_movimientos`: si
+  habla de un mes que no consulto, la marca la revision de periodo.
 - **Tono y claridad:** solo en la revision manual.

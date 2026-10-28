@@ -74,11 +74,12 @@ OTRA_MONEDA = [
 ]
 # Porcentajes ("28.2%", "5,28 %"), conteos de clientes ("112 clientes") y de
 # meses ("2 meses", "4 de los últimos 6 meses": cuenta el 4). En la v4 el
-# modelo invento cuantos meses gasto de mas y la revision no lo veia.
+# modelo invento cuantos meses gasto de mas y la revision no lo veia. Un
+# plazo con decimales ("16.6 meses") no es un conteo: en la v5 se leia "6 meses".
 PORCENTAJE = re.compile(r"(?P<num>\d+(?:[.,]\d+)?)\s*%")
 CONTEO = re.compile(r"\b(?P<num>\d{1,3}(?:,\d{3})+|\d+)\s+(?:clientes?|personas)\b")
 CONTEO_MESES = re.compile(
-    r"\b(?P<num>\d{1,2})\s+(?:de\s+(?:los|esos)\s+(?:[uú]ltimos\s+)?\d{1,2}\s+)?"
+    r"(?<![\d.,])\b(?P<num>\d{1,2})\s+(?:de\s+(?:los|esos)\s+(?:[uú]ltimos\s+)?\d{1,2}\s+)?"
     r"meses\b",
     re.IGNORECASE,
 )

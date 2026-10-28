@@ -398,6 +398,9 @@ def test_bancos_sin_preguntas_ni_clientes_repetidos():
         ("En 3 meses te sobró dinero.", ["3 meses"]),
         # 12 meses: el largo de la lista que devolvio la herramienta.
         ("En los últimos 12 meses gastaste de más en 2 meses.", []),
+        # Un plazo con decimales no es un conteo: no se lee "6 meses" en "16.6".
+        ("Reunirías el pago inicial en 16.6 meses.", []),
+        ("Podrías reunirlo en aproximadamente 1.3 meses.", []),
     ],
 )
 def test_conteos_de_meses(texto, inventados):
