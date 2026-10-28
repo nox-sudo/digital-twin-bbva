@@ -367,7 +367,10 @@ def flujo_mensual(
     hasta: str | None = None,
     ultimos_meses: int | None = None,
 ) -> dict:
-    """Entradas, salidas y neto del cliente por mes en un rango."""
+    """Entradas, salidas y neto del cliente por mes en un rango. Los conteos
+    de meses con neto negativo y positivo, y cuales fueron negativos, van ya
+    calculados: en las evaluaciones v3 y v4 el modelo contaba mal o
+    inventaba el numero de meses."""
     desde, hasta = _rango(ctx, desde, hasta, ultimos_meses)
     df = datos.flujo_mensual(ctx.ruta_gold, ctx.cliente_id)
     df = df[(df["mes"] >= desde) & (df["mes"] <= hasta)]
@@ -386,6 +389,8 @@ def flujo_mensual(
         "sin_movimientos": df.empty,
         "neto_promedio": _numero(df["neto"].mean()),
         "meses_con_neto_negativo": int((df["neto"] < 0).sum()),
+        "meses_con_neto_positivo": int((df["neto"] > 0).sum()),
+        "meses_negativos": [str(m) for m in df.loc[df["neto"] < 0, "mes"]],
     }
 
 
@@ -626,6 +631,11 @@ def evaluar_compra(
             raise ErrorHerramienta(
                 f"Para una compra a credito falta {' y '.join(faltan)}: "
                 "preguntalo al usuario, no lo supongas"
+                + (
+                    " (si son meses sin intereses, la tasa es 0)"
+                    if tasa_anual is None
+                    else ""
+                )
             )
         if not PLAZO_COMPRA_MESES[0] <= plazo_meses <= PLAZO_COMPRA_MESES[1]:
             raise ErrorHerramienta(

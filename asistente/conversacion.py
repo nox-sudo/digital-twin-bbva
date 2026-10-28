@@ -18,6 +18,9 @@ redacta la respuesta con lo que devolvieron.
      Si el modelo escribe la llamada como texto (un JSON con el nombre de
      una herramienta) en vez de hacerla, se trata como llamada: asi pasa por
      las mismas guardas y la persona no ve el JSON.
+  4. Revision de la respuesta final: si nombra otro cliente_id se cambia
+     por la respuesta fija; si dice que no hubo movimientos cuando la
+     herramienta si los trajo, se cambia por la lectura de ese resultado.
 
 El bucle no depende de LangChain: recibe cualquier objeto con
 invoke(mensajes) -> {"content": str, "tool_calls": [...]}, asi que las
@@ -28,6 +31,7 @@ adaptador real (grupo de dependencias "asistente").
 import json
 import logging
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -36,12 +40,19 @@ import yaml
 from asistente.alcance import RESPUESTA_OTRO_CLIENTE, verificar_alcance
 from asistente.herramientas import RAIZ, Contexto, ejecutar, esquemas
 from asistente.origen import revisar_llamada
+from src.common.formato import formato_mxn
 
 log = logging.getLogger(__name__)
 
 # Un cliente_id en la respuesta final. Si es de otro cliente, el modelo lo
 # invento: ninguna herramienta devuelve datos de otros clientes.
 _ID_CLIENTE = re.compile(r"\bCLI-\d{6}\b", re.IGNORECASE)
+
+# "No hubo movimientos", "no hay datos": la respuesta niega que haya datos.
+_NIEGA_DATOS = re.compile(
+    r"\bno (hubo|hay|tuv\w+|se registr\w+|registr\w+|encontr\w+) "
+    r"(ningun\w* )?(movimientos?|informacion|datos|gastos?)\b"
+)
 
 # Bloque ```json ... ``` alrededor de una llamada escrita como texto.
 _CERCA = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
@@ -161,6 +172,58 @@ def menciona_otro_cliente(texto: str, cliente_id: str) -> bool:
     return bool(ids - {cliente_id.upper()})
 
 
+def _sin_acentos(texto: str) -> str:
+    normal = unicodedata.normalize("NFKD", texto.lower())
+    return "".join(c for c in normal if not unicodedata.combining(c))
+
+
+def _pesos(valor) -> str:
+    return formato_mxn(valor, estilo="cliente")
+
+
+def lectura(herramienta: str, resultado: dict) -> str | None:
+    """Una frase con las cifras de un resultado con movimientos, para
+    reemplazar una respuesta que los niega."""
+    if herramienta == "flujo_mensual" and resultado.get("meses"):
+        meses = resultado["meses"]
+        if len(meses) == 1:
+            m = meses[0]
+            return (
+                f"En {m['mes']} entraron {_pesos(m['entradas'])} y salieron "
+                f"{_pesos(m['salidas'])}: neto de {_pesos(m['neto'])}."
+            )
+        return (
+            f"De {resultado['desde']} a {resultado['hasta']} el neto promedio fue "
+            f"{_pesos(resultado['neto_promedio'])} al mes; "
+            f"{resultado['meses_con_neto_negativo']} de {len(meses)} meses "
+            "salieron mas de lo que entro."
+        )
+    if herramienta == "gasto_por_categoria":
+        if resultado.get("lectura"):
+            return resultado["lectura"]
+        if resultado.get("categorias"):
+            mayor = resultado["categorias"][0]
+            return (
+                f"Salidas de {resultado['desde']} a {resultado['hasta']}: "
+                f"{_pesos(resultado['total_salidas'])}; la mayor categoria fue "
+                f"{mayor['categoria']} con {_pesos(mayor['total'])}."
+            )
+    return None
+
+
+def niega_datos_que_hay(texto: str, pasos: list[Paso]) -> str | None:
+    """Si la respuesta dice que no hubo movimientos y la ultima herramienta
+    con movimientos si los trajo, la lectura de ese resultado; si no, None.
+    En la evaluacion v4 el modelo contesto "No hubo movimientos" con un mes
+    de neto positivo en el resultado."""
+    if not _NIEGA_DATOS.search(_sin_acentos(texto)):
+        return None
+    for paso in reversed(pasos):
+        if paso.resultado.get("sin_movimientos") is False:
+            return lectura(paso.herramienta, paso.resultado)
+    return None
+
+
 def llamada_en_texto(texto: str) -> dict | None:
     """La llamada a herramienta que el modelo escribio como texto, o None.
     Solo cuenta si todo el texto es un objeto JSON con el nombre de una
@@ -228,6 +291,10 @@ def responder(
                     motivo="fuera_de_alcance",
                     pasos=pasos,
                 )
+            corregida = niega_datos_que_hay(texto, pasos)
+            if corregida is not None:
+                log.info("respuesta sin movimientos con datos: se uso la lectura")
+                return Respuesta(texto=corregida, motivo="respuesta", pasos=pasos)
             return Respuesta(texto=texto, motivo="respuesta", pasos=pasos)
         mensajes.append(
             {
