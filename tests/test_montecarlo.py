@@ -315,3 +315,21 @@ def test_precio_minimo_de_vivienda_viene_de_la_fuente():
     # diferencia por el redondeo de la tabla de SHF).
     assert abs(cifra["valor"] - cifra["valor_udis"] * cifra["udi"]) < cifra["udi"]
     assert mercado.precio_minimo_vivienda() == PRECIO_MINIMO
+
+
+def test_deficit_en_el_horizonte_del_modelo():
+    """Solo cuenta los primeros meses de las mismas trayectorias, con el
+    saldo inicial (columna 0) igual que en la probabilidad completa."""
+    saldos = np.array(
+        [
+            [-1.0, 5.0, 5.0, 5.0, 5.0],  # negativo al inicio
+            [10.0, 5.0, -1.0, 5.0, 5.0],  # negativo en el mes 2
+            [10.0, 5.0, 5.0, 5.0, -1.0],  # negativo en el mes 4
+            [10.0, 5.0, 5.0, 5.0, 5.0],
+        ]
+    )
+    r = mc.resumir(saldos, horizonte_comparable=2)
+    assert r.probabilidad_deficit_horizonte == pytest.approx(0.5)
+    assert r.probabilidad_deficit == pytest.approx(0.75)
+    assert mc.resumir(saldos).probabilidad_deficit_horizonte is None
+    assert mc.resumir(saldos, 4).probabilidad_deficit_horizonte == pytest.approx(0.75)

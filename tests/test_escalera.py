@@ -2,9 +2,9 @@
 tests/test_escalera.py
 
 Escalera financiera (src/gold/escalera.py) sobre un Gold minimo: un cliente
-por cada paso, uno sin tarjeta ni prestamo, uno con ingreso variable y uno que
-dejo de pagar. Ademas, la configuracion (cada umbral con su fuente) y el
-formato de montos.
+por cada paso, uno sin tarjeta ni prestamo, uno con ingreso variable, uno que
+dejo de pagar y uno cuya nomina bajo en los ultimos meses. Ademas, la
+configuracion (cada umbral con su fuente) y el formato de montos.
 """
 
 import sys
@@ -62,6 +62,13 @@ CLIENTES = {
         4_000,
         5_000,
         [("prestamo_personal", 100_000, None, 120_000, 24)],
+    ),
+    "BAJA_RECIENTE": (
+        [20_000] * 9 + [10_000] * 3,
+        "nomina",
+        4_000,
+        5_000,
+        [("prestamo_personal", 60_000, None, 80_000, 24)],
     ),
 }
 
@@ -189,6 +196,57 @@ def test_ingreso_variable_usa_el_mes_de_menor_ingreso(gold):
     assert e.paso_actual == "pagos_deuda"
     assert "mes de menor ingreso" in e.lectura
     assert any("CONDUSEF" in s for s in e.supuestos)
+
+
+def test_ingreso_reciente_menor_que_el_promedio(gold):
+    e = esc.calcular(gold, "BAJA_RECIENTE", 12)
+    m = e.metricas
+    assert m["ingreso_mensual_promedio"] == 17_500
+    assert m["ingreso_reciente"] == 10_000
+    assert m["ingreso_bajo_reciente"] is True
+    assert m["ingreso_referencia"] == 10_000
+    cuota = esc.cuota_prestamo(80_000, 24, 0.28, 0.16)
+    # Con el promedio de 12 meses pasaria (cuota / 17,500 < 0.30); con el
+    # ingreso de los ultimos 3 meses no.
+    assert cuota / 17_500 <= 0.30 < cuota / 10_000
+    assert m["razon_pagos_deuda"] == pytest.approx(cuota / 10_000)
+    assert e.paso_actual == "pagos_deuda"
+    assert "últimos 3 meses" in e.lectura
+    assert any("menor que tu promedio" in s for s in e.supuestos)
+
+
+def test_ingreso_estable_no_cambia_con_el_reciente(gold):
+    for cliente in ("DEUDA", "FONDO_META", "VARIABLE"):
+        m = esc.calcular(gold, cliente, 12).metricas
+        assert m["ingreso_bajo_reciente"] is False
+    variable = esc.calcular(gold, "VARIABLE", 12).metricas
+    # El reciente (11,333) es mayor que el mes menor: sigue el mes menor.
+    assert variable["ingreso_referencia"] == 6_000
+
+
+def test_el_gasto_es_el_mayor_entre_ventana_y_reciente():
+    cfg = esc.cargar_config()
+    meses = [f"2026-{i:02d}" for i in range(1, 13)]
+    mov = pd.DataFrame(
+        [(mes, "nomina", "ingreso", 20_000.0) for mes in meses]
+        + [
+            (mes, "compra", "comida", -(10_000.0 if i < 9 else 16_000.0))
+            for i, mes in enumerate(meses)
+        ],
+        columns=["mes", "tipo_transaccion", "categoria", "monto_total"],
+    )
+    creditos = pd.DataFrame(
+        columns=[
+            "tipo_cuenta",
+            "saldo_actual",
+            "limite_credito",
+            "monto_original",
+            "plazo_meses",
+        ]
+    )
+    m, _ = esc._metricas(meses, mov, 50_000, creditos, cfg)
+    assert m["gasto_mensual"] == 16_000
+    assert m["tasa_ahorro"] == pytest.approx(0.2)
 
 
 def test_el_pago_observado_es_senal_no_medida(gold):

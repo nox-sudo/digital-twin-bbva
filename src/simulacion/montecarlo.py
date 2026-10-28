@@ -250,12 +250,17 @@ class Resultado:
     mes_mediano_primer_deficit: float | None
     saldo_final_p50: float
     bandas: pd.DataFrame = field(repr=False)
+    # Misma probabilidad, solo en los primeros meses: el horizonte de la
+    # etiqueta del modelo de riesgo, para poder comparar las dos cifras.
+    probabilidad_deficit_horizonte: float | None = None
 
 
-def resumir(saldos: np.ndarray) -> Resultado:
+def resumir(saldos: np.ndarray, horizonte_comparable: int | None = None) -> Resultado:
     """Probabilidad de quedar en saldo negativo en algun mes del horizonte,
     cuando ocurre (mediana entre las trayectorias que caen) y bandas de
-    percentiles del saldo por mes."""
+    percentiles del saldo por mes. Con horizonte_comparable, tambien la
+    probabilidad en los primeros horizonte_comparable meses de las mismas
+    trayectorias (sin volver a sortear)."""
     negativo = saldos < 0
     alguna_vez = negativo.any(axis=1)
     primer_mes = negativo.argmax(axis=1)[alguna_vez]
@@ -270,18 +275,27 @@ def resumir(saldos: np.ndarray) -> Resultado:
         ),
         saldo_final_p50=float(p50[-1]),
         bandas=bandas,
+        probabilidad_deficit_horizonte=(
+            float(negativo[:, : horizonte_comparable + 1].any(axis=1).mean())
+            if horizonte_comparable
+            else None
+        ),
     )
 
 
 def evaluar_hipoteca(
-    historial: Historial, saldo_inicial: float, hipoteca: Hipoteca, muestras: Muestras
+    historial: Historial,
+    saldo_inicial: float,
+    hipoteca: Hipoteca,
+    muestras: Muestras,
+    horizonte_comparable: int | None = None,
 ) -> Resultado:
     """Sostenibilidad de la cuota: el enganche se supone cubierto con otros
     ahorros (ver meses_para_juntar), asi que no se descuenta del saldo."""
     saldos = simular(
         historial, saldo_inicial, muestras, cuota_mensual=hipoteca.cargo_neto_mensual
     )
-    return resumir(saldos)
+    return resumir(saldos, horizonte_comparable)
 
 
 def meses_para_juntar(
