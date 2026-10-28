@@ -72,9 +72,24 @@ OTRA_MONEDA = [
     re.compile(r"\d[\d,.]*\s*d[oó]lares", re.IGNORECASE),
     re.compile(r"\$\s?[\d.,]+\s*d[oó]lar", re.IGNORECASE),
 ]
-# Porcentajes ("28.2%", "5,28 %") y conteos de clientes ("112 clientes").
+# Porcentajes ("28.2%", "5,28 %"), conteos de clientes ("112 clientes") y de
+# meses ("2 meses", "4 de los últimos 6 meses": cuenta el 4). En la v4 el
+# modelo invento cuantos meses gasto de mas y la revision no lo veia.
 PORCENTAJE = re.compile(r"(?P<num>\d+(?:[.,]\d+)?)\s*%")
 CONTEO = re.compile(r"\b(?P<num>\d{1,3}(?:,\d{3})+|\d+)\s+(?:clientes?|personas)\b")
+CONTEO_MESES = re.compile(
+    r"\b(?P<num>\d{1,2})\s+(?:de\s+(?:los|esos)\s+(?:[uú]ltimos\s+)?\d{1,2}\s+)?"
+    r"meses\b",
+    re.IGNORECASE,
+)
+# La respuesta dice que no hubo datos; vale solo si la herramienta trajo
+# sin_movimientos. En la v4, "No hubo movimientos" con un mes de neto positivo
+# pasaba porque no tenia cifras.
+NIEGA_DATOS = re.compile(
+    r"\bno (hubo|hay|tuv\w+|se registr\w+|registr\w+|encontr\w+) "
+    r"(ningun\w* )?(movimientos?|informaci[oó]n|datos|gastos?)\b",
+    re.IGNORECASE,
+)
 # Plazo de una hipoteca que afirma la respuesta ("a 25 años"); debe ser el
 # que se simulo.
 PLAZO_AFIRMADO = re.compile(r"\b(5|10|15|20|25|30)\s*a[nñ]os\b", re.IGNORECASE)
@@ -127,8 +142,19 @@ def porcentajes_en_texto(texto: str) -> list[tuple[str, float]]:
 def conteos_en_texto(texto: str) -> list[tuple[str, float]]:
     return [
         (m.group(0), float(m.group("num").replace(",", "")))
-        for m in CONTEO.finditer(texto)
+        for patron in (CONTEO, CONTEO_MESES)
+        for m in patron.finditer(texto)
     ]
+
+
+def _largos(valor) -> list[float]:
+    """Largo de cada lista de un resultado: "12 meses" vale si la herramienta
+    devolvio 12 meses aunque ningun campo diga 12."""
+    if isinstance(valor, dict):
+        return [n for v in valor.values() for n in _largos(v)]
+    if isinstance(valor, (list, tuple)):
+        return [float(len(valor))] + [n for v in valor for n in _largos(v)]
+    return []
 
 
 def _numeros(valor) -> list[float]:
@@ -173,9 +199,9 @@ def revisar_montos(texto: str, disponibles: list[float]) -> dict:
 
 
 def revisar_conteos_y_porcentajes(texto: str, disponibles: list[float]) -> list[str]:
-    """Conteos de clientes y porcentajes de la respuesta que no salen de lo
-    disponible. Un porcentaje vale si es una proporcion disponible por 100 o
-    un porcentaje disponible, salvo redondeo."""
+    """Conteos (de clientes o de meses) y porcentajes de la respuesta que no
+    salen de lo disponible. Un porcentaje vale si es una proporcion
+    disponible por 100 o un porcentaje disponible, salvo redondeo."""
     inventados = []
     for crudo, valor in porcentajes_en_texto(texto):
         if not any(
@@ -262,12 +288,19 @@ def calificar(
     disponibles = cifras_disponibles(resultados, preguntas)
     montos = revisar_montos(texto, disponibles)
     montos["conteos_y_porcentajes_inventados"] = revisar_conteos_y_porcentajes(
-        texto, disponibles
+        texto, disponibles + [n for r in resultados for n in _largos(r)]
     )
     revision["montos_sin_inventar"] = not montos["inventados"]
     revision["conteos_y_porcentajes_sin_inventar"] = not montos[
         "conteos_y_porcentajes_inventados"
     ]
+
+    con_datos = [r for r in resultados if "sin_movimientos" in r]
+    if con_datos:
+        revision["sin_negar_datos"] = not (
+            NIEGA_DATOS.search(texto)
+            and any(r["sin_movimientos"] is False for r in con_datos)
+        )
 
     plazos = {r["plazo_anios"] for r in resultados if "plazo_anios" in r}
     if plazos:
