@@ -11,7 +11,7 @@ import streamlit as st
 import yaml
 
 from dashboard import acceso, comun
-from src.common.mercado import cargar_mercado
+from src.common.mercado import cargar_mercado, precio_minimo_vivienda
 from src.simulacion import montecarlo as mc
 
 st.title("Simulador de hipoteca")
@@ -70,7 +70,12 @@ def correr(
         "sin": sin,
         "con": con,
         "capacidad": mc.capacidad_maxima(
-            historial, saldo, hipoteca, muestras, incremento
+            historial,
+            saldo,
+            hipoteca,
+            muestras,
+            incremento,
+            precio_minimo=precio_minimo_vivienda(),
         ),
         "incremento": incremento,
         "meses_enganche": mc.meses_para_juntar(hipoteca.pago_inicial, historial, saldo),

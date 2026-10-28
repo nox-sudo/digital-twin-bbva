@@ -244,6 +244,44 @@ entregas, hay que decidir de forma explicita como versionarlas.
 
 ## Resueltos
 
+### Capacidad hipotecaria con ahorro negativo o por debajo de cualquier vivienda
+
+Encontrado el 2026-10-27, revisando la correccion del tope de 20,000,000 (abajo).
+Quedaban dos casos con la misma raiz, el criterio solo incremental de
+`capacidad_maxima`:
+
+- Clientes que en promedio gastan mas de lo que les entra salian con capacidad.
+  Cerca de la saturacion, pasar de 92 % a 97 % de riesgo cuenta como 5 puntos y
+  cumple el criterio. CLI-000210 gasta $6,236 de mas al mes y salia con $439,453.
+- Montos que no compran ninguna vivienda: 51 clientes salian con exactamente
+  $19,531, el primer paso de la busqueda binaria (20,000,000 / 1,024).
+
+Resuelto en `fix/capacidad-ahorro-y-minimo` con dos motivos nuevos de "no aplica":
+`ahorro_negativo` (ahorro mensual promedio <= 0) y `no_alcanza_minimo` (ni la
+vivienda social mas barata cumple el criterio). El precio minimo es el de la
+vivienda Social de la Sociedad Hipotecaria Federal, $214,047 en abril de 2026
+(`config/mercado_mx.yaml`, con fuente primaria), y la busqueda empieza ahi. La
+vista del simulador, el CLI y el asistente muestran el motivo en una frase. Las
+pruebas nuevas de `tests/test_montecarlo.py` fallan con el codigo anterior (9).
+
+Instancia, 500 clientes, precio de 900,000 y los supuestos de
+`config/simulacion.yaml` (5,000 trayectorias):
+
+| Resultado | Antes | Despues |
+|---|---|---|
+| Con capacidad | 358 | 42 |
+| Con capacidad y ahorro <= 0 | 85 | 0 |
+| Con capacidad por debajo de $214,047 | 314 (51 en $19,531) | 0 |
+| No aplica: riesgo saturado | 142 | 142 |
+| No aplica: ahorro negativo | - | 85 |
+| No aplica: no alcanza la vivienda minima | - | 231 |
+
+Los 42 que conservan capacidad tienen el mismo monto que antes (diferencia menor a
+la tolerancia de 10,000). Que solo 42 de 500 alcancen una vivienda social dice mas
+de los datos sinteticos que del simulador: el ahorro mensual de la mayoria es bajo
+para una cuota a 20 anos. Si se quiere otro piso (por ejemplo la vivienda
+Economica, $524,184), es una sola cifra en `config/mercado_mx.yaml`.
+
 ### Capacidad hipotecaria en el tope de la busqueda (20,000,000)
 
 Encontrado el 2026-10-21 al probar el asistente: la capacidad hipotecaria de

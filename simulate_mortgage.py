@@ -27,6 +27,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from src.common.formato import formato_mxn  # noqa: E402
+from src.common.mercado import precio_minimo_vivienda  # noqa: E402
 from src.simulacion.montecarlo import (  # noqa: E402
     Hipoteca,
     Supuestos,
@@ -109,7 +110,14 @@ def main():
 
     sin_hipoteca = resumir(simular(historial, saldo, muestras))
     con_hipoteca = evaluar_hipoteca(historial, saldo, hipoteca, muestras)
-    capacidad = capacidad_maxima(historial, saldo, hipoteca, muestras, incremento)
+    capacidad = capacidad_maxima(
+        historial,
+        saldo,
+        hipoteca,
+        muestras,
+        incremento,
+        precio_minimo=precio_minimo_vivienda(),
+    )
     meses_enganche = meses_para_juntar(hipoteca.pago_inicial, historial, saldo)
 
     print(f"\n=== {args.cliente}: hipoteca de {pesos(hipoteca.precio)} ===")

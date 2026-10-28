@@ -227,5 +227,91 @@ def test_ningun_cliente_sale_con_el_tope_como_capacidad(ingreso, salidas, saldo)
     if resultado.aplica:
         assert resultado.monto < TOPE - 10_000
     else:
-        assert resultado.motivo in (mc.RIESGO_SATURADO, mc.SUPERA_TOPE)
+        assert resultado.motivo in mc.MOTIVOS_NO_APLICA
         assert resultado.detalle
+
+
+def _historial_volatil(saldo_mensual: tuple[float, float]) -> mc.Historial:
+    """Meses que alternan entre ahorrar y gastar de mas: con un buen colchon
+    inicial, el riesgo sin hipoteca queda lejos de 95 %."""
+    ingreso = np.full(12, 20_000.0)
+    salidas = np.array([20_000.0 - saldo_mensual[m % 2] for m in range(12)])
+    return mc.Historial(
+        meses=tuple(f"2026-{m:02d}" for m in range(1, 13)),
+        ingreso_laboral=ingreso,
+        otras_entradas=np.zeros(12),
+        salidas=salidas,
+    )
+
+
+def test_ahorro_negativo_no_aplica_aunque_el_riesgo_no_este_saturado():
+    """En promedio gasta 500 al mes mas de lo que le entra, pero con meses
+    buenos y un colchon el riesgo sin hipoteca queda por debajo de 95 %. Con
+    el criterio solo incremental (riesgo base + 5 puntos) salia con una
+    capacidad positiva; en la instancia del 2026-10-27, CLI-000210 gastaba
+    6,236 de mas al mes y salia con 322,266."""
+    historial = _historial_volatil((10_000, -11_000))
+    assert historial.neto.mean() == pytest.approx(-500)
+    supuestos = mc.Supuestos(meses=36, trayectorias=500, semilla=42)
+    muestras = mc.muestrear(len(historial.meses), supuestos)
+    saldo = 40_000.0
+    riesgo = mc.resumir(mc.simular(historial, saldo, muestras)).probabilidad_deficit
+    assert riesgo < 0.95
+
+    resultado = mc.capacidad_maxima(historial, saldo, _hipoteca(1), muestras, 0.05)
+    assert resultado.monto is None
+    assert resultado.motivo == mc.AHORRO_NEGATIVO
+    assert "$500" in resultado.detalle
+
+
+PRECIO_MINIMO = 214_047  # vivienda social, SHF abril 2026 (config/mercado_mx.yaml)
+
+
+def test_no_alcanza_la_vivienda_minima():
+    """Ahorra 500 al mes: la cuota que aguanta compra una vivienda de unos
+    54,000, que no existe. Antes salia como capacidad (o 19,531, el primer
+    paso de la busqueda); ahora no aplica con el motivo."""
+    historial = _historial(ingreso=10_000, salidas=9_500)
+    muestras = mc.muestrear(12, SIN_CHOQUE)
+    resultado = mc.capacidad_maxima(
+        historial, 0.0, _hipoteca(1), muestras, 0.0, precio_minimo=PRECIO_MINIMO
+    )
+    assert resultado.monto is None
+    assert resultado.motivo == mc.NO_ALCANZA_MINIMO
+    assert "$214,047" in resultado.detalle
+
+
+@pytest.mark.parametrize(
+    "ingreso, salidas, saldo",
+    [
+        (10_000, 9_500, 0.0),
+        (15_000, 14_900, 0.0),
+        (25_000, 20_000, 0.0),
+        (25_000, 20_000, 500_000.0),
+        (9_582.47, 9_000, 2_000.0),
+        (60_000, 30_000, 50_000.0),
+    ],
+)
+def test_con_precio_minimo_ninguna_capacidad_queda_debajo(ingreso, salidas, saldo):
+    historial = _historial(ingreso=ingreso, salidas=salidas)
+    supuestos = mc.Supuestos(meses=36, trayectorias=500, semilla=42)
+    muestras = mc.muestrear(len(historial.meses), supuestos)
+    resultado = mc.capacidad_maxima(
+        historial, saldo, _hipoteca(1), muestras, 0.05, precio_minimo=PRECIO_MINIMO
+    )
+    if resultado.aplica:
+        assert PRECIO_MINIMO <= resultado.monto < TOPE - 10_000
+    else:
+        assert resultado.motivo in mc.MOTIVOS_NO_APLICA
+        assert resultado.detalle
+
+
+def test_precio_minimo_de_vivienda_viene_de_la_fuente():
+    from src.common import mercado
+
+    cifra = mercado.cargar_mercado()["vivienda_social_precio_minimo"]
+    assert cifra["tipo_fuente"] == "primaria" and cifra["url"] and cifra["fuente"]
+    # El primer peso de la categoria Social: 24,500 UDIs (menos de una UDI de
+    # diferencia por el redondeo de la tabla de SHF).
+    assert abs(cifra["valor"] - cifra["valor_udis"] * cifra["udi"]) < cifra["udi"]
+    assert mercado.precio_minimo_vivienda() == PRECIO_MINIMO

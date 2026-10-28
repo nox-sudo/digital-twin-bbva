@@ -74,6 +74,20 @@ iva:
     fecha_consulta: 2026-10-22
     nota: "Simplificacion del proyecto: se aplica a todo credito de consumo de persona fisica. Una persona con actividad empresarial puede estar exenta en creditos de inversion (mismo inciso b)."
 
+# Precio minimo de una vivienda para la capacidad hipotecaria: por debajo, el
+# simulador dice que no alcanza en vez de mostrar un monto que no compra
+# ninguna vivienda (antes salian capacidades de 19,531).
+vivienda_social_precio_minimo:
+  valor: 214047
+  valor_udis: 24500
+  udi: 8.73626
+  fuente: "Sociedad Hipotecaria Federal, Condiciones del Mercado de Creditos Garantizados con Garantia Hipotecaria, abril de 2026"
+  url: https://sidof.segob.gob.mx/notas/docFuente/5788165
+  tipo_fuente: primaria
+  fecha_dato: 2026-04-30
+  fecha_consulta: 2026-10-27
+  nota: "Minimo de la vivienda Social (mas de 24,500 UDIs; la Minima va de 0 a 24,500). Los rangos en UDIs son del DOF del 2 de septiembre de 2003 y SHF los convierte a pesos con la UDI de 8.73626. Para actualizar, tomar el minimo de Social de la publicacion mas reciente (CAT en gob.mx/shf)."
+
 # Tasas de productos de consumo: pendientes de verificar contra Banxico
 # (indicadores basicos de credito) o CONDUSEF. El generador usa las de su
 # catalogo sintetico (catalogo_productos.json), que no son de mercado.
