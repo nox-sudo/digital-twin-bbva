@@ -70,7 +70,7 @@ Detalle completo de zonas, tareas del DAG y decisiones de diseño en [docs/arqui
 |---|---|---|
 | Lenguaje | Python 3.11 | Estándar de la industria para Data Engineering |
 | Entorno | uv | Resolución de dependencias más rápida que pip/venv |
-| Procesamiento | PySpark | Procesamiento distribuido, justificado por el volumen de transacciones (125,064 filas en la sesión de referencia) |
+| Procesamiento | PySpark | Procesamiento distribuido, justificado por el volumen de transacciones (124,599 filas en la sesión de referencia) |
 | Almacenamiento Bronze/Silver | Delta Lake | Transacciones ACID y versionado |
 | Reglas de calidad | YAML | Reglas de negocio como datos, no como código |
 | Base analítica Gold | DuckDB | Motor ligero, sin infraestructura adicional |
@@ -333,7 +333,7 @@ El workflow de GitHub Actions (`.github/workflows/ci.yml`) corre en cada Pull Re
 
 ## Datos y KPIs
 
-5 entidades sintéticas (Faker + NumPy): `clientes`, `cuentas`, `catalogo_productos`, `cetes_inversiones`, `transacciones` (7 tipos de movimiento). Volumen de referencia: 500 clientes, 979 cuentas, 125,064 transacciones. Cada cliente tiene un perfil financiero estable (ingreso formal o informal anclado a su ingreso declarado, proporción de gasto, categorías preferidas y puntualidad de pago), así que su comportamiento es coherente mes a mes.
+5 entidades sintéticas (Faker + NumPy): `clientes`, `cuentas`, `catalogo_productos`, `cetes_inversiones`, `transacciones` (7 tipos de movimiento). Volumen de referencia: 500 clientes, 979 cuentas, 124,599 transacciones. Cada cliente tiene un perfil financiero estable (ingreso formal o informal anclado a su ingreso declarado, proporción de gasto, categorías preferidas y puntualidad de pago), así que su comportamiento es coherente mes a mes.
 
 **Sesiones de datos reproducibles.** Cada conjunto generado es una sesión identificada por sus parámetros (`config/sesion.yaml`: semilla, fecha de referencia, clientes, meses), por ejemplo `s42_20260930_500c_12m`. Todas las fechas se calculan contra la fecha de referencia, nunca contra el reloj del sistema, así que los mismos parámetros producen exactamente los mismos archivos cualquier día y en cualquier máquina; el CI lo verifica comparando checksums. Silver sigue el mismo criterio: la regla de fecha no futura se mide contra la fecha de corte de los datos (el movimiento más reciente en Bronze), no contra el día en que corre. La sesión se guarda en `data/sesiones/<id>/` con un `manifest.json` (parámetros, conteos, SHA-256 de cada archivo); si ya existe y está íntegra, el pipeline la reutiliza en vez de regenerarla, y si algún archivo fue alterado, lo detecta y la regenera. `data/raw_sources/` apunta a la sesión activa mediante hard links, y cada fila de Bronze guarda su `_sesion_id`. Las sesiones viven en disco, fuera de los contenedores: sobreviven a `docker compose down` y a `demo.sh limpiar`, pero no a `demo.sh limpiar todo`: para eso existe `demo.sh respaldar`.
 

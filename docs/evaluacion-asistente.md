@@ -601,6 +601,148 @@ La v5 queda vista; la siguiente medicion limpia necesita un banco v6.
   esperar motivo `fuera_de_alcance`; corregirlo en un banco nuevo, no en los
   vistos.
 
+## Línea base tras el cambio del generador (2026-10-28)
+
+`fix/amortizacion-prestamos` (#68) cambia los datos generados: el saldo de
+cada prestamo personal sale de su tabla de amortizacion y la cuota solo se
+paga dentro del plazo. Con eso, las cifras de las rondas anteriores dejan de
+describir la instancia. Esta seccion mide los cinco bancos otra vez sobre
+datos reconstruidos, con una sola version de la metrica, para tener una
+linea base contra la cual comparar las rondas siguientes.
+
+Ademas de #68, entre la quinta ronda y esta medicion entraron a `develop`
+#66 (escalera con el ingreso reciente) y #64 (capacidad hipotecaria "no
+aplica" sin ahorro), que cambian lo que devuelven `escalera_financiera` y
+`simular_hipoteca`. Abajo se separa que parte de cada cambio viene del
+codigo y que parte de los datos.
+
+### Que se corrio
+
+- **Instancia:** `develop` en `387616f`, `bash demo.sh respaldar`, `limpiar
+  todo`, base con el escenario de deriva apagado y 7 entregas con el
+  escenario activo, como en [guion-demo.md](guion-demo.md). Semilla 42,
+  fecha de referencia 2026-09-30, 500 clientes, 12 meses. Respaldo previo en
+  `~/respaldos-gemelo/2026-10-27_223747`, final en
+  `~/respaldos-gemelo/2026-10-28_085401`. Las 8 corridas del DAG terminaron
+  en `success`.
+- **Bancos:** v1 a v5, 3 repeticiones, `llama3.1:8b`, metrica de
+  `e3b05a0` (la de la quinta ronda, con la regex de meses corregida).
+- **Antes:** las corridas de la quinta ronda (codigo de esa ronda, datos
+  previos), recalificadas con la misma metrica sin volver a correr el
+  modelo. Coinciden con lo reportado en la quinta ronda.
+
+### Conteos por entidad y capa
+
+Instancia final (base mas 7 entregas):
+
+| Entidad | Capa | Antes | Despues | Cambio |
+|---|---|---|---|---|
+| clientes | fuentes, Bronze, Silver | 500 | 500 | 0 |
+| cuentas | fuentes, Bronze, Silver | 979 | 979 | 0 |
+| catalogo_productos | fuentes, Bronze | 4 | 4 | 0 |
+| cetes_inversiones | fuentes, Bronze, Silver | 70 | 70 | 0 |
+| transacciones | fuentes, Bronze, Silver | 197,638 | 196,999 | -639 |
+| gold_movimientos_mensuales | Gold | 76,986 | 76,674 | -312 |
+| gold_kpis | Gold | 5,602 | 5,602 | 0 |
+| gold_features_cliente | Gold | 500 | 500 | 0 |
+| gold_etiquetas_impago | Gold | 500 | 500 | 0 |
+| gold_creditos_cliente | Gold | 409 | 409 | 0 |
+| gold_ingresos_quincenales | Gold | 17,482 | 17,482 | 0 |
+
+- **Sesion base** (sin entregas): 124,599 transacciones contra 125,064
+  (-465). Del resto de archivos, solo cambia `cuentas.json`, y solo en
+  `saldo_actual` de los 140 prestamos personales; 23 quedan en 0 porque su
+  plazo ya termino. Clientes, CETES y catalogo salen identicos byte a byte.
+- Las 639 transacciones menos son pagos de prestamo fuera de plazo: 465 en
+  la base y 174 en las entregas.
+
+### Resultados con la misma metrica
+
+| Banco | Ronda en que fue limpio | Como se reporto en esa ronda | Datos previos (codigo de la ronda 5) | Linea base (develop, datos nuevos) |
+|---|---|---|---|---|
+| v1 | 1 | 186 / 216 | 186 / 216 | 186 / 216 |
+| v2 | 2 | 195 / 216 | 195 / 216 | 195 / 216 |
+| v3 | 3 | 189 / 216 | 216 / 216 | 213 / 216 |
+| v4 | 4 | 168 / 216 | 177 / 216 | 177 / 216 |
+| v5 | 5 | 159 / 216 | 159 / 216 | 156 / 216 |
+
+La tercera columna usa la metrica de cada ronda y no es comparable con las
+otras dos; queda como referencia. Las dos ultimas usan la misma metrica.
+
+| Banco (linea base) | Llamadas identicas | Textos identicos | p50 | p95 |
+|---|---|---|---|---|
+| v1 | 72 / 72 | 71 / 72 | 6.0 s | 13.3 s |
+| v2 | 72 / 72 | 71 / 72 | 5.3 s | 10.6 s |
+| v3 | 71 / 72 | 70 / 72 | 5.9 s | 9.7 s |
+| v4 | 72 / 72 | 72 / 72 | 6.3 s | 12.8 s |
+| v5 | 70 / 72 | 67 / 72 | 6.0 s | 12.2 s |
+
+### Preguntas cuyo resultado cambio
+
+Solo dos preguntas cambian de resultado; en los otros casos con texto
+distinto, las corridas siguen pasando o fallando igual.
+
+Para saber que cambio, cada llamada cuyo resultado cambio se volvio a
+ejecutar con el codigo de `develop` sobre los datos previos, sin el modelo.
+Si da lo mismo que ahora, el cambio es del codigo (#64 o #66); si da lo mismo
+que antes, es de los datos (#68).
+
+- **v3, "escalera_deudas" con CLI-000021 (3 de 3 pasaban, 0 de 3 ahora).**
+  - **Causa del dato:** el codigo (#66), no la amortizacion. Con los datos
+    previos y el codigo nuevo, `escalera_financiera` ya devuelve el texto
+    nuevo: "el 69 % de tu ingreso de los últimos 3 meses ($14,453 al mes).
+    Para el siguiente paso deberían quedar en $4,336 o menos". Antes decia
+    46 % de $21,891. El pago de deuda ($9,999) es el mismo.
+  - **Por que falla:** el modelo contesta "bajo control en un 31%", un
+    porcentaje que no esta en el resultado. Es comportamiento del asistente
+    ante el dato nuevo; el valor esperado del banco sigue siendo correcto.
+- **v5, "lista_morosos" con CLI-000452 (3 de 3 pasaban, 0 de 3 ahora).**
+  - **Causa del dato:** los datos (#68). `resumen_portafolio` trae otras
+    bandas (309 / 69 / 122 contra 305 / 83 / 112) y otra proporcion de
+    clientes que gastan mas de lo que ganan (56.8 % contra 58.2 %), porque el
+    modelo se reentreno con los datos nuevos. Con el codigo nuevo y los datos
+    previos devuelve lo de antes.
+  - **Por que falla:** antes el modelo daba los conteos por banda tal cual.
+    Ahora agrega un "saldo promedio" por banda y porcentajes (12.46 %,
+    5.62 %, 2.31 %) que no salen de ninguna herramienta. Tambien es
+    comportamiento del asistente; el banco no cambia.
+
+Llamadas cuyo resultado cambio, por origen:
+
+| Banco | Datos (#68) | Codigo (#64, #66) | Ambos |
+|---|---|---|---|
+| v1 | 72 | 3 | 12 |
+| v2 | 69 | 9 | 6 |
+| v3 | 78 | 6 | 23 |
+| v4 | 27 | 24 | 0 |
+| v5 | 59 | 0 | 27 |
+
+- **Codigo:** son `escalera_financiera` (#66) y `simular_hipoteca` (#64).
+- **Datos:** todo lo que pasa por el modelo reentrenado (`perfil_cliente`,
+  `resumen_portafolio`) y los gastos y flujos donde desaparecen pagos de
+  prestamo.
+
+### Para revisar en los bancos (sin corregir)
+
+Ningun valor esperado de los casos (herramienta, argumentos, periodo, dato
+que se pide, motivo) depende de montos de la instancia, asi que ninguno queda
+incorrecto con los datos nuevos. Lo que si quedo desactualizado son las
+descripciones de clientes en el encabezado de los bancos. Son comentarios: no
+entran en la calificacion.
+
+- **v5, CLI-000057, "riesgo medio":** ahora es riesgo bajo (1.2 %; antes
+  14.9 %). El saldo de su prestamo pasa de $9,421 a $2,045 y su deuda /
+  ingreso de 4.41 a 0.96.
+- **v2, CLI-000180, "tarjeta y prestamo":** el prestamo (12 meses, abierto el
+  2025-07-03) ya termino su plazo y queda con saldo 0. Sigue teniendo la
+  cuenta, pero ya no paga cuota.
+- **v4, CLI-000101, "riesgo medio":** ahora 30.6 %, banda alta (el umbral
+  es 30 %). Antes de este cambio ya estaba en 51.6 %; la descripcion no
+  coincidia desde antes.
+
+Las demas descripciones (ingreso y banda de riesgo) siguen siendo ciertas:
+el ingreso no cambia en ningun cliente de los bancos.
+
 ## Limites de esta evaluacion
 
 - **Alcance:** un modelo, tres clientes y 24 preguntas en espanol. Cada
