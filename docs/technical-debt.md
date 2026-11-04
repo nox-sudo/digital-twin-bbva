@@ -251,6 +251,75 @@ la evaluacion del 2026-10-13 (arriba) se conserva tal cual como la del modelo co
   Se reporta cuantos clientes cambian de banda; si la calibracion obligara a
   cambiar las bandas, eso se decide aparte.
 
+**Resultados (2026-11-04).** Codigo de `develop` en `814c437` mas el script del
+experimento, imagen `gemelo-worker` (Linux, XGBoost 3.2.0), cada tamano en su
+propia carpeta de datos (la instancia viva no se toco). Primero se midio el estado
+actual con `experimentos/auc_evento_posterior.py`, porque tras amortizar los
+prestamos (#68) no se habia medido:
+
+| Sesion base | 500 clientes (81 positivos, 16.2 %) | 5,000 clientes (750 positivos, 15.0 %) |
+|---|---|---|
+| AUC, validacion cruzada (por pliegue) | 0.692 +- 0.051 (0.580 a 0.812) | 0.777 +- 0.017 (0.743 a 0.816) |
+| AUC fuera de pliegue, media de 5 repeticiones | 0.690 (0.676 a 0.702) | 0.777 (0.776 a 0.778) |
+| AUC del oraculo | 0.852 | 0.842 |
+| Sin las 3 variables observadas | 0.637 | 0.733 |
+
+Calibracion de la probabilidad fuera de pliegue (`experimentos/calibracion_riesgo.py`;
+media de 5 repeticiones, entre parentesis minimo y maximo; las bandas, en la
+repeticion con los pliegues de `train_model.py`, que es la que se publica):
+
+| 500 clientes, tasa real 0.162 | A (actual) | B (sin peso) | C (A + Platt) |
+|---|---|---|---|
+| AUC | 0.687 (0.672 a 0.701) | 0.681 (0.668 a 0.693) | 0.683 (0.668 a 0.695) |
+| Brier | 0.160 | 0.146 | 0.129 |
+| Log loss | 0.522 | 0.511 | 0.417 |
+| Media predicha | 0.205 | 0.135 | 0.168 |
+| Clientes por arriba de 0.90 | 9.4 | 3.6 | 0 |
+| Bandas bajo / medio / alto | 283 / 91 / 126 | 333 / 88 / 79 | 135 / 310 / 55 |
+
+| 5,000 clientes, tasa real 0.150 | A (actual) | B (sin peso) | C (A + Platt) |
+|---|---|---|---|
+| AUC | 0.777 (0.774 a 0.778) | 0.781 (0.778 a 0.783) | 0.776 (0.773 a 0.778) |
+| Brier | 0.156 | 0.106 | 0.106 |
+| Log loss | 0.482 | 0.352 | 0.353 |
+| Media predicha | 0.344 | 0.147 | 0.155 |
+| Clientes por arriba de 0.90 | 100.2 | 14.2 | 0 |
+| Bandas bajo / medio / alto | 641 / 2,100 / 2,259 | 2,977 / 1,292 / 731 | 2,475 / 1,812 / 713 |
+
+Curva de calibracion por deciles (predicha contra observada, repeticion publicada):
+
+| Decil | 500 A | 500 B | 500 C | 5,000 A | 5,000 B | 5,000 C |
+|---|---|---|---|---|---|---|
+| 1 | 0.005 / 0.08 | 0.003 / 0.08 | 0.064 / 0.06 | 0.049 / 0.040 | 0.015 / 0.032 | 0.022 / 0.044 |
+| 2 | 0.011 / 0.08 | 0.006 / 0.08 | 0.084 / 0.12 | 0.111 / 0.042 | 0.031 / 0.060 | 0.045 / 0.036 |
+| 3 | 0.018 / 0.04 | 0.010 / 0.02 | 0.097 / 0.02 | 0.158 / 0.066 | 0.042 / 0.054 | 0.061 / 0.064 |
+| 4 | 0.030 / 0.06 | 0.017 / 0.10 | 0.111 / 0.10 | 0.200 / 0.066 | 0.053 / 0.048 | 0.076 / 0.070 |
+| 5 | 0.049 / 0.16 | 0.029 / 0.08 | 0.128 / 0.10 | 0.245 / 0.062 | 0.067 / 0.066 | 0.092 / 0.062 |
+| 6 | 0.091 / 0.22 | 0.049 / 0.24 | 0.152 / 0.26 | 0.301 / 0.100 | 0.088 / 0.084 | 0.113 / 0.098 |
+| 7 | 0.178 / 0.24 | 0.092 / 0.20 | 0.183 / 0.24 | 0.379 / 0.108 | 0.122 / 0.122 | 0.144 / 0.114 |
+| 8 | 0.309 / 0.18 | 0.176 / 0.32 | 0.219 / 0.18 | 0.500 / 0.202 | 0.183 / 0.212 | 0.200 / 0.200 |
+| 9 | 0.508 / 0.20 | 0.321 / 0.24 | 0.269 / 0.24 | 0.652 / 0.312 | 0.300 / 0.322 | 0.293 / 0.310 |
+| 10 | 0.796 / 0.36 | 0.633 / 0.26 | 0.392 / 0.30 | 0.834 / 0.502 | 0.576 / 0.500 | 0.495 / 0.502 |
+
+Contra el criterio:
+
+- B cumple con 5,000 clientes (media a 0.003 de la tasa, Brier y log loss menores,
+  AUC sube 0.005), pero no con 500: su media queda 0.027 por debajo de la tasa, mas
+  de 0.02. Brier, log loss y AUC si cumplen. B no basta.
+- C cumple las tres en los dos tamanos: media a 0.006 (500) y 0.005 (5,000) de la
+  tasa; Brier y log loss menores que A; el AUC baja 0.004 (500) y 0.0002 (5,000).
+
+Por el criterio, la decision es C. Con 500 clientes el modelo distingue poco (AUC
+0.69), y una probabilidad calibrada se queda cerca de la tasa media: ningun decil
+predice menos de 0.06 ni mas de 0.40. Por eso la distribucion por bandas cambia
+mucho sin tocar las bandas.
+
+Sobre la instancia de la demo (base mas 7 entregas, 500 clientes, 78 positivos,
+tasa 0.156), el mismo script reproduce exactamente lo publicado hoy con A (AUC
+0.776, media 0.188, 12 clientes por arriba de 0.90, bandas 309 / 69 / 122) y da
+con C: AUC 0.777, media 0.161, ninguno por arriba de 0.90, Brier 0.116 contra 0.140,
+bandas 234 / 192 / 74.
+
 ### Las entregas nuevas solo agregan transacciones
 
 **Que pasa:** una entrega mensual (`demo.sh nueva-entrega`) trae un mes
