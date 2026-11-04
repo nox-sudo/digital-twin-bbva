@@ -212,6 +212,29 @@ DockerOperator y en el servicio `worker`). Requiere mover el cache de
 Ivy con los JARs de Delta a una ruta legible por cualquier usuario,
 porque hoy vive en el home de root dentro de la imagen.
 
+### Las entregas nuevas solo agregan transacciones
+
+**Que pasa:** una entrega mensual (`demo.sh nueva-entrega`) trae un mes
+mas de transacciones, pero los snapshots de clientes, cuentas y CETES
+son identicos a la entrega base: no hay clientes nuevos, bajas ni
+saldos que cambien. Silver y Bronze ya soportan esos cambios (Bronze
+acumula versiones, Silver toma la mas reciente por llave), pero el
+generador no los produce.
+
+**Posible fix:** en cada mes adicional, agregar algunos clientes nuevos
+(al final, para no alterar los existentes) y recalcular saldo_actual a
+partir de los movimientos del mes. Ojo: el generador hoy se niega a
+activar una entrega que cambie cualquier archivo ya entregado
+(`verificar_continuacion` en `src/common/sesiones.py`), y eso incluye
+`clientes.csv` y `cuentas.json`. Si estas entidades pasan a cambiar entre
+entregas, hay que decidir de forma explicita como versionarlas.
+
+Mientras tanto, la escalera no cuenta en el pago comprometido un prestamo
+cuyo plazo termino antes del mes de corte, aunque Gold le muestre saldo
+(`prestamo_vigente` en `src/gold/escalera.py`).
+
+## Resueltos
+
 ### Probabilidad de impago descalibrada por scale_pos_weight
 
 **Que pasa:** `train_model.py` entrena con `scale_pos_weight` (negativos entre
@@ -320,28 +343,47 @@ tasa 0.156), el mismo script reproduce exactamente lo publicado hoy con A (AUC
 con C: AUC 0.777, media 0.161, ninguno por arriba de 0.90, Brier 0.116 contra 0.140,
 bandas 234 / 192 / 74.
 
-### Las entregas nuevas solo agregan transacciones
+**Decision e implementacion (2026-11-04).** Va C: es la opcion mas simple que cumple
+el criterio, porque B no basta con 500 clientes. `scale_pos_weight` se queda (la
+iteracion no lo quita) y encima va una recta sobre el margen del modelo,
+`p = sigmoide(pendiente * margen + intercepto)` (`src/gold/calibracion.py`):
 
-**Que pasa:** una entrega mensual (`demo.sh nueva-entrega`) trae un mes
-mas de transacciones, pero los snapshots de clientes, cuentas y CETES
-son identicos a la entrega base: no hay clientes nuevos, bajas ni
-saldos que cambien. Silver y Bronze ya soportan esos cambios (Bronze
-acumula versiones, Silver toma la mas reciente por llave), pero el
-generador no los produce.
+- Cada uno de los 5 modelos de la validacion cruzada se calibra con el margen fuera
+  de pliegue de su propio conjunto de entrenamiento (5 pliegues internos, semilla
+  1042), asi que la probabilidad que se publica no ve al cliente ni para entrenar ni
+  para calibrar. El modelo final, que solo califica clientes sin etiqueta, se
+  calibra con el margen fuera de pliegue de todos.
+- `risk_model.joblib` y `risk_model_pliegues.joblib` guardan el modelo ya calibrado:
+  `predict_risk.py` y `monitor_drift.py` lo usan sin cambios.
+- La explicacion SHAP de "Mi resumen" sigue siendo exacta: la recta es sobre el
+  margen, asi que cada contribucion se multiplica por la pendiente y el valor base
+  pasa a `pendiente * base + intercepto` (`src/gold/explicacion.py`). La pendiente es
+  positiva, asi que no cambian el signo ni el orden de los factores.
+- El PSI del score no cambia: la calibracion es monotona y el PSI compara deciles
+  de la referencia. La serie de la demo da los mismos valores que antes.
+- Las bandas de `config/dashboard.yaml` no se tocaron.
 
-**Posible fix:** en cada mes adicional, agregar algunos clientes nuevos
-(al final, para no alterar los existentes) y recalcular saldo_actual a
-partir de los movimientos del mes. Ojo: el generador hoy se niega a
-activar una entrega que cambie cualquier archivo ya entregado
-(`verificar_continuacion` en `src/common/sesiones.py`), y eso incluye
-`clientes.csv` y `cuentas.json`. Si estas entidades pasan a cambiar entre
-entregas, hay que decidir de forma explicita como versionarlas.
+Instancia de la demo reconstruida con el DAG (base mas 7 entregas, `limpiar todo`,
+respaldo en `~/respaldos-gemelo/2026-11-04_113206`), contra la publicada antes con
+las mismas etiquetas:
 
-Mientras tanto, la escalera no cuenta en el pago comprometido un prestamo
-cuyo plazo termino antes del mes de corte, aunque Gold le muestre saldo
-(`prestamo_vigente` en `src/gold/escalera.py`).
+| Instancia de la demo | Antes (A) | Despues (C) |
+|---|---|---|
+| Tasa real de impago | 0.156 | 0.156 |
+| Media publicada | 0.188 | 0.161 |
+| Mediana publicada | 0.040 | 0.108 |
+| Minimo y maximo | 0.0005 a 0.976 | 0.021 a 0.655 |
+| Clientes por arriba de 0.90 | 12 | 0 |
+| AUC | 0.776 | 0.777 |
+| Brier | 0.140 | 0.116 |
+| Log loss | 0.445 | 0.371 |
+| Bandas bajo / medio / alto | 309 / 69 / 122 | 234 / 192 / 74 |
 
-## Resueltos
+Cambian de banda 123 clientes, todos hacia medio: 48 de alto y 75 de bajo; ninguno
+salta dos bandas. Que la banda media crezca tanto no es un defecto de la
+calibracion: con 500 clientes el modelo distingue poco, y una probabilidad honesta
+se queda cerca de la tasa media. Antes, `scale_pos_weight` empujaba a los clientes a
+los extremos, y las bandas separaban mas de lo que el modelo sabe.
 
 ### Capacidad hipotecaria con ahorro negativo o por debajo de cualquier vivienda
 
@@ -652,7 +694,7 @@ Resuelto en `fix/datos-perfil-cliente`:
 - **Score.** `train_model.py` guarda la probabilidad fuera de pliegue (5 pliegues) y
   `predict_risk.py` la publica para los clientes con etiqueta. Antes se predecian con
   el modelo final, que habia visto su etiqueta: 58 clientes salian por encima de 0.90,
-  ahora 14 (ver "Probabilidad de impago descalibrada" en Abiertos para el resto).
+  ahora 14 (ver "Probabilidad de impago descalibrada" en Resueltos para el resto).
 
 Medido sobre los CSV de la sesion base (500 clientes, semilla 42), antes y despues:
 

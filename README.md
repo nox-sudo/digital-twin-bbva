@@ -128,6 +128,7 @@ digital-twin-bbva/
 │   │   ├── risk_features.py      # Feature store y gold_creditos_cliente: construir, persistir y leer
 │   │   ├── escalera.py           # Escalera financiera: paso del cliente con umbrales de CONDUSEF
 │   │   ├── explicacion.py        # Riesgo de un cliente explicado con sus valores SHAP (modelo que produjo el score)
+│   │   ├── calibracion.py        # Calibración logística (Platt) del modelo de riesgo sobre su margen
 │   │   ├── movimientos.py        # gold_movimientos_mensuales y gold_ingresos_quincenales
 │   │   ├── etiquetas_impago.py   # Modelo latente de la etiqueta de impago (módulo puro)
 │   │   └── etiquetas_gold.py     # Lectura/escritura de gold_etiquetas_impago y verificación del esquema
@@ -169,6 +170,7 @@ digital-twin-bbva/
 │   ├── test_eval_asistente.py    # Calificación de la evaluación del asistente y banco bien formado
 │   ├── test_acceso.py            # Login y roles: solo hashes, credenciales ignoradas por git, un cliente no ve a otro
 │   ├── test_explicacion.py       # SHAP por cliente: reproduce el score, modelo del pliegue, frases
+│   ├── test_calibracion.py       # Platt sobre el margen: recta, orden y SHAP que suma el score calibrado
 │   ├── test_vista_cliente.py     # Mi resumen: 1 salario mínimo, $20,000, ingreso variable, sin crédito; aislamiento
 │   ├── test_escalera.py          # Escalera financiera: un cliente por paso, sin crédito, ingreso variable, pagos omitidos
 │   ├── test_moneda_mxn.py        # Montos en pesos y nada en dólares: vistas (AppTest), asistente y escalera
@@ -194,6 +196,7 @@ digital-twin-bbva/
 │   └── technical-debt.md         # Deuda técnica conocida
 ├── experimentos/
 │   ├── auc_evento_posterior.py   # Evalúa el modelo contra el evento posterior: CV, oráculo, signos y orden
+│   ├── calibracion_riesgo.py     # Calibración de la probabilidad: con y sin scale_pos_weight, y con Platt
 │   ├── sondeo_herramientas.py    # Qué herramienta del asistente elige el modelo local, por pregunta y corrida
 │   ├── eval_asistente.py         # Evaluación del asistente completo con preguntas no vistas (métricas deterministas)
 │   └── eval_asistente.yaml       # Banco de preguntas de la evaluación (v1)
@@ -360,7 +363,7 @@ Catálogo de 12 KPIs en 5 categorías (ingresos, gastos, ahorro y liquidez, ries
 - [x] Pruebas de robustez con inyección deliberada de datos sucios: 5 brechas, 4 con cambios de código; 3 casos tienen prueba automatizada directa (detalle en [docs/pruebas-robustez.md](docs/pruebas-robustez.md))
 - [x] Capa Gold — catálogo de 12 KPIs en DuckDB
 - [x] Diccionario de datos formal
-- [x] Modelo predictivo de riesgo crediticio (XGBoost + SHAP), entrenado dentro del DAG
+- [x] Modelo predictivo de riesgo crediticio (XGBoost + SHAP), entrenado dentro del DAG, con probabilidad calibrada: media publicada 16.1 % contra una tasa real de 15.6 % en la instancia de la demo (detalle en [docs/technical-debt.md](docs/technical-debt.md))
 - [x] Feature store ligero en Gold (`gold_features_cliente`), fuente única de features
 - [x] PII sintética (CURP, RFC, teléfono, domicilio) validada y protegida en Silver con hash y enmascarado
 - [x] Seguridad base: secretos por máquina fuera del repo, puertos locales, escaneo de secretos en CI

@@ -35,7 +35,7 @@ construida.
    docker compose run --rm worker experimentos/auc_evento_posterior.py
    ```
 
-   Debe reportar 81 positivos y AUC por pliegue 0.689.
+   Debe reportar 81 positivos y AUC por pliegue 0.692.
 
 3. **Activar el escenario de deriva.** En `config/sesion.yaml`, poner
    `escenario_deriva.activo: true`. Es un cambio local: no se sube al repo.
@@ -96,18 +96,18 @@ Pregunta que responde: a quien tengo que mirar.
 
 - Cabecera contra la base: ingreso mensual mediano $9,797 (-$1,675), 57 %
   gastan mas de lo que ganan (+35.4 pts).
-- La probabilidad media (18.8 %, -1.1 pts) no sube: el modelo se reentrena
+- La probabilidad media (16.1 %, -0.9 pts) no sube: el modelo se reentrena
   en cada corrida y la etiqueta se calibra a una tasa media de 15 %. La nota
   bajo las metricas lo explica; el deterioro se lee en las otras dos cifras
   y en Observabilidad.
-- Bandas: 309 bajo (62 %), 69 medio (14 %), 122 alto (24 %).
+- Bandas: 234 bajo (47 %), 192 medio (38 %), 74 alto (15 %).
 - Tabla "Clientes a revisar": seleccionar una fila abre al cliente.
 
 ### 2. Cliente (2 min)
 
 Ejemplo de riesgo alto: **CLI-000283**.
 
-- Probabilidad de impago 95.4 %. 26 anos, 1.2 anos de antiguedad.
+- Probabilidad de impago 59.1 %. 26 anos, 1.2 anos de antiguedad.
 - Ingreso $55,535 al mes, capacidad de ahorro -$20,387, deuda / ingreso 2.49.
 - Ultimos 12 meses: neto promedio -$20,173 al mes; salidas mayores que
   entradas en 10 de 12 meses.
@@ -141,7 +141,7 @@ usuario: solo sus datos, sin selector de cliente, en frases cortas y en pesos.
 
 La explicación reproduce el score publicado: usa el modelo que lo produjo
 (el del pliegue de la validación cruzada). Contraste: **CLI-000162** (riesgo
-bajo, 1 %) lo baja sobre todo que debe 0.6 veces su ingreso de un mes y que
+bajo, 8 %) lo baja sobre todo que debe 0.6 veces su ingreso de un mes y que
 le quedan $10,730 al mes; está en el paso 3
 (fondo de emergencia: su saldo cubre 1.1 meses de gastos).
 
@@ -190,17 +190,24 @@ aleatorios, asi que la diferencia es la hipoteca, no el ruido.
 
 ## Preguntas probables
 
-- **Que tan bueno es el modelo?** AUC 0.689 +- 0.071 en validacion cruzada
-  (5 x 5) sobre la base, contra 0.855 del oraculo (la probabilidad verdadera,
+- **Que tan bueno es el modelo?** AUC 0.692 +- 0.051 en validacion cruzada
+  (5 x 5) sobre la base, contra 0.852 del oraculo (la probabilidad verdadera,
   que conoce el rasgo oculto y el choque). Sin las 3 variables de la
-  etiqueta baja a 0.667. `experimentos/auc_evento_posterior.py`. Con 500
-  clientes el AUC depende mucho de la muestra: con los ingresos calibrados a
-  Mexico bajo de 0.741 a 0.689, mientras que con 5,000 clientes no cambio
-  (0.804 contra 0.803).
+  etiqueta baja a 0.637. `experimentos/auc_evento_posterior.py`. Con 500
+  clientes el AUC depende mucho de la muestra; con 5,000 clientes es 0.777
+  +- 0.017.
+- **La probabilidad es una probabilidad?** Si: esta calibrada. En la
+  instancia, la media publicada es 16.1 % y la tasa real de impago 15.6 %;
+  antes de calibrarla era 18.8 %, y 12 clientes pasaban de 90 %. Con 500
+  clientes el modelo distingue poco, asi que una probabilidad honesta se
+  queda cerca de la media (de 2 % a 65 %) y la banda media junta a 192
+  clientes. Ordena igual que antes (AUC 0.777 contra 0.776).
+  `experimentos/calibracion_riesgo.py` y
+  [technical-debt.md](technical-debt.md).
 - **Por que el modelo y el simulador dan cifras distintas para el mismo
   cliente?** Miden cosas distintas: el modelo ordena el riesgo de atrasarse
   en pagos con todo el historial, el Monte Carlo remuestrea su flujo.
-  CLI-000001 tiene riesgo alto (56.8 %); en el simulador, sin hipoteca, se
+  CLI-000001 tiene riesgo alto (33.3 %); en el simulador, sin hipoteca, se
   queda sin dinero algun mes en 41 de cada 100 escenarios a 36 meses y en 7
   de cada 100 a 6 meses, el horizonte del modelo.
 - **Por que no sube la probabilidad media?** Ver Portafolio: calibracion a

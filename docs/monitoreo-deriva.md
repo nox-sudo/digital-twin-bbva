@@ -381,6 +381,13 @@ Los cruces de umbral son los mismos: score en vigilar desde nov 2026 y en
 reentrenar desde ene 2027, estabilidad del ingreso en reentrenar desde ene
 2027 y capacidad de ahorro desde mar 2027.
 
+**Con la probabilidad calibrada (2026-11-04).** Misma secuencia con el modelo
+calibrado (Platt sobre el margen, ver "Probabilidad de impago descalibrada" en
+[technical-debt.md](technical-debt.md)); referencia `ref_20261104_182044`. Todos
+los valores de la tabla de arriba se repiten, el score incluido: la calibracion es
+monotona, ningun cliente cambia de decil de la referencia y el PSI no se mueve. La
+base se midio esta vez: 81 positivos y AUC por pliegue 0.692 +- 0.051.
+
 **Etiqueta de impago.** Sus coeficientes pre-registrados no cambian. Sus
 entradas observadas (capacidad de ahorro y ratio de endeudamiento) salen del
 feature store, asi que en las entregas pasan a usar la ventana. Es un cambio

@@ -8,8 +8,12 @@ arriba o hacia abajo respecto al cliente promedio del entrenamiento.
 Se calculan al vuelo con XGBoost (pred_contribs=True, TreeSHAP exacto), sin
 la libreria shap y sin escribir en Gold: para un cliente toma milisegundos.
 La suma de las contribuciones mas el valor base es el margen del modelo
-(log-odds), asi que la explicacion reproduce exactamente su probabilidad,
-siempre que se use el modelo que la produjo: predict_risk.py publica para
+(log-odds). El modelo publicado esta calibrado con una recta sobre ese
+margen (src/gold/calibracion.py), asi que cada contribucion se multiplica
+por la pendiente y el valor base pasa a pendiente * base + intercepto: la
+explicacion reproduce exactamente su probabilidad y no cambia el orden ni el
+signo de los factores (la pendiente es positiva), siempre que se use el
+modelo que la produjo: predict_risk.py publica para
 los clientes con etiqueta la probabilidad fuera de pliegue, que sale de uno
 de los 5 modelos de la validacion cruzada (train_model.py los guarda), no
 del modelo final. modelo_del_score() replica esa regla.
@@ -76,10 +80,15 @@ def _sigmoide(x: float) -> float:
 
 def contribuciones(modelo, matriz: pd.DataFrame) -> pd.DataFrame:
     """Contribucion SHAP de cada columna del modelo, por fila, y la columna
-    "base" (el valor esperado). Cada fila suma el margen del modelo."""
+    "base" (el valor esperado). Cada fila suma el margen calibrado del
+    modelo; un XGBClassifier sin calibrar tiene pendiente 1 e intercepto 0."""
     datos = xgb.DMatrix(matriz.astype(float), feature_names=list(matriz.columns))
     valores = modelo.get_booster().predict(datos, pred_contribs=True)
-    return pd.DataFrame(valores, index=matriz.index, columns=[*matriz.columns, "base"])
+    tabla = pd.DataFrame(
+        valores, index=matriz.index, columns=[*matriz.columns, "base"]
+    ) * getattr(modelo, "pendiente", 1.0)
+    tabla["base"] += getattr(modelo, "intercepto", 0.0)
+    return tabla
 
 
 def _agrupar_categoria(fila: pd.Series) -> pd.Series:
