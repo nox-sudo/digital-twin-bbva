@@ -225,6 +225,32 @@ casi no deberia cambiar), o calibrar despues (`CalibratedClassifierCV`, isotonic
 sobre las probabilidades fuera de pliegue. Cambia un hiperparametro fijado el
 2026-10-09, asi que la evaluacion se vuelve a correr y se reporta junto a la actual.
 
+**Criterio de decision (fijado el 2026-11-04, antes de correr el experimento).**
+Es una iteracion nueva y aparte: cambia un hiperparametro fijado el 2026-10-09, y
+la evaluacion del 2026-10-13 (arriba) se conserva tal cual como la del modelo con
+`scale_pos_weight`.
+
+- Que se mide: la probabilidad fuera de pliegue, que es la que publica
+  `predict_risk.py`, con validacion cruzada estratificada de 5 pliegues repetida 5
+  veces, sobre la sesion base (semilla 42, fecha de referencia 2026-09-30, 12
+  meses) con 500 y con 5,000 clientes. Script: `experimentos/calibracion_riesgo.py`.
+- Variantes: A, el modelo actual; B, el mismo XGBoost sin `scale_pos_weight`; C,
+  solo si B no cumple, A con calibracion logistica (Platt) ajustada sobre
+  probabilidades fuera de pliegue dentro de cada pliegue de entrenamiento. No se
+  usa isotonica con 500 clientes: con ~80 positivos tiene demasiados escalones
+  para los datos.
+- Una variante queda calibrada si, en los dos tamanos, cumple las tres:
+  1. la media predicha esta a 0.02 o menos de la tasa real;
+  2. Brier y log loss son menores o iguales que los de A (son reglas de puntaje
+     propias: premian la calibracion, no solo el orden);
+  3. el AUC fuera de pliegue, media de las 5 repeticiones, baja 0.01 o menos
+     contra A.
+- Decision: la opcion mas simple que cumpla. Si B cumple, va B. Si no, C si
+  cumple. Si ninguna, se queda A y la deuda sigue abierta con los numeros.
+- Las bandas de `config/dashboard.yaml` no se mueven para conservar un resultado.
+  Se reporta cuantos clientes cambian de banda; si la calibracion obligara a
+  cambiar las bandas, eso se decide aparte.
+
 ### Las entregas nuevas solo agregan transacciones
 
 **Que pasa:** una entrega mensual (`demo.sh nueva-entrega`) trae un mes
