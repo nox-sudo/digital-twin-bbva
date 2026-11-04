@@ -352,6 +352,35 @@ ingresos con colas mas anchas la estabilidad del ingreso deriva antes
 queda estable. Las variables que el escenario no toca (retiros, P2P,
 antiguedad) dan lo mismo que antes.
 
+**Medicion tras amortizar los prestamos (2026-10-28).** Misma secuencia,
+con el generador de #68: el saldo de los prestamos personales sale de su
+tabla de amortizacion y la cuota solo se paga dentro del plazo (referencia
+`ref_20261028_054014`; el AUC de la base no se volvio a medir):
+
+| Variable | 2026-10 | 2026-11 | 2026-12 | 2027-01 | 2027-02 | 2027-03 | 2027-04 | Estado final |
+|---|---|---|---|---|---|---|---|---|
+| `capacidad_ahorro` | 0.008 | 0.052 | 0.057 | 0.127 | 0.232 | 0.409 | 0.626 | reentrenar |
+| `probabilidad_impago` (score) | 0.050 | 0.126 | 0.182 | 0.275 | 0.382 | 0.476 | 0.563 | reentrenar |
+| `estabilidad_ingreso` | 0.005 | 0.034 | 0.099 | 0.257 | 0.359 | 0.342 | 0.371 | reentrenar |
+| `gasto_promedio_3_meses` | 0.006 | 0.024 | 0.061 | 0.086 | 0.129 | 0.122 | 0.166 | vigilar |
+| `ingreso_mensual_promedio` | 0.002 | 0.005 | 0.011 | 0.034 | 0.072 | 0.060 | 0.077 | estable |
+| `gasto_mensual_total` | 0.002 | 0.003 | 0.004 | 0.009 | 0.016 | 0.025 | 0.038 | estable |
+| `proporcion_retiros` | 0.005 | 0.035 | 0.035 | 0.024 | 0.037 | 0.049 | 0.038 | estable |
+| `actividad_p2p` | 0.016 | 0.007 | 0.013 | 0.021 | 0.020 | 0.041 | 0.014 | estable |
+| `antiguedad_dias` | 0.032 | 0.115 | 0.334 | 0.828 | 0.860 | 1.007 | 1.658 | temporal |
+
+En el ultimo corte: 3 reentrenar, 1 vigilar, 12 estables y 2 temporales, lo
+mismo que en la medicion anterior. Cambian solo las variables que dependen de
+los pagos de prestamo:
+- el score queda mas bajo en todos los cortes (0.563 contra 0.626 al final);
+- la capacidad de ahorro deriva algo mas al final (0.626 contra 0.591);
+- los retiros cambian por menos de 0.01.
+
+El ingreso, el gasto total, el P2P y la antiguedad dan exactamente lo mismo.
+Los cruces de umbral son los mismos: score en vigilar desde nov 2026 y en
+reentrenar desde ene 2027, estabilidad del ingreso en reentrenar desde ene
+2027 y capacidad de ahorro desde mar 2027.
+
 **Etiqueta de impago.** Sus coeficientes pre-registrados no cambian. Sus
 entradas observadas (capacidad de ahorro y ratio de endeudamiento) salen del
 feature store, asi que en las entregas pasan a usar la ventana. Es un cambio
