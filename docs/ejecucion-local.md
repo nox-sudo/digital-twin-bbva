@@ -38,7 +38,10 @@ bash demo.sh
 3. Construye la imagen del worker y levanta Postgres, Airflow y MinIO.
 4. Espera a que Airflow este sano y haya registrado el DAG.
 5. Despausa y dispara `gemelo_digital_financiero_pipeline`, y muestra el
-   avance tarea por tarea hasta que termina.
+   avance tarea por tarea hasta que termina. Al despausarlo, Airflow crea
+   ademas una corrida calendarizada del ultimo mes cerrado (ver
+   [Calendario y alertas](#calendario-y-alertas)); `demo.sh` sigue solo la
+   suya.
 
 El primer arranque tarda mas (descarga de imagenes y build del worker);
 los siguientes reutilizan el cache de Docker.
@@ -60,6 +63,7 @@ el escenario de deriva) y comparar contra las cifras esperadas, ver
 | Sesion de datos usada, con parametros y checksums | `data/sesiones/<id>/manifest.json` |
 | Resumen visual Bronze/Silver | `bash demo.sh reporte` genera `data/reporte_pipeline.html` |
 | Deriva de datos (PSI) por corrida | `data/calidad/deriva_psi/`; tendencia en el dashboard, vista Observabilidad ([monitoreo-deriva.md](monitoreo-deriva.md)) |
+| Alertas de tareas que agotaron sus reintentos | `data/calidad/alertas_airflow.jsonl`; las recientes en el dashboard, vista Observabilidad |
 
 Consulta rapida a Gold sin instalar nada:
 
@@ -129,6 +133,30 @@ Para medir que herramienta elige el modelo en un conjunto fijo de preguntas
 ```bash
 uv run python experimentos/sondeo_herramientas.py
 ```
+
+## Calendario y alertas
+
+El DAG corre solo el dia 1 de cada mes (`@monthly`, hora de
+`America/Mexico_City`) mientras este despausado; `demo.sh` lo despausa al
+dispararlo. Detalle en [arquitectura.md](arquitectura.md#calendario-reintentos-y-alertas).
+
+- **Al despausar** se crea una corrida calendarizada del ultimo mes cerrado
+  (`scheduled__...`), ademas de la manual (`demo_...`). Con
+  `max_active_runs=1` corren una tras otra, no a la vez. `demo.sh` sigue la
+  suya por su `run_id`, asi que espera mientras la otra corre: la primera vez
+  la corrida tarda alrededor del doble.
+- **La corrida calendarizada no cambia los datos.** Conserva la entrega
+  activa: no publica nada en la landing zone ni ingiere nada en Bronze, y
+  vuelve a calcular Silver, Gold y el modelo sobre lo mismo. Solo agrega una
+  corrida a los logs y al historico de PSI (la tendencia se queda con la
+  ultima corrida de cada corte). Para que no corra, pausar el DAG en la UI o
+  con `docker compose exec airflow-scheduler airflow dags pause
+  gemelo_digital_financiero_pipeline`.
+- **Alertas.** Una tarea que falla en sus 3 intentos (el original y 2
+  reintentos) deja una linea en `data/calidad/alertas_airflow.jsonl` y aparece
+  en Observabilidad. Para recibirla tambien en otro sistema, definir
+  `ALERTAS_WEBHOOK_URL` en `.env` (POST con la misma linea en JSON) y volver a
+  correr `bash demo.sh`; vacia, no sale nada de la maquina.
 
 ## Respaldo y restauracion
 

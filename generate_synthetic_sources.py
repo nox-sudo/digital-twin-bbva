@@ -863,6 +863,36 @@ def version_generador() -> str:
     return hashlib.sha256(Path(__file__).read_bytes()).hexdigest()[:12]
 
 
+# Valor de --meses-adicionales que conserva las entregas de la sesion activa.
+ACTIVA = "activa"
+
+
+def meses_adicionales_de(args, config: dict) -> int:
+    """Entregas posteriores a la fecha base. "activa" conserva las de la
+    sesion activa en --out: es lo que pasa una corrida calendarizada del DAG,
+    que no trae configuracion de disparo y no debe regresar la instancia a la
+    sesion base. Sin sesion activa, cae a config/sesion.yaml."""
+    flag = args.meses_adicionales
+    if flag == ACTIVA:
+        activa = leer_manifest(Path(args.out)) if getattr(args, "out", None) else None
+        if activa is not None:
+            return int(activa["parametros"]["meses_adicionales"])
+        flag = None
+    return int(flag if flag is not None else config.get("meses_adicionales", 0))
+
+
+def entero_o_activa(texto: str) -> int | str:
+    """Tipo de --meses-adicionales: un entero o la palabra "activa"."""
+    if texto == ACTIVA:
+        return texto
+    try:
+        return int(texto)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"se esperaba un entero o '{ACTIVA}', llego {texto!r}"
+        ) from None
+
+
 def resolver_parametros(args) -> dict:
     """Parametros de la sesion: config/sesion.yaml, sobreescrito por los
     flags que se hayan pasado."""
@@ -881,7 +911,7 @@ def resolver_parametros(args) -> dict:
         ),
         "clientes": int(valor(args.clientes, "clientes", 500)),
         "meses": int(valor(args.meses, "meses", 12)),
-        "meses_adicionales": int(valor(args.meses_adicionales, "meses_adicionales", 0)),
+        "meses_adicionales": meses_adicionales_de(args, config),
     }
     # Solo se registra si esta activo: apagado, los parametros (y el
     # manifest) quedan exactamente como antes de existir el escenario.
@@ -1005,8 +1035,9 @@ def main(argv: list[str] | None = None):
     parser.add_argument("--fecha-referencia", help="YYYY-MM-DD; 'hoy' de los datos")
     parser.add_argument(
         "--meses-adicionales",
-        type=int,
-        help="Entregas mensuales posteriores a la fecha de referencia (ver demo.sh nueva-entrega)",
+        type=entero_o_activa,
+        help="Entregas mensuales posteriores a la fecha de referencia (ver demo.sh "
+        f"nueva-entrega), o '{ACTIVA}' para conservar las de la sesion activa",
     )
     parser.add_argument(
         "--out",

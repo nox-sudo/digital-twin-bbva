@@ -16,6 +16,9 @@
 #   contrasena con la que se inicializo, y con otra sal los hashes de PII
 #   dejarian de coincidir con los de corridas anteriores.
 #
+# Opcionales (se conservan si se definieron a mano):
+#   - ALERTAS_WEBHOOK_URL  webhook de alertas del DAG; vacio, apagado
+#
 # .env no se sube al repo (.gitignore) y queda con permisos 600 (solo el
 # usuario dueno puede leerlo).
 #
@@ -101,8 +104,13 @@ AIRFLOW_SECRET_KEY="$(secreto AIRFLOW_SECRET_KEY 'hex 32')"
 MINIO_ROOT_USER="$(secreto MINIO_ROOT_USER 'printf gemelo-admin')"
 MINIO_ROOT_PASSWORD="$(secreto MINIO_ROOT_PASSWORD 'hex 24')"
 PII_HASH_SALT="$(secreto PII_HASH_SALT 'hex 32')"
+# Opcional y apagado por default; se conserva si alguien la definio.
+ALERTAS_WEBHOOK_URL="$(valor_actual ALERTAS_WEBHOOK_URL)"
 
-mkdir -p "${PROJECT_DIR}/data" "${PROJECT_DIR}/models"
+# data/calidad se monta en Airflow (alertas por fallo). Si Docker la crea
+# al montarla, en Linux queda de root y Airflow (AIRFLOW_UID) no puede
+# escribir en ella; creada aqui, es del usuario.
+mkdir -p "${PROJECT_DIR}/data/calidad" "${PROJECT_DIR}/models"
 
 # umask 077: el archivo nace con permisos 600, sin una ventana en la que
 # otro usuario de la maquina pudiera leerlo.
@@ -124,6 +132,9 @@ AIRFLOW_SECRET_KEY=${AIRFLOW_SECRET_KEY}
 MINIO_ROOT_USER=${MINIO_ROOT_USER}
 MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
 PII_HASH_SALT=${PII_HASH_SALT}
+
+# --- Opcional: webhook de alertas del DAG (vacio = apagado)
+ALERTAS_WEBHOOK_URL=${ALERTAS_WEBHOOK_URL}
 EOF
 )
 chmod 600 "${ENV_FILE}"

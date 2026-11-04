@@ -156,6 +156,39 @@ else:
             use_container_width=True,
         )
 
+# --- Alertas de Airflow ----------------------------------------------------
+st.subheader("Alertas de Airflow")
+alertas = comun.datos.alertas_airflow(cfg["alertas_airflow"])
+if alertas.empty:
+    st.success("Sin alertas: ninguna tarea del DAG ha agotado sus reintentos.")
+else:
+    st.caption(
+        (
+            "La más reciente"
+            if len(alertas) == 1
+            else f"Las {len(alertas)} más recientes"
+        )
+        + ". Cada una es una tarea que falló en todos sus intentos; el enlace abre "
+        "su log en Airflow."
+    )
+    st.dataframe(
+        alertas,
+        hide_index=True,
+        use_container_width=True,
+        column_config={
+            "fecha": st.column_config.DatetimeColumn(
+                "Fecha (UTC)", format="DD/MM/YYYY HH:mm:ss"
+            ),
+            "dag_id": "DAG",
+            "task_id": "Tarea",
+            "run_id": "Corrida",
+            "intento": "Intento",
+            "intentos_permitidos": "Intentos permitidos",
+            "tipo_error": "Error",
+            "log_url": st.column_config.LinkColumn("Log", display_text="Abrir log"),
+        },
+    )
+
 # --- Deriva de datos (PSI) -------------------------------------------------
 st.subheader("Deriva de datos (PSI)")
 historico_psi = comun.datos.deriva_psi(cfg["deriva_psi"])

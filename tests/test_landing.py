@@ -33,7 +33,7 @@ from src.common.landing import (  # noqa: E402
 )
 
 
-def generar(base: Path, meses_adicionales: int = 0) -> Path:
+def generar(base: Path, meses_adicionales: int | str = 0) -> Path:
     generador.main(
         [
             "--clientes", "10", "--meses", "2", "--fecha-referencia", "2026-09-30",
@@ -154,3 +154,35 @@ def test_detecta_bronze_de_la_version_anterior(tmp_path):
 
     anotar_ingeridos(bronze, [], {})
     assert not bronze_sin_control(bronze)
+
+
+# --- Corrida sin configuracion (calendarizada) -------------------------------------
+
+
+def test_activa_conserva_la_entrega_vigente(s3, tmp_path):
+    import json
+
+    publicar_entrega(s3, generar(tmp_path))
+    publicar_entrega(s3, generar(tmp_path, meses_adicionales=1))
+    antes = (tmp_path / "activa/manifest.json").read_text()
+
+    # Lo que hace una corrida calendarizada del DAG: sin conf, "activa".
+    sesion = generar(tmp_path, meses_adicionales="activa")
+
+    assert (sesion / "manifest.json").read_text() == antes
+    assert json.loads(antes)["parametros"]["meses_adicionales"] == 1
+    assert publicar_entrega(s3, sesion) is None
+    assert len(listar_entregas(s3)) == 2
+
+
+def test_activa_sin_sesion_previa_usa_la_configuracion(tmp_path):
+    import json
+
+    sesion = generar(tmp_path, meses_adicionales="activa")
+    manifest = json.loads((sesion / "manifest.json").read_text())
+    assert manifest["parametros"]["meses_adicionales"] == 0
+
+
+def test_meses_adicionales_rechaza_otro_texto(tmp_path):
+    with pytest.raises(SystemExit):
+        generar(tmp_path, meses_adicionales="siete")

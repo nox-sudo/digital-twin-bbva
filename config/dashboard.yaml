@@ -13,6 +13,9 @@ deriva_psi: data/calidad/deriva_psi
 # Cifras de cabecera del portafolio por corte (predict_risk.py), para
 # comparar el corte actual contra la base.
 resumen_portafolio: data/calidad/resumen_portafolio
+# Alertas de Airflow: una linea JSON por tarea que agoto sus reintentos
+# (dags/alertas.py).
+alertas_airflow: data/calidad/alertas_airflow.jsonl
 monitoreo_psi: config/monitoreo_psi.yaml
 # Usuarios del dashboard (generate_credentials.py): solo hashes argon2id.
 usuarios: data/auth/usuarios.duckdb

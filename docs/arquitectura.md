@@ -44,6 +44,7 @@ hace el computo.
 | Referencia de deriva | `models/referencia_psi/` | Linea base congelada del PSI: cortes y proporciones de entrenamiento y copia del modelo base | Sin PII |
 | Deriva de datos | `data/calidad/deriva_psi/` (Parquet) | Historico del PSI por corrida y variable | Sin PII |
 | Resumen del portafolio | `data/calidad/resumen_portafolio/` (Parquet) | Cifras de cabecera del portafolio por corte (`predict_risk.py`), para comparar contra la base | Sin PII |
+| Alertas de Airflow | `data/calidad/alertas_airflow.jsonl` | Una linea por tarea que agoto sus reintentos (`dags/alertas.py`) | Sin PII |
 
 ## Tareas del DAG
 
@@ -62,6 +63,37 @@ hace el computo.
 
 Todos los pasos tambien se pueden correr sin Airflow con el CLI unico:
 `python main.py <paso>` (o `bash demo.sh pipeline` en Docker).
+
+## Calendario, reintentos y alertas
+
+- **Calendario.** El DAG corre una vez al mes (`schedule="@monthly"`, el dia 1
+  a las 00:00 de `America/Mexico_City`), al ritmo de las entregas mensuales que
+  simula el proyecto. `catchup=False`: al despausarlo no se rellenan los meses
+  pasados. `max_active_runs=1`: si una corrida calendarizada y un disparo
+  manual coinciden, la segunda espera en fila en vez de escribir las mismas
+  tablas a la vez.
+- **Corrida calendarizada idempotente.** Llega sin configuracion de disparo,
+  asi que `generar_fuentes_sinteticas` recibe `--meses-adicionales activa`:
+  reutiliza la sesion activa en `data/raw_sources/` (o la de
+  `config/sesion.yaml` si no hay ninguna). La landing zone no publica nada
+  porque la entrega ya existe, Bronze no ingiere nada porque cada archivo ya
+  esta en su registro de control, y Silver, Gold, el modelo y las predicciones
+  se recalculan sobre los mismos datos. Antes el default era 0, y una corrida
+  sin configuracion regresaba una instancia con entregas a la sesion base.
+  Solo un disparo con `meses_adicionales` (`demo.sh nueva-entrega`) agrega un
+  mes.
+- **Reintentos.** Cada tarea se reintenta 2 veces, con 2 minutos entre
+  intentos.
+- **Alertas.** `on_failure_callback` (`dags/alertas.py`) se dispara cuando una
+  tarea queda en `failed`, es decir, despues de agotar los reintentos; un
+  intento que se va a reintentar no alerta. Escribe una linea JSON en
+  `data/calidad/alertas_airflow.jsonl` (montado en Airflow como
+  `/opt/airflow/calidad`) con `dag_id`, `task_id`, `run_id`, intento,
+  intentos permitidos, fecha, enlace al log y el nombre de la excepcion. No
+  copia el mensaje de error ni datos, que podrian traer PII o secretos. La
+  pagina de Observabilidad muestra las 20 mas recientes. Webhook opcional: si
+  `ALERTAS_WEBHOOK_URL` esta en `.env`, la misma alerta se manda por POST;
+  vacia (el default) no se manda nada y un webhook caido no afecta la linea.
 
 ## Configuracion declarativa
 

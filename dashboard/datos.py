@@ -303,6 +303,44 @@ def consistencia_gold(ruta_duckdb: str) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
+# Alertas de Airflow
+# ---------------------------------------------------------------------------
+
+COLUMNAS_ALERTAS = [
+    "fecha",
+    "dag_id",
+    "task_id",
+    "run_id",
+    "intento",
+    "intentos_permitidos",
+    "tipo_error",
+    "log_url",
+]
+
+
+def alertas_airflow(ruta: str, limite: int = 20) -> pd.DataFrame:
+    """Las alertas mas recientes primero (dags/alertas.py escribe una linea
+    JSON por tarea que agoto sus reintentos). Una linea ilegible se omite:
+    el archivo es acumulable y una escritura cortada no debe ocultar las
+    demas."""
+    archivo = Path(ruta)
+    filas = []
+    if archivo.exists():
+        for linea in archivo.read_text(encoding="utf-8").splitlines():
+            try:
+                filas.append(json.loads(linea))
+            except json.JSONDecodeError:
+                continue
+    alertas = pd.DataFrame(filas).reindex(columns=COLUMNAS_ALERTAS)
+    alertas["fecha"] = pd.to_datetime(alertas["fecha"], utc=True)
+    return (
+        alertas.sort_values("fecha", ascending=False)
+        .head(limite)
+        .reset_index(drop=True)
+    )
+
+
+# ---------------------------------------------------------------------------
 # Deriva de datos (PSI)
 # ---------------------------------------------------------------------------
 

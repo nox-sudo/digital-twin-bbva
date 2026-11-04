@@ -9,7 +9,9 @@ modelo -> prediccion de riesgo crediticio -> monitoreo de deriva (PSI).
 
 Cada tarea lanza el contenedor "worker" (definido en docker-compose.yml)
 para hacer el trabajo pesado — Airflow solo decide CUANDO y en que
-ORDEN correr cada paso, con reintentos automaticos si algo falla.
+ORDEN correr cada paso (una vez al mes, o a mano con demo.sh), con
+reintentos automaticos si algo falla y una alerta en
+data/calidad/alertas_airflow.jsonl si una tarea agota sus reintentos.
 Esta separacion es la que permite escalar el computo (worker) sin
 tocar el orquestador (Airflow).
 
@@ -37,6 +39,9 @@ from airflow import DAG
 from airflow.providers.docker.operators.docker import DockerOperator
 from docker.types import Mount
 
+# Modulo hermano en dags/ (Airflow agrega la carpeta al sys.path).
+from alertas import alertar_fallo
+
 HOST_PROJECT_DIR = os.environ["HOST_PROJECT_DIR"]
 WORKER_IMAGE = "gemelo-worker:local"
 
@@ -44,6 +49,8 @@ default_args = {
     "owner": "andrew",
     "retries": 2,
     "retry_delay": timedelta(minutes=2),
+    # Solo cuando la tarea agota los reintentos (dags/alertas.py).
+    "on_failure_callback": alertar_fallo,
 }
 
 # Carpetas del host que cada tarea necesita ver dentro del worker.
@@ -107,9 +114,19 @@ with DAG(
         "entrena el modelo de riesgo y predice probabilidad de impago"
     ),
     default_args=default_args,
-    schedule=None,  # disparo manual; cambiar a "@daily" cuando el proyecto lo requiera
+    # Una corrida al inicio de cada mes (hora de America/Mexico_City), al
+    # ritmo de las entregas mensuales que simula el proyecto. catchup=False:
+    # al despausar no se rellenan los meses pasados, pero Airflow si crea
+    # una corrida para el ultimo intervalo cerrado. Esa corrida, como toda
+    # corrida calendarizada, llega sin configuracion y conserva la entrega
+    # activa (--meses-adicionales activa): repite el pipeline sobre los
+    # mismos datos sin duplicarlos. max_active_runs=1 la pone en fila con
+    # un disparo manual (demo.sh) en vez de correr las dos a la vez sobre
+    # las mismas tablas.
+    schedule="@monthly",
     start_date=datetime(2026, 1, 1),
     catchup=False,
+    max_active_runs=1,
     tags=["gemelo-digital-financiero", "lakehouse"],
 ) as dag:
 
@@ -118,9 +135,11 @@ with DAG(
         # Parametros de la sesion en config/sesion.yaml. Si la sesion ya
         # existe en data/sesiones/, se reutiliza en vez de regenerarse.
         # meses_adicionales llega en la configuracion del disparo (demo.sh
-        # nueva-entrega): simula que llego el siguiente mes de datos.
+        # nueva-entrega): simula que llego el siguiente mes de datos. Sin
+        # ella (corrida calendarizada o disparo sin conf) se conserva la
+        # entrega activa; con 0 la instancia regresaria a la sesion base.
         "generate_synthetic_sources.py --config config/sesion.yaml --out data/raw_sources "
-        "--meses-adicionales {{ (dag_run.conf or {}).get('meses_adicionales', 0) }}",
+        "--meses-adicionales {{ (dag_run.conf or {}).get('meses_adicionales', 'activa') }}",
     )
 
     publicar_landing = tarea_worker(

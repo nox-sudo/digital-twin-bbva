@@ -137,3 +137,70 @@ def test_script_acepta_las_opciones_del_dag(task_id, command):
     aceptadas = set(re.findall(r"--[a-z0-9][a-z0-9-]*", resultado.stdout))
     faltantes = [o for o in opciones if o not in aceptadas]
     assert not faltantes, f"{task_id}: {script} no acepta {faltantes}"
+
+
+# --- Calendario y alertas -----------------------------------------------------
+
+
+def _argumentos_del_dag() -> dict:
+    """Argumentos con nombre de la llamada DAG(...) del bloque with."""
+    arbol = ast.parse(DAG.read_text(encoding="utf-8"))
+    for nodo in ast.walk(arbol):
+        if (
+            isinstance(nodo, ast.Call)
+            and getattr(nodo.func, "id", None) == "DAG"
+            and nodo.keywords
+        ):
+            return {k.arg: k.value for k in nodo.keywords}
+    raise AssertionError("No se encontro la llamada DAG(...)")
+
+
+def _default_args() -> dict:
+    """{llave: nodo} del diccionario default_args."""
+    arbol = ast.parse(DAG.read_text(encoding="utf-8"))
+    for nodo in ast.walk(arbol):
+        if (
+            isinstance(nodo, ast.Assign)
+            and getattr(nodo.targets[0], "id", None) == "default_args"
+        ):
+            return {
+                ast.literal_eval(k): v
+                for k, v in zip(nodo.value.keys, nodo.value.values)
+            }
+    raise AssertionError("No se encontro default_args")
+
+
+def test_corrida_mensual_sin_relleno_y_una_a_la_vez():
+    argumentos = _argumentos_del_dag()
+    assert ast.literal_eval(argumentos["schedule"]) == "@monthly"
+    assert ast.literal_eval(argumentos["catchup"]) is False
+    assert ast.literal_eval(argumentos["max_active_runs"]) == 1
+
+
+def test_reintentos_y_alerta_al_agotarlos():
+    default_args = _default_args()
+    assert ast.literal_eval(default_args["retries"]) >= 1
+    # on_failure_callback (no on_retry_callback): Airflow lo llama una sola
+    # vez, cuando la tarea queda en failed tras el ultimo reintento.
+    assert "on_retry_callback" not in default_args
+    callback = default_args["on_failure_callback"]
+    assert isinstance(callback, ast.Name) and callback.id == "alertar_fallo"
+
+    importado = [
+        n
+        for n in ast.walk(ast.parse(DAG.read_text(encoding="utf-8")))
+        if isinstance(n, ast.ImportFrom) and n.module == "alertas"
+    ]
+    assert importado and any(a.name == "alertar_fallo" for a in importado[0].names)
+    assert (RAIZ / "dags" / "alertas.py").is_file()
+
+
+def test_corrida_sin_configuracion_conserva_la_entrega_activa():
+    # Una corrida calendarizada llega sin dag_run.conf. Con 0 como default
+    # regresaria la instancia a la sesion base; "activa" la conserva.
+    comando = next(
+        t["command"]
+        for t in TAREAS.values()
+        if t["task_id"] == "generar_fuentes_sinteticas"
+    )
+    assert "get('meses_adicionales', 'activa')" in comando

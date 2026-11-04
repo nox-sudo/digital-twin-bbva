@@ -142,7 +142,8 @@ digital-twin-bbva/
 │   ├── origen.py                 # Guardas: datos que el usuario no dio y vivienda evaluada como compra
 │   └── alcance.py                # Verificación previa: preguntas fuera de alcance (recomendaciones de inversión)
 ├── dags/
-│   └── gemelo_pipeline_dag.py    # DAG de Airflow (DockerOperator)
+│   ├── gemelo_pipeline_dag.py    # DAG de Airflow (DockerOperator), mensual y con alertas
+│   └── alertas.py                # Alerta de una tarea que agotó sus reintentos (sin importar Airflow)
 ├── dashboard/
 │   ├── app.py                    # Entrada de Streamlit, inicio de sesión y navegación por rol
 │   ├── acceso.py                 # Login, páginas por rol y cliente de la sesión (cliente_actual)
@@ -356,6 +357,7 @@ Catálogo de 12 KPIs en 5 categorías (ingresos, gastos, ahorro y liquidez, ries
 - [x] Capa Silver — motor de validación genérico, patrón de cuarentena
 - [x] Infraestructura Docker Compose — Airflow, Postgres, MinIO, worker
 - [x] DAG de Airflow corriendo end-to-end de forma automatizada
+- [x] DAG calendarizado (una corrida al mes, idempotente) con alerta por tarea que agota sus reintentos en `data/calidad/alertas_airflow.jsonl` y en Observabilidad (detalle en [docs/arquitectura.md](docs/arquitectura.md#calendario-reintentos-y-alertas))
 - [x] CI/CD — 4 jobs, lint + tests + validación de infraestructura + smoke test
 - [x] Pruebas de robustez con inyección deliberada de datos sucios: 5 brechas, 4 con cambios de código; 3 casos tienen prueba automatizada directa (detalle en [docs/pruebas-robustez.md](docs/pruebas-robustez.md))
 - [x] Capa Gold — catálogo de 12 KPIs en DuckDB

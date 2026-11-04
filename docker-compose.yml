@@ -45,9 +45,17 @@ x-airflow-common: &airflow-common
     PII_HASH_SALT: "${PII_HASH_SALT:?Corre bash setup.sh}"
     MINIO_ROOT_USER: "${MINIO_ROOT_USER:?Corre bash setup.sh}"
     MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:?Corre bash setup.sh}"
+    # Alertas por fallo (dags/alertas.py). El webhook es opcional y queda
+    # apagado si ALERTAS_WEBHOOK_URL no esta en .env.
+    ALERTAS_RUTA: /opt/airflow/calidad/alertas_airflow.jsonl
+    ALERTAS_WEBHOOK_URL: "${ALERTAS_WEBHOOK_URL:-}"
   volumes:
     - ./dags:/opt/airflow/dags
     - airflow_logs:/opt/airflow/logs
+    # Solo data/calidad, no todo data/: ahi escribe dags/alertas.py la
+    # alerta de una tarea que agoto sus reintentos, y de ahi la lee el
+    # dashboard. Airflow no necesita ver el resto de los datos.
+    - ./data/calidad:/opt/airflow/calidad
     # Riesgo aceptado: el socket de Docker da control total sobre el
     # Docker del host. Es lo que permite a Airflow lanzar el worker
     # (DockerOperator); ver docs/seguridad.md.
