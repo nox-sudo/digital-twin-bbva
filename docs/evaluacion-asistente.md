@@ -745,8 +745,33 @@ entran en la calificacion.
   coincidia desde antes. Con la probabilidad calibrada (2026-11-04) queda en
   23.7 %, riesgo medio, y la descripcion vuelve a coincidir.
 
-Las demas descripciones (ingreso y banda de riesgo) siguen siendo ciertas:
-el ingreso no cambia en ningun cliente de los bancos.
+Revision de los 15 clientes contra la instancia calibrada (2026-11-04,
+`feature/calibracion-riesgo`, base mas 7 entregas). La calibracion solo
+cambia la probabilidad; ingreso, productos y capacidad de ahorro son los de
+la instancia del 2026-10-28.
+
+| Banco | Cliente | Descripcion | Antes (2026-10-28) | Calibrada (2026-11-04) | Coincide |
+|---|---|---|---|---|---|
+| v1 | CLI-000283 | riesgo alto | alto, 95.4 % | alto, 59.1 % | si |
+| v1 | CLI-000162 | riesgo bajo | bajo, 1.3 % | bajo, 7.5 % | si |
+| v1 | CLI-000036 | sin banda | bajo, 0.7 % | bajo, 4.7 % | si |
+| v2 | CLI-000059 | riesgo alto | alto, 97.6 % | alto, 65.5 % | si |
+| v2 | CLI-000180 | riesgo alto | alto, 86.0 % | alto, 47.1 % | banda si; prestamo no (arriba) |
+| v2 | CLI-000044 | riesgo bajo | bajo, 0.3 % | bajo, 5.0 % | si |
+| v3 | CLI-000021 | riesgo alto | alto, 85.0 % | alto, 44.5 % | si |
+| v3 | CLI-000250 | riesgo bajo | bajo, 0.7 % | bajo, 4.5 % | si |
+| v3 | CLI-000318 | riesgo alto | alto, 65.6 % | alto, 35.7 % | si |
+| v4 | CLI-000101 | riesgo medio | alto, 30.6 % | medio, 23.7 % | si (antes no) |
+| v4 | CLI-000222 | riesgo medio | medio, 14.7 % | medio, 16.8 % | si |
+| v4 | CLI-000450 | riesgo bajo | bajo, 1.6 % | bajo, 8.4 % | si |
+| v5 | CLI-000452 | riesgo bajo | bajo, 0.5 % | bajo, 4.8 % | si |
+| v5 | CLI-000057 | riesgo medio | bajo, 1.2 % | bajo, 5.8 % | no |
+| v5 | CLI-000442 | riesgo alto | alto, 35.5 % | medio, 25.4 % | no |
+
+Al 2026-11-04, con la probabilidad calibrada, las demas descripciones
+(ingreso, productos y banda de riesgo) siguen siendo ciertas. El ingreso y
+los productos de los clientes de los bancos no cambian desde el 2026-10-28;
+el prestamo de CLI-000180 ya estaba en saldo 0 en esa fecha (arriba).
 
 ## Comparacion del modelo calibrado (2026-11-04)
 

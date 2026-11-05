@@ -389,7 +389,7 @@ La documentación técnica vive en el repositorio y se actualiza en el mismo PR 
 | [docs/diccionario-datos.md](docs/diccionario-datos.md) | Columnas por entidad y capa: tipos, reglas de calidad, tratamiento de PII, KPIs y feature store |
 | [docs/seguridad.md](docs/seguridad.md) | Secretos, clasificación de datos por capa, protección de PII, auditoría del repositorio y riesgos aceptados |
 | [docs/ejecucion-local.md](docs/ejecucion-local.md) | Cómo correr el proyecto en otra máquina, comandos de `demo.sh` y problemas comunes |
-| [docs/evaluacion-asistente.md](docs/evaluacion-asistente.md) | Evaluación del asistente con 24 preguntas no vistas, 3 clientes y 3 repeticiones: resultados por categoría, fallas reales y de la métrica, revisión manual |
+| [docs/evaluacion-asistente.md](docs/evaluacion-asistente.md) | Evaluación del asistente en cinco bancos (v1 a v5), cada uno de 24 preguntas no vistas al escribirlo, 3 clientes y 3 repeticiones: resultados por ronda y categoría, fallas reales y de la métrica, revisión manual, línea base tras el cambio del generador y comparación con el modelo calibrado |
 | [docs/guion-demo.md](docs/guion-demo.md) | Cómo reconstruir en otra máquina la instancia de la presentación (base y 7 entregas con deriva), cifras esperadas y recorrido del dashboard |
 | [docs/pruebas-robustez.md](docs/pruebas-robustez.md) | Las 5 brechas de robustez probadas con datos sucios, su resultado y qué parte tiene prueba automatizada |
 | [docs/technical-debt.md](docs/technical-debt.md) | Deuda técnica conocida (incluye la evaluación de las etiquetas de impago), con fecha de última verificación |
