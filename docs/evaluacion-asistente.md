@@ -732,16 +732,120 @@ entran en la calificacion.
 
 - **v5, CLI-000057, "riesgo medio":** ahora es riesgo bajo (1.2 %; antes
   14.9 %). El saldo de su prestamo pasa de $9,421 a $2,045 y su deuda /
-  ingreso de 4.41 a 0.96.
+  ingreso de 4.41 a 0.96. Con la probabilidad calibrada (2026-11-04) sigue en
+  riesgo bajo: 5.8 %.
+- **v5, CLI-000442, "riesgo alto":** con la probabilidad calibrada
+  (2026-11-04) baja a riesgo medio: 25.4 %, antes 35.5 %. Hasta esa fecha la
+  descripcion era correcta.
 - **v2, CLI-000180, "tarjeta y prestamo":** el prestamo (12 meses, abierto el
   2025-07-03) ya termino su plazo y queda con saldo 0. Sigue teniendo la
   cuenta, pero ya no paga cuota.
 - **v4, CLI-000101, "riesgo medio":** ahora 30.6 %, banda alta (el umbral
   es 30 %). Antes de este cambio ya estaba en 51.6 %; la descripcion no
-  coincidia desde antes.
+  coincidia desde antes. Con la probabilidad calibrada (2026-11-04) queda en
+  23.7 %, riesgo medio, y la descripcion vuelve a coincidir.
 
 Las demas descripciones (ingreso y banda de riesgo) siguen siendo ciertas:
 el ingreso no cambia en ningun cliente de los bancos.
+
+## Comparacion del modelo calibrado (2026-11-04)
+
+`feature/calibracion-riesgo` calibra la probabilidad de impago con una recta
+sobre el margen del modelo (Platt; decision y numeros en
+[technical-debt.md](technical-debt.md)). Cambian la probabilidad de cada
+cliente y los conteos por banda; el ingreso, el gasto y los demas datos de
+Gold no cambian. Esta seccion mide que le pasa al asistente con ese cambio.
+
+### Que se corrio
+
+- **A, modelo anterior:** `develop` en `814c437` en un worktree aparte, con una
+  copia de `data/gold/kpis.duckdb` y `data/calidad/resumen_portafolio/` de la
+  instancia de la demo tomada antes de reconstruirla (base mas 7 entregas,
+  mismo SHA-256 de las predicciones que la instancia del 2026-10-28).
+- **C, modelo calibrado:** la instancia de la demo reconstruida con el DAG
+  desde `feature/calibracion-riesgo` (`limpiar todo`, base y 7 entregas;
+  respaldo en `~/respaldos-gemelo/2026-11-04_113206`). Las etiquetas de impago
+  son identicas a las de A.
+- **Igual en los dos lados:** el codigo del asistente y la metrica (los de
+  `814c437`; la rama no toca `asistente/` ni `experimentos/eval_asistente.py`),
+  los cinco bancos, 3 repeticiones, `llama3.1:8b` y el mismo dia. A corrio
+  primero y C despues, uno tras otro, sin Docker trabajando.
+- **Por que se repitio la linea base sobre A:** los archivos de las corridas
+  del 2026-10-28 se borraron con `bash demo.sh limpiar todo` al reconstruir la
+  instancia (`data/evaluaciones/` no esta en el respaldo), y sin ellos no se
+  puede comparar pregunta por pregunta. Correrla otra vez tambien deja los dos
+  lados con la misma version de Ollama y en la misma maquina. Los totales de
+  A coinciden con los de la linea base del 2026-10-28 en los cinco bancos.
+
+Los cinco bancos ya se habian visto y corregido en rondas anteriores, asi que
+esta comparacion mide como cambia el asistente al cambiar el modelo de riesgo,
+no cuanto generaliza a preguntas nuevas.
+
+### Resultados con la misma metrica
+
+| Banco | Linea base 2026-10-28 | A (modelo anterior) | C (calibrado) | Corridas con resultado de herramienta distinto |
+|---|---|---|---|---|
+| v1 | 186 / 216 | 186 / 216 | 180 / 216 | 50 / 216 |
+| v2 | 195 / 216 | 195 / 216 | 195 / 216 | 63 / 216 |
+| v3 | 213 / 216 | 213 / 216 | 213 / 216 | 39 / 216 |
+| v4 | 177 / 216 | 177 / 216 | 180 / 216 | 27 / 216 |
+| v5 | 156 / 216 | 156 / 216 | 159 / 216 | 36 / 216 |
+| Total | 927 / 1,080 | 927 / 1,080 | 927 / 1,080 | 215 / 1,080 |
+
+| Banco | Llamadas identicas A / C | Textos identicos A / C | p50 A / C | p95 A / C |
+|---|---|---|---|---|
+| v1 | 72 / 72 | 72 / 71 | 6.2 s / 6.7 s | 13.7 s / 15.4 s |
+| v2 | 72 / 72 | 71 / 71 | 5.4 s / 6.1 s | 12.6 s / 12.1 s |
+| v3 | 71 / 71 | 69 / 70 | 6.0 s / 6.0 s | 13.6 s / 10.2 s |
+| v4 | 72 / 72 | 72 / 72 | 6.1 s / 6.1 s | 12.8 s / 12.6 s |
+| v5 | 70 / 70 | 68 / 67 | 6.1 s / 5.9 s | 12.2 s / 12.2 s |
+
+(De 72 combinaciones de pregunta y cliente por banco.)
+
+El total queda igual: se pierden 9 corridas en v1 y se ganan 9 entre v1, v4 y
+v5. En 215 corridas el resultado de alguna herramienta cambia, sobre todo por
+la probabilidad de `perfil_cliente` y los conteos por banda de
+`resumen_portafolio`; en 197 de ellas el resultado de la corrida no cambia.
+
+### Preguntas cuyo resultado cambio
+
+Contado sobre los archivos de resultados, no sobre resumenes: cambian 18
+corridas, que son 4 preguntas distintas en 6 combinaciones de pregunta y
+cliente. En las 18 cambio el resultado de la herramienta y el modelo
+respondio distinto con el dato nuevo; el banco no cambia y ningun valor
+esperado depende de la probabilidad ni de los conteos por banda.
+
+- **v1, "clientes_riesgo_alto" con CLI-000036, CLI-000162 y CLI-000283 (3 de 3
+  pasaban en cada uno, 0 de 3 ahora; 9 corridas).**
+  - **Dato:** `resumen_portafolio` devuelve 74 clientes en riesgo alto en vez
+    de 122.
+  - **Por que falla:** con A el modelo contestaba solo el conteo. Con C agrega
+    "lo que representa el 14,8% de los clientes"; 74 de 500 es 14.8 %, pero el
+    porcentaje no esta en el resultado y la metrica lo marca como inventado.
+    Es comportamiento del asistente ante el dato nuevo.
+- **v1, "muy_endeudado" con CLI-000036 (0 de 3 a 3 de 3).**
+  - **Dato:** `perfil_cliente` trae la probabilidad 4.73 % en vez de 0.75 %;
+    lo demas es igual.
+  - **Por que cambia:** con A el modelo inventaba "tu capacidad de ahorro es
+    del 35.98% de tu ingreso" (es el monto $3,598.29 leido como porcentaje).
+    Con C cita la probabilidad, que si esta en el resultado.
+- **v4, "soy_gerente" con CLI-000222 (0 de 3 a 3 de 3).**
+  - **Dato:** la probabilidad de `perfil_cliente` pasa de 14.69 % a 16.77 %;
+    lo demas es igual.
+  - **Por que cambia:** con A el modelo describia la estabilidad del ingreso
+    como $20,173.26, un monto que no esta en el resultado. Con C da los montos
+    del resultado ($1,191.65 de ahorro negativo y $2,017.33 de estabilidad).
+- **v5, "lista_morosos" con CLI-000452 (0 de 3 a 3 de 3).**
+  - **Dato:** `resumen_portafolio` trae las bandas 234 / 192 / 74 y la
+    probabilidad media 16.06 % en vez de 309 / 69 / 122 y 18.81 %.
+  - **Por que cambia:** con A el modelo agregaba un "saldo promedio" por banda
+    y porcentajes inventados, la falla descrita en la linea base. Con C da
+    solo los conteos por banda.
+
+Las tres mejoras no son correcciones del asistente: son el mismo modelo de
+lenguaje respondiendo distinto a una entrada distinta. La falla que aparece
+en v1 (calcular un porcentaje que no se le dio) es del mismo tipo que las que
+desaparecen, y queda para la siguiente ronda del asistente.
 
 ## Limites de esta evaluacion
 
