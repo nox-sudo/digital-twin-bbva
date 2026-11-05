@@ -1,9 +1,16 @@
 """
-Asistente conversacional sobre el cliente seleccionado y el portafolio.
+Asistente conversacional sobre el cliente seleccionado y, para el admin,
+sobre el portafolio.
 Corre con un modelo local de Ollama (config/asistente.yaml): el modelo elige
 herramientas y Python calcula las cifras con las mismas consultas que las
 demas vistas (asistente/herramientas.py). Cada respuesta muestra que
 herramientas uso y que devolvieron.
+
+El rol sale del usuario de la sesion (acceso.usuario_actual()), nunca del
+modelo ni de la URL. Con el se arma el Contexto y el modelo: el de un
+cliente solo tiene las herramientas de cliente, y la cache de modelos se
+separa por rol para que un cliente nunca reciba el modelo con las
+herramientas del admin.
 
 Necesita el grupo de dependencias "asistente" y Ollama corriendo:
     uv run --group dashboard --group asistente streamlit run dashboard/app.py
@@ -31,9 +38,16 @@ EJEMPLOS = [
 ]
 
 
+TEXTO_ENTRADA = {
+    "admin": "Pregunta sobre este cliente o el portafolio",
+    "cliente": "Pregunta sobre tus finanzas",
+}
+
+
 @st.cache_resource(show_spinner=False)
-def modelo(cfg: Configuracion) -> ModeloOllama:
-    return ModeloOllama(cfg)
+def modelo(cfg: Configuracion, rol: str) -> ModeloOllama:
+    # rol es parte de la llave de la cache: un modelo por rol.
+    return ModeloOllama(cfg, rol)
 
 
 def mostrar_pasos(pasos) -> None:
@@ -52,8 +66,9 @@ if comun.gold_disponible():
     version = comun.version_gold()
     clientes = comun.portafolio(version)["cliente_id"].tolist()
 
-    # El cliente sale de la sesion (o del selector del admin), nunca del
-    # modelo ni de la URL.
+    # El cliente y el rol salen de la sesion (el cliente, o el selector del
+    # admin), nunca del modelo ni de la URL.
+    rol = acceso.usuario_actual().rol
     cliente_id = acceso.cliente_actual(clientes)
     st.caption(
         f"Modelo local {cfg.modelo} en Ollama. Las cifras salen de las mismas "
@@ -79,7 +94,7 @@ if comun.gold_disponible():
                 st.session_state["asistente_pregunta"] = ejemplo
                 st.rerun()
 
-    pregunta = st.chat_input("Pregunta sobre este cliente o el portafolio")
+    pregunta = st.chat_input(TEXTO_ENTRADA[rol])
     pregunta = pregunta or st.session_state.pop("asistente_pregunta", None)
     if pregunta:
         with st.chat_message("user"):
@@ -90,8 +105,8 @@ if comun.gold_disponible():
                     respuesta = responder(
                         pregunta,
                         [(t["pregunta"], t["respuesta"].texto) for t in historial],
-                        Contexto.desde_config(cliente_id),
-                        modelo(cfg),
+                        Contexto.desde_config(cliente_id, rol),
+                        modelo(cfg, rol),
                         comun.flujo(version, cliente_id)["mes"].max(),
                         cfg.max_vueltas,
                         cfg.historial_turnos,

@@ -16,12 +16,17 @@ Reproducibilidad: temperature 0 y semilla fija, y cada pregunta se repite
 resultado de esa pregunta no es estable y no se debe leer como el
 comportamiento del modelo.
 
+El rol (--rol, por defecto cliente) decide que herramientas ve el modelo y
+el prompt, como en la pagina; "¿Como va el portafolio contra la base?" solo
+tiene herramienta con --rol admin.
+
 Solo lee Gold y llama a Ollama en localhost; no escribe nada. No corre en CI
 (necesita Ollama con el modelo descargado). Uso:
 
     uv run python experimentos/sondeo_herramientas.py
     uv run python experimentos/sondeo_herramientas.py --cliente CLI-000162 \\
         --repeticiones 5
+    uv run python experimentos/sondeo_herramientas.py --rol admin
 """
 
 import argparse
@@ -34,7 +39,13 @@ import urllib.request
 sys.path.insert(0, os.getcwd())
 
 from asistente.conversacion import prompt_sistema  # noqa: E402
-from asistente.herramientas import Contexto, ejecutar, esquemas  # noqa: E402
+from asistente.herramientas import (  # noqa: E402
+    ROL_POR_DEFECTO,
+    ROLES,
+    Contexto,
+    ejecutar,
+    esquemas,
+)
 from asistente.origen import revisar_llamada  # noqa: E402
 from dashboard import datos  # noqa: E402
 
@@ -54,7 +65,9 @@ PREGUNTAS = [
 ]
 
 
-def preguntar(url: str, modelo: str, sistema: str, pregunta: str, semilla: int):
+def preguntar(
+    url: str, modelo: str, sistema: str, pregunta: str, semilla: int, rol: str
+):
     cuerpo = {
         "model": modelo,
         "stream": False,
@@ -63,7 +76,7 @@ def preguntar(url: str, modelo: str, sistema: str, pregunta: str, semilla: int):
             {"role": "system", "content": sistema},
             {"role": "user", "content": pregunta},
         ],
-        "tools": esquemas(),
+        "tools": esquemas(rol),
     }
     peticion = urllib.request.Request(
         f"{url}/api/chat",
@@ -108,13 +121,15 @@ def main():
     parser.add_argument("--repeticiones", type=int, default=3)
     parser.add_argument("--semilla", type=int, default=42)
     parser.add_argument("--url", default="http://localhost:11434")
+    parser.add_argument("--rol", choices=list(ROLES), default=ROL_POR_DEFECTO)
     args = parser.parse_args()
 
-    ctx = Contexto.desde_config(args.cliente)
+    ctx = Contexto.desde_config(args.cliente, args.rol)
     ultimo_mes = datos.flujo_mensual(ctx.ruta_gold, args.cliente)["mes"].max()
     sistema = prompt_sistema(ctx, ultimo_mes)
     print(
-        f"Modelo {args.modelo}, cliente {args.cliente}, ultimo mes {ultimo_mes}, "
+        f"Modelo {args.modelo}, cliente {args.cliente}, rol {args.rol}, "
+        f"ultimo mes {ultimo_mes}, "
         f"temperature 0, semilla {args.semilla}, {args.repeticiones} corridas "
         "por pregunta\n"
     )
@@ -122,7 +137,7 @@ def main():
     estables = 0
     for pregunta in PREGUNTAS:
         corridas = [
-            preguntar(args.url, args.modelo, sistema, pregunta, args.semilla)
+            preguntar(args.url, args.modelo, sistema, pregunta, args.semilla, args.rol)
             for _ in range(args.repeticiones)
         ]
         herramientas = [tuple(n for n, _ in llamadas) for llamadas, _, _ in corridas]

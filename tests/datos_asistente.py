@@ -114,7 +114,7 @@ def crear_gold(tmp_path) -> str:
     return ruta
 
 
-def contexto(gold, tmp_path, cliente_id="CLI-1", ventana=12):
+def contexto(gold, tmp_path, cliente_id="CLI-1", ventana=12, rol="cliente"):
     return h.Contexto(
         cliente_id=cliente_id,
         ruta_gold=gold,
@@ -122,6 +122,7 @@ def contexto(gold, tmp_path, cliente_id="CLI-1", ventana=12):
         bandas=BANDAS,
         ventana_meses=ventana,
         simulacion=SIMULACION,
+        rol=rol,
     )
 
 

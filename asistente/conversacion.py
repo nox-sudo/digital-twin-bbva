@@ -22,6 +22,11 @@ redacta la respuesta con lo que devolvieron.
      por la respuesta fija; si dice que no hubo movimientos cuando la
      herramienta si los trajo, se cambia por la lectura de ese resultado.
 
+El rol sale del contexto (Contexto.rol, el usuario de la sesion): decide que
+herramientas ve el modelo (ModeloOllama), cuales reconoce una llamada
+escrita como texto, el prompt de sistema y la respuesta fija de otro
+cliente. ejecutar() vuelve a revisar el rol antes de tocar Gold.
+
 El bucle no depende de LangChain: recibe cualquier objeto con
 invoke(mensajes) -> {"content": str, "tool_calls": [...]}, asi que las
 pruebas usan un modelo falso y el CI no necesita Ollama. ModeloOllama es el
@@ -37,8 +42,8 @@ from pathlib import Path
 
 import yaml
 
-from asistente.alcance import RESPUESTA_OTRO_CLIENTE, verificar_alcance
-from asistente.herramientas import RAIZ, Contexto, ejecutar, esquemas
+from asistente.alcance import respuesta_otro_cliente, verificar_alcance
+from asistente.herramientas import ROL_POR_DEFECTO, RAIZ, Contexto, ejecutar, esquemas
 from asistente.origen import revisar_llamada
 from src.common.formato import formato_mxn
 
@@ -113,12 +118,35 @@ class Respuesta:
     pasos: list[Paso] = field(default_factory=list)
 
 
-def prompt_sistema(ctx: Contexto, ultimo_mes: str) -> str:
+def _alcance_del_rol(ctx: Contexto, ultimo_mes: str) -> str:
+    """Primer parrafo del prompt. El del admin no cambio con los roles; el
+    del cliente no nombra resumen_portafolio ni dice que responde sobre el
+    portafolio."""
+    if ctx.rol == "admin":
+        return (
+            "Eres el asistente del Gemelo Digital Financiero. Respondes en "
+            f"espanol, en pocas frases, sobre el cliente {ctx.cliente_id} y sobre "
+            f"el portafolio de clientes. El ultimo mes con datos es {ultimo_mes}."
+        )
     return (
         "Eres el asistente del Gemelo Digital Financiero. Respondes en espanol, "
-        f"en pocas frases, sobre el cliente {ctx.cliente_id} y sobre el "
-        "portafolio de clientes. El ultimo mes con datos es "
-        f"{ultimo_mes}.\n\n"
+        f"en pocas frases, sobre el cliente {ctx.cliente_id}. El ultimo mes con "
+        f"datos es {ultimo_mes}.\n\n"
+        "No das cifras de todo el banco: cuantos clientes hay, cuantos hay en "
+        "cada banda de riesgo, ni medianas, promedios o porcentajes de los "
+        "clientes en conjunto. Si te las piden, di en una frase que no das "
+        "cifras del banco y ofrece comparar al cliente con los demas con "
+        "comparar_con_portafolio. La mediana y la proporcion que devuelve "
+        "comparar_con_portafolio si las puedes dar: ubican al cliente."
+    )
+
+
+def prompt_sistema(ctx: Contexto, ultimo_mes: str) -> str:
+    sin_argumentos = (
+        "perfil_cliente, resumen_portafolio" if ctx.rol == "admin" else "perfil_cliente"
+    )
+    return (
+        _alcance_del_rol(ctx, ultimo_mes) + "\n\n"
         "Reglas:\n"
         "- Toda cifra sale de una herramienta. Nunca inventes, calcules ni "
         "redondees de memoria un numero que una herramienta no devolvio.\n"
@@ -141,8 +169,8 @@ def prompt_sistema(ctx: Contexto, ultimo_mes: str) -> str:
         "argumentos con los valores validos que trae el mensaje. Si no se puede "
         "corregir, explica en una frase que dato falta; no repitas el mensaje "
         "tecnico.\n"
-        "- Las herramientas sin argumentos (perfil_cliente, resumen_portafolio) "
-        "se llaman sin argumentos.\n"
+        f"- Las herramientas sin argumentos ({sin_argumentos}) se llaman sin "
+        "argumentos.\n"
         "- No atribuyas causas a la probabilidad de impago: es la salida de un "
         "modelo de riesgo y las herramientas no dicen por que tiene ese valor. "
         "Puedes mencionar las cifras del cliente que la acompanan.\n"
@@ -224,10 +252,12 @@ def niega_datos_que_hay(texto: str, pasos: list[Paso]) -> str | None:
     return None
 
 
-def llamada_en_texto(texto: str) -> dict | None:
+def llamada_en_texto(texto: str, rol: str = ROL_POR_DEFECTO) -> dict | None:
     """La llamada a herramienta que el modelo escribio como texto, o None.
     Solo cuenta si todo el texto es un objeto JSON con el nombre de una
-    herramienta y sus argumentos ("parameters" o "arguments")."""
+    herramienta del rol y sus argumentos ("parameters" o "arguments"). Con
+    el nombre de una herramienta de otro rol no es llamada; si llegara a
+    ejecutar(), este la rechazaria igual."""
     texto = (texto or "").strip()
     cerca = _CERCA.match(texto)
     if cerca:
@@ -240,7 +270,7 @@ def llamada_en_texto(texto: str) -> dict | None:
         objeto = json.loads(texto)
     except json.JSONDecodeError:
         return None
-    nombres = {e["function"]["name"] for e in esquemas()}
+    nombres = {e["function"]["name"] for e in esquemas(rol)}
     if not isinstance(objeto, dict) or objeto.get("name") not in nombres:
         return None
     argumentos = objeto.get("parameters", objeto.get("arguments", {}))
@@ -261,8 +291,18 @@ def responder(
     """Respuesta a una pregunta sobre el cliente del contexto. historial son
     las preguntas y respuestas anteriores, de la mas antigua a la mas
     reciente. Un ErrorConexion del modelo se propaga: lo maneja la
-    interfaz."""
-    fija = verificar_alcance(pregunta, ctx.cliente_id)
+    interfaz.
+
+    Un modelo con herramientas de otro rol (atributo rol, como
+    ModeloOllama) es un error de la interfaz: se detiene antes de mandarle
+    nada."""
+    rol_modelo = getattr(modelo, "rol", ctx.rol)
+    if rol_modelo != ctx.rol:
+        raise ValueError(
+            f"El modelo tiene las herramientas del rol {rol_modelo!r} y la "
+            f"sesion es {ctx.rol!r}"
+        )
+    fija = verificar_alcance(pregunta, ctx.cliente_id, ctx.rol)
     if fija is not None:
         return Respuesta(texto=fija, motivo="fuera_de_alcance")
 
@@ -275,7 +315,7 @@ def responder(
         mensaje = modelo.invoke(mensajes)
         llamadas = mensaje.get("tool_calls") or []
         if not llamadas:
-            en_texto = llamada_en_texto(mensaje.get("content") or "")
+            en_texto = llamada_en_texto(mensaje.get("content") or "", ctx.rol)
             if en_texto is not None:
                 log.info("llamada escrita como texto: herramienta=%s", en_texto["name"])
                 llamadas = [en_texto]
@@ -287,7 +327,7 @@ def responder(
             if menciona_otro_cliente(texto, ctx.cliente_id):
                 log.info("respuesta con otro cliente_id: se cambio por la fija")
                 return Respuesta(
-                    texto=RESPUESTA_OTRO_CLIENTE.format(cliente_id=ctx.cliente_id),
+                    texto=respuesta_otro_cliente(ctx.cliente_id, ctx.rol),
                     motivo="fuera_de_alcance",
                     pasos=pasos,
                 )
@@ -331,9 +371,10 @@ def responder(
 class ModeloOllama:
     """Adaptador a Ollama con LangChain (langchain-ollama, grupo
     "asistente"). Devuelve el mensaje del modelo como dict, que es lo que
-    espera responder()."""
+    espera responder(). Solo se le dan las herramientas del rol: el modelo
+    de un cliente no ve el esquema de resumen_portafolio."""
 
-    def __init__(self, cfg: Configuracion):
+    def __init__(self, cfg: Configuracion, rol: str = ROL_POR_DEFECTO):
         try:
             from langchain_ollama import ChatOllama
         except ImportError as e:
@@ -342,12 +383,13 @@ class ModeloOllama:
                 "uv run --group dashboard --group asistente ..."
             ) from e
         self.cfg = cfg
+        self.rol = rol
         self._modelo = ChatOllama(
             model=cfg.modelo,
             base_url=cfg.url,
             temperature=cfg.temperatura,
             seed=cfg.semilla,
-        ).bind_tools(esquemas())
+        ).bind_tools(esquemas(rol))
 
     def invoke(self, mensajes: list[dict]) -> dict:
         import httpx

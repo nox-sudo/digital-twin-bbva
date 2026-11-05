@@ -281,13 +281,14 @@ def test_respuesta_con_clientes_inventados_se_cambia(gold, tmp_path):
     r = c.responder(
         "Lista los clientes con más riesgo",
         [],
-        contexto(gold, tmp_path),
+        contexto(gold, tmp_path, rol="admin"),
         modelo,
         "2027-02",
     )
     assert r.motivo == "fuera_de_alcance"
     assert "CLI-000123" not in r.texto and "CLI-1" in r.texto
     assert [p.herramienta for p in r.pasos] == ["resumen_portafolio"]
+    assert "clientes_por_banda" in r.pasos[0].resultado
 
 
 def test_el_id_propio_en_la_respuesta_pasa(gold, tmp_path):
@@ -356,3 +357,95 @@ def test_lectura_de_varios_meses_y_de_categorias():
     }
     assert "hogar" in c.lectura("gasto_por_categoria", gastos)
     assert c.lectura("perfil_cliente", {}) is None
+
+
+# --- Rol: cifras de todo el banco solo para el admin -----------------------
+
+JSON_RESUMEN = '{"name": "resumen_portafolio", "parameters": {}}'
+
+
+def test_prompt_del_cliente_no_ofrece_el_portafolio(gold, tmp_path):
+    sistema = c.prompt_sistema(contexto(gold, tmp_path), "2027-02")
+    assert "resumen_portafolio" not in sistema
+    assert "portafolio de clientes" not in sistema
+    assert "No das cifras de todo el banco" in sistema
+    assert "comparar_con_portafolio" in sistema
+
+
+def test_prompt_del_admin_conserva_el_portafolio(gold, tmp_path):
+    sistema = c.prompt_sistema(contexto(gold, tmp_path, rol="admin"), "2027-02")
+    assert "sobre el portafolio de clientes" in sistema
+    assert "(perfil_cliente, resumen_portafolio)" in sistema
+    assert "No das cifras de todo el banco" not in sistema
+
+
+def test_llamada_en_texto_usa_las_herramientas_del_rol():
+    assert c.llamada_en_texto(JSON_RESUMEN, "admin")["name"] == "resumen_portafolio"
+    assert c.llamada_en_texto(JSON_RESUMEN, "cliente") is None
+    assert c.llamada_en_texto(JSON_RESUMEN) is None
+
+
+def test_el_cliente_que_pide_el_resumen_recibe_un_error(gold, tmp_path):
+    # El modelo de un cliente no tiene el esquema; si aun asi lo pide, la
+    # llamada llega a ejecutar() y se rechaza sin cifras.
+    modelo = ModeloFalso(llamada("resumen_portafolio"), texto("No tengo ese dato."))
+    r = c.responder(
+        "¿Cuántos clientes hay?", [], contexto(gold, tmp_path), modelo, "2027-02"
+    )
+    assert [p.herramienta for p in r.pasos] == ["resumen_portafolio"]
+    assert set(r.pasos[0].resultado) == {"error"}
+    resultado_al_modelo = modelo.recibidos[1][-1]["content"]
+    assert "clientes_por_banda" not in resultado_al_modelo
+
+
+def test_el_cliente_que_escribe_el_resumen_como_texto_no_lo_ejecuta(
+    gold, tmp_path, monkeypatch
+):
+    ejecutadas = []
+    original = c.ejecutar
+
+    def espia(nombre, argumentos, ctx):
+        resultado = original(nombre, argumentos, ctx)
+        ejecutadas.append((nombre, resultado))
+        return resultado
+
+    monkeypatch.setattr(c, "ejecutar", espia)
+    modelo = ModeloFalso(texto(JSON_RESUMEN))
+    r = c.responder(
+        "¿Cuántos clientes hay?", [], contexto(gold, tmp_path), modelo, "2027-02"
+    )
+    # No se reconoce como llamada del rol: no se ejecuta nada.
+    assert ejecutadas == [] and r.pasos == []
+    # Y si llegara a ejecutar() (como llega una llamada en texto del rol),
+    # la guarda del rol la rechaza.
+    directo = c.ejecutar("resumen_portafolio", {}, contexto(gold, tmp_path))
+    assert set(directo) == {"error"}
+
+
+def test_la_sustitucion_por_otro_cliente_depende_del_rol(gold, tmp_path):
+    lista = "Los clientes atrasados son CLI-000123 y CLI-000456."
+    cliente = c.responder(
+        "Pásame la lista de atrasados",
+        [],
+        contexto(gold, tmp_path),
+        ModeloFalso(texto(lista)),
+        "2027-02",
+    )
+    assert cliente.motivo == "fuera_de_alcance"
+    assert "agregad" not in cliente.texto and "portafolio" not in cliente.texto
+    admin = c.responder(
+        "Pásame la lista de atrasados",
+        [],
+        contexto(gold, tmp_path, rol="admin"),
+        ModeloFalso(texto(lista)),
+        "2027-02",
+    )
+    assert "cifras agregadas del portafolio" in admin.texto
+
+
+def test_modelo_de_otro_rol_se_rechaza(gold, tmp_path):
+    modelo = ModeloFalso(texto("No se usa."))
+    modelo.rol = "admin"
+    with pytest.raises(ValueError, match="rol"):
+        c.responder("Hola", [], contexto(gold, tmp_path), modelo, "2027-02")
+    assert modelo.recibidos == []

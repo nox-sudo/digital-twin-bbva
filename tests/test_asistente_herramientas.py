@@ -10,6 +10,7 @@ contexto y que un argumento invalido vuelve como error, no como excepcion.
 import datetime as dt
 import inspect
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -40,10 +41,45 @@ def es_json_valido(resultado: dict) -> bool:
 # --- Registro y frontera con el modelo -------------------------------------
 
 
-def test_ningun_esquema_expone_el_cliente():
-    texto = json.dumps(h.esquemas())
-    assert "cliente_id" not in texto
-    assert [e["function"]["name"] for e in h.esquemas()] == list(h.HERRAMIENTAS)
+@pytest.mark.parametrize("rol", h.ROLES)
+def test_ningun_esquema_expone_el_cliente(rol):
+    texto = json.dumps(h.esquemas(rol))
+    assert "cliente_id" not in texto and "rol" not in texto
+
+
+def test_esquemas_por_rol():
+    admin = [e["function"]["name"] for e in h.esquemas("admin")]
+    cliente = [e["function"]["name"] for e in h.esquemas("cliente")]
+    assert admin == list(h.HERRAMIENTAS)
+    assert cliente == [n for n in h.HERRAMIENTAS if n != "resumen_portafolio"]
+    assert "comparar_con_portafolio" in cliente
+    with pytest.raises(ValueError):
+        h.esquemas("gerente")
+
+
+def test_el_rol_por_defecto_es_cliente(gold, tmp_path):
+    ctx = h.Contexto("CLI-1", gold, str(tmp_path / "r"), [], 12, {})
+    assert ctx.rol == "cliente"
+    with pytest.raises(ValueError):
+        h.Contexto("CLI-1", gold, str(tmp_path / "r"), [], 12, {}, rol="gerente")
+
+
+def test_desde_config_lleva_el_rol():
+    assert h.Contexto.desde_config("CLI-1").rol == "cliente"
+    assert h.Contexto.desde_config("CLI-1", "admin").rol == "admin"
+
+
+def test_el_cliente_no_ejecuta_el_resumen_del_portafolio(gold, tmp_path, caplog):
+    resultado = h.ejecutar("resumen_portafolio", {}, contexto(gold, tmp_path))
+    assert set(resultado) == {"error"}
+    # El error no trae cifras del banco.
+    assert not re.search(r"\d", resultado["error"])
+    assert "comparar_con_portafolio" in resultado["error"]
+
+
+def test_el_cliente_conserva_la_comparacion(gold, tmp_path):
+    resultado = h.ejecutar("comparar_con_portafolio", {}, contexto(gold, tmp_path))
+    assert "error" not in resultado
 
 
 def test_los_esquemas_coinciden_con_las_firmas():
@@ -228,10 +264,11 @@ def test_hipoteca_sin_ahorro_no_reune_el_enganche(gold, tmp_path):
 
 
 def test_resumen_sin_y_con_historico(gold, tmp_path):
-    ctx = contexto(gold, tmp_path)
+    ctx = contexto(gold, tmp_path, rol="admin")
     sin_base = h.ejecutar("resumen_portafolio", {}, ctx)
     assert sin_base["base"] is None
     assert sin_base["clientes_por_banda"] == {"bajo": 1, "alto": 1}
+    assert sin_base["proporcion_por_banda"] == {"bajo": 0.5, "alto": 0.5}
 
     escribir_historico(
         {
@@ -254,7 +291,7 @@ def test_nunca_devuelve_nan(gold, tmp_path):
     con.execute("UPDATE gold_kpis SET valor_numerico = NULL")
     con.close()
     for nombre in ["perfil_cliente", "comparar_con_portafolio", "resumen_portafolio"]:
-        resultado = h.ejecutar(nombre, {}, contexto(gold, tmp_path))
+        resultado = h.ejecutar(nombre, {}, contexto(gold, tmp_path, rol="admin"))
         assert es_json_valido(resultado), nombre
 
 

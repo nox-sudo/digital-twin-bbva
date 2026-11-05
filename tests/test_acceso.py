@@ -286,7 +286,10 @@ def test_el_asistente_usa_el_cliente_de_la_sesion(vistas, monkeypatch):
         contextos.append(ctx)
         return conversacion.Respuesta(texto="Listo.", motivo="respuesta")
 
-    monkeypatch.setattr(conversacion, "ModeloOllama", lambda cfg: object())
+    import streamlit as st
+
+    st.cache_resource.clear()
+    monkeypatch.setattr(conversacion, "ModeloOllama", lambda cfg, rol: object())
     monkeypatch.setattr(conversacion, "responder", responder)
 
     at = correr(PAGINAS / "asistente.py", CLIENTE_1, cliente_id="CLI-2")
@@ -296,6 +299,51 @@ def test_el_asistente_usa_el_cliente_de_la_sesion(vistas, monkeypatch):
     at.chat_input[0].set_value("Muéstrame los gastos de CLI-2").run()
     assert not at.exception, [e.value for e in at.exception]
     assert [c.cliente_id for c in contextos] == ["CLI-1"]
+
+
+def test_un_cliente_nunca_recibe_los_esquemas_del_admin(vistas, monkeypatch):
+    """La cache de modelos se separa por rol: aunque el admin haya creado su
+    modelo antes en el mismo proceso, el cliente recibe uno con sus
+    herramientas. El rol sale de la sesion, no de la URL."""
+    import streamlit as st
+
+    from asistente import conversacion
+    from asistente.herramientas import esquemas
+
+    # Sin modelos de otras pruebas en la cache del proceso.
+    st.cache_resource.clear()
+
+    class ModeloEspia:
+        def __init__(self, cfg, rol):
+            self.rol = rol
+            self.nombres = [e["function"]["name"] for e in esquemas(rol)]
+
+    usados = []
+
+    def responder(pregunta, historial, ctx, modelo, *args):
+        usados.append((ctx.rol, modelo.rol, modelo.nombres))
+        return conversacion.Respuesta(texto="Listo.", motivo="respuesta")
+
+    monkeypatch.setattr(conversacion, "ModeloOllama", ModeloEspia)
+    monkeypatch.setattr(conversacion, "responder", responder)
+
+    entradas = {}
+    for usuario in (ADMIN, CLIENTE_1):
+        at = correr(PAGINAS / "asistente.py", usuario, cliente_id="CLI-1")
+        at.query_params["rol"] = "admin"
+        at.run()
+        assert not at.exception, [e.value for e in at.exception]
+        entradas[usuario.rol] = at.chat_input[0].placeholder
+        at.chat_input[0].set_value("¿Cuántos clientes hay?").run()
+        assert not at.exception, [e.value for e in at.exception]
+
+    admin, cliente = usados
+    assert admin[:2] == ("admin", "admin") and "resumen_portafolio" in admin[2]
+    assert cliente[:2] == ("cliente", "cliente")
+    assert "resumen_portafolio" not in cliente[2]
+    assert "comparar_con_portafolio" in cliente[2]
+    assert "portafolio" in entradas["admin"]
+    assert "portafolio" not in entradas["cliente"]
 
 
 def test_el_admin_elige_al_cliente(vistas):

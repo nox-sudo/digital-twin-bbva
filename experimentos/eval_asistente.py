@@ -19,6 +19,13 @@ Todas las metricas son deterministas, sin un modelo que califique a otro:
   - seguridad: ningun id ni ingreso de otro cliente, nada en dolares;
   - estabilidad entre repeticiones (temperatura 0, semilla fija) y latencia.
 
+Rol: los casos de categoria portafolio corren con rol admin y los demas con
+rol cliente (rol_de), como los veria cada usuario en la pagina; cada rol
+tiene su modelo con sus herramientas. --rol fuerza un rol para todos los
+casos: con --rol cliente y los casos de portafolio se mide que un cliente
+no obtenga cifras del banco. Esa corrida se guarda con "_rol_cliente" en el
+nombre y no se suma a la evaluacion por banco.
+
 El tono y la claridad no se miden aqui; van en una revision manual
 (docs/evaluacion-asistente.md).
 
@@ -29,6 +36,8 @@ modelo descargado); las funciones de calificacion si tienen pruebas
     uv run --group asistente python experimentos/eval_asistente.py
     uv run --group asistente python experimentos/eval_asistente.py \\
         --clientes CLI-000162 --repeticiones 1 --casos clima receta
+    uv run --group asistente python experimentos/eval_asistente.py \\
+        --rol cliente --casos clientes_riesgo_alto
 """
 
 import argparse
@@ -365,6 +374,18 @@ def cargar_banco(ruta: Path = RUTA_BANCO) -> dict:
     return banco
 
 
+CATEGORIAS_ADMIN = {"portafolio"}
+
+
+def rol_de(caso: dict, forzado: str | None = None) -> str:
+    """Rol con el que corre un caso: el forzado, o admin para las preguntas
+    de portafolio (solo el admin tiene cifras de todo el banco) y cliente
+    para las demas."""
+    if forzado:
+        return forzado
+    return "admin" if caso["categoria"] in CATEGORIAS_ADMIN else "cliente"
+
+
 def turnos_de(caso: dict) -> list[str]:
     return caso["turnos"] if "turnos" in caso else [caso["pregunta"]]
 
@@ -379,6 +400,7 @@ class Corrida:
     caso: str
     categoria: str
     cliente: str
+    rol: str
     repeticion: int
     texto: str
     motivo: str
@@ -393,11 +415,13 @@ class Corrida:
         self.aprobado = all(self.revision.values())
 
 
-def correr_caso(caso, cliente_id, modelo, cfg, ultimo_mes, repeticion, ingreso_otro):
+def correr_caso(
+    caso, cliente_id, modelo, cfg, ultimo_mes, repeticion, ingreso_otro, rol
+):
     from asistente.conversacion import responder
     from asistente.herramientas import Contexto
 
-    ctx = Contexto.desde_config(cliente_id)
+    ctx = Contexto.desde_config(cliente_id, rol)
     historial, preguntas = [], []
     inicio = time.monotonic()
     for pregunta in turnos_de(caso):
@@ -433,6 +457,7 @@ def correr_caso(caso, cliente_id, modelo, cfg, ultimo_mes, repeticion, ingreso_o
         caso=caso["id"],
         categoria=caso["categoria"],
         cliente=cliente_id,
+        rol=rol,
         repeticion=repeticion,
         texto=respuesta.texto,
         motivo=respuesta.motivo,
@@ -486,6 +511,12 @@ def main(argv=None) -> int:
     parser.add_argument("--casos", nargs="*", help="ids de caso; default todos")
     parser.add_argument("--repeticiones", type=int)
     parser.add_argument("--salida", default="data/evaluaciones")
+    parser.add_argument(
+        "--rol",
+        choices=["admin", "cliente"],
+        help="Fuerza el rol de todos los casos; default: admin en portafolio, "
+        "cliente en lo demas",
+    )
     args = parser.parse_args(argv)
 
     from asistente.conversacion import Configuracion, ModeloOllama
@@ -496,7 +527,7 @@ def main(argv=None) -> int:
     repeticiones = args.repeticiones or banco["repeticiones"]
     casos = [c for c in banco["casos"] if not args.casos or c["id"] in args.casos]
     cfg = Configuracion.desde_yaml()
-    modelo = ModeloOllama(cfg)
+    modelos = {}  # uno por rol, cada uno con sus herramientas
     gold = datos.cargar_config(str(RAIZ / "config" / "dashboard.yaml"))["gold_duckdb"]
     gold = str(RAIZ / gold)
     otros = {
@@ -510,20 +541,24 @@ def main(argv=None) -> int:
     for cliente_id in clientes:
         ultimo_mes = datos.flujo_mensual(gold, cliente_id)["mes"].max()
         for caso in casos:
+            rol = rol_de(caso, args.rol)
+            if rol not in modelos:
+                modelos[rol] = ModeloOllama(cfg, rol)
             for r in range(repeticiones):
                 c = correr_caso(
                     caso,
                     cliente_id,
-                    modelo,
+                    modelos[rol],
                     cfg,
                     ultimo_mes,
                     r,
                     otros.get(caso.get("otro_cliente")),
+                    rol,
                 )
                 corridas.append(c)
                 marca = "ok" if c.aprobado else "FALLA"
                 print(
-                    f"[{len(corridas)}/{total}] {cliente_id} {caso['id']} r{r}: "
+                    f"[{len(corridas)}/{total}] {cliente_id} {caso['id']} {rol} r{r}: "
                     f"{marca} ({c.segundos} s)",
                     flush=True,
                 )
@@ -531,9 +566,11 @@ def main(argv=None) -> int:
     salida = Path(args.salida)
     salida.mkdir(parents=True, exist_ok=True)
     marca_tiempo = datetime.now().strftime("%Y%m%d_%H%M%S")
-    ruta = salida / f"eval_asistente_v{banco['version']}_{marca_tiempo}.json"
+    sufijo = f"_rol_{args.rol}" if args.rol else ""
+    ruta = salida / f"eval_asistente_v{banco['version']}{sufijo}_{marca_tiempo}.json"
     datos_salida = {
         "banco_version": banco["version"],
+        "rol_forzado": args.rol,
         "modelo": cfg.modelo,
         "clientes": clientes,
         "repeticiones": repeticiones,

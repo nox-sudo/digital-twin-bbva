@@ -21,7 +21,10 @@ Cuatro reglas, en este orden:
   - Otro cliente: la pregunta nombra un cliente_id distinto al de la
     conversacion. El cliente lo fija la interfaz y ninguna herramienta
     acepta otro id, asi que nunca hubo datos de otro cliente; pero el modelo
-    contestaba con los del cliente propio o pedia "su ID".
+    contestaba con los del cliente propio o pedia "su ID". La respuesta
+    fija depende del rol (respuesta_otro_cliente): al cliente se le ofrece
+    compararse con los demas, nunca cifras de todo el banco, que son solo
+    para el admin (asistente/herramientas.py).
 
 La de inversiones es provisional y aislada a proposito: el limite de lo que
 el asistente puede recomendar esta pendiente de revisar en la sesion de
@@ -82,9 +85,25 @@ RESPUESTA_MONEDA = (
 _ID_CLIENTE = re.compile(r"\bcli-\d{6}\b")
 RESPUESTA_OTRO_CLIENTE = (
     "Solo puedo consultar los datos de {cliente_id}, el cliente de esta "
+    "conversación; no tengo acceso a los de otros clientes. Sí puedo decirte "
+    "cómo se compara {cliente_id} con los demás clientes en ingreso, gasto, "
+    "ahorro o riesgo."
+)
+# Solo para el admin, que si tiene las cifras de todo el banco.
+RESPUESTA_OTRO_CLIENTE_ADMIN = (
+    "Solo puedo consultar los datos de {cliente_id}, el cliente de esta "
     "conversación; no tengo acceso a los de otros clientes. Sí puedo darte "
     "cifras agregadas del portafolio."
 )
+
+
+def respuesta_otro_cliente(cliente_id: str, rol: str = "cliente") -> str:
+    """Respuesta fija cuando se piden datos de otro cliente. Cualquier rol
+    que no sea admin recibe la que no ofrece cifras del banco."""
+    plantilla = (
+        RESPUESTA_OTRO_CLIENTE_ADMIN if rol == "admin" else RESPUESTA_OTRO_CLIENTE
+    )
+    return plantilla.format(cliente_id=cliente_id)
 
 
 def _sin_acentos(texto: str) -> str:
@@ -92,10 +111,13 @@ def _sin_acentos(texto: str) -> str:
     return "".join(c for c in normal if not unicodedata.combining(c))
 
 
-def verificar_alcance(pregunta: str, cliente_id: str | None = None) -> str | None:
+def verificar_alcance(
+    pregunta: str, cliente_id: str | None = None, rol: str = "cliente"
+) -> str | None:
     """Texto con el que se responde si la pregunta esta fuera de alcance, o
     None si el asistente la puede contestar. cliente_id es el de la
-    conversacion; sin el no se aplica la regla de otro cliente."""
+    conversacion; sin el no se aplica la regla de otro cliente. rol es el
+    de la sesion y solo cambia la respuesta fija de otro cliente."""
     texto = _sin_acentos(pregunta)
     if _EN_QUE_INVERTIR.search(texto) or (
         _INTENCION.search(texto) and _INSTRUMENTO.search(texto)
@@ -112,5 +134,5 @@ def verificar_alcance(pregunta: str, cliente_id: str | None = None) -> str | Non
         otros = {i.upper() for i in _ID_CLIENTE.findall(texto)} - {cliente_id.upper()}
         if otros:
             log.info("fuera de alcance: regla=otro_cliente")
-            return RESPUESTA_OTRO_CLIENTE.format(cliente_id=cliente_id)
+            return respuesta_otro_cliente(cliente_id, rol)
     return None

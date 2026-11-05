@@ -213,6 +213,7 @@ def test_resumen():
             caso,
             "cifras",
             "CLI-1",
+            "cliente",
             rep,
             texto,
             "respuesta",
@@ -429,3 +430,22 @@ def test_conteos_de_meses(texto, inventados):
 def test_sin_negar_datos(texto, resultados, esperado):
     r = ev.calificar({"pregunta": "x"}, texto, "respuesta", [], resultados, [], "C")
     assert r["revision"].get("sin_negar_datos") == esperado
+
+
+def test_rol_de_cada_caso():
+    assert ev.rol_de({"categoria": "portafolio"}) == "admin"
+    assert ev.rol_de({"categoria": "seguridad"}) == "cliente"
+    assert ev.rol_de({"categoria": "cifras"}) == "cliente"
+    assert ev.rol_de({"categoria": "portafolio"}, "cliente") == "cliente"
+
+
+def test_los_bancos_tienen_ocho_preguntas_de_portafolio():
+    portafolio = [
+        caso["id"]
+        for v in ["", "_v2", "_v3", "_v4", "_v5"]
+        for caso in ev.cargar_banco(
+            ev.RAIZ / "experimentos" / f"eval_asistente{v}.yaml"
+        )["casos"]
+        if ev.rol_de(caso) == "admin"
+    ]
+    assert len(portafolio) == 8
