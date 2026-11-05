@@ -8,6 +8,7 @@ de alcance y los cortes (limite de vueltas, respuesta vacia).
 """
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -16,6 +17,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from asistente import conversacion as c  # noqa: E402
+from asistente import herramientas as h  # noqa: E402
 from datos_asistente import contexto, crear_gold  # noqa: E402
 
 
@@ -379,10 +381,9 @@ def test_prompt_del_admin_conserva_el_portafolio(gold, tmp_path):
     assert "No das cifras de todo el banco" not in sistema
 
 
-def test_llamada_en_texto_usa_las_herramientas_del_rol():
-    assert c.llamada_en_texto(JSON_RESUMEN, "admin")["name"] == "resumen_portafolio"
-    assert c.llamada_en_texto(JSON_RESUMEN, "cliente") is None
-    assert c.llamada_en_texto(JSON_RESUMEN) is None
+def test_la_llamada_en_texto_reconoce_todas_las_herramientas():
+    # La deteccion no filtra por rol: el permiso se decide en ejecutar().
+    assert c.llamada_en_texto(JSON_RESUMEN)["name"] == "resumen_portafolio"
 
 
 def test_el_cliente_que_pide_el_resumen_recibe_un_error(gold, tmp_path):
@@ -398,28 +399,34 @@ def test_el_cliente_que_pide_el_resumen_recibe_un_error(gold, tmp_path):
     assert "clientes_por_banda" not in resultado_al_modelo
 
 
-def test_el_cliente_que_escribe_el_resumen_como_texto_no_lo_ejecuta(
+def test_el_cliente_que_escribe_el_resumen_como_texto_recibe_el_error(
     gold, tmp_path, monkeypatch
 ):
-    ejecutadas = []
-    original = c.ejecutar
-
-    def espia(nombre, argumentos, ctx):
-        resultado = original(nombre, argumentos, ctx)
-        ejecutadas.append((nombre, resultado))
-        return resultado
-
-    monkeypatch.setattr(c, "ejecutar", espia)
-    modelo = ModeloFalso(texto(JSON_RESUMEN))
+    # De extremo a extremo: el modelo de un cliente escribe la llamada como
+    # JSON. Se reconoce como llamada, ejecutar() la rechaza por el rol sin
+    # correr la herramienta, el modelo recibe el error y la persona ve su
+    # respuesta en texto normal, nunca el JSON.
+    corridas = []
+    monkeypatch.setitem(
+        h.HERRAMIENTAS["resumen_portafolio"],
+        "funcion",
+        lambda ctx, **kw: corridas.append(kw) or {"clientes": 2},
+    )
+    final = "No doy cifras de todo el banco; puedo comparar al cliente con los demás."
+    modelo = ModeloFalso(texto(JSON_RESUMEN), texto(final))
     r = c.responder(
         "¿Cuántos clientes hay?", [], contexto(gold, tmp_path), modelo, "2027-02"
     )
-    # No se reconoce como llamada del rol: no se ejecuta nada.
-    assert ejecutadas == [] and r.pasos == []
-    # Y si llegara a ejecutar() (como llega una llamada en texto del rol),
-    # la guarda del rol la rechaza.
-    directo = c.ejecutar("resumen_portafolio", {}, contexto(gold, tmp_path))
-    assert set(directo) == {"error"}
+    assert corridas == []
+    assert [p.herramienta for p in r.pasos] == ["resumen_portafolio"]
+    assert r.pasos[0].resultado == {"error": h.ERROR_ROL}
+    assert not re.search(r"\d", h.ERROR_ROL)
+    segunda = modelo.recibidos[1]
+    assert segunda[-1]["role"] == "tool"
+    assert json.loads(segunda[-1]["content"]) == {"error": h.ERROR_ROL}
+    assert segunda[-2]["content"] == ""
+    assert r.motivo == "respuesta" and r.texto == final
+    assert "{" not in r.texto and "resumen_portafolio" not in r.texto
 
 
 def test_la_sustitucion_por_otro_cliente_depende_del_rol(gold, tmp_path):

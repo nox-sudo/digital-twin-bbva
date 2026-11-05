@@ -23,9 +23,11 @@ redacta la respuesta con lo que devolvieron.
      herramienta si los trajo, se cambia por la lectura de ese resultado.
 
 El rol sale del contexto (Contexto.rol, el usuario de la sesion): decide que
-herramientas ve el modelo (ModeloOllama), cuales reconoce una llamada
-escrita como texto, el prompt de sistema y la respuesta fija de otro
-cliente. ejecutar() vuelve a revisar el rol antes de tocar Gold.
+herramientas ve el modelo (ModeloOllama), el prompt de sistema y la
+respuesta fija de otro cliente. Una llamada escrita como texto se reconoce
+con cualquier herramienta, sin mirar el rol: el permiso se decide solo en
+ejecutar(), que la rechaza antes de tocar Gold si el rol no la tiene; asi
+el modelo recibe el error y la persona no ve el JSON.
 
 El bucle no depende de LangChain: recibe cualquier objeto con
 invoke(mensajes) -> {"content": str, "tool_calls": [...]}, asi que las
@@ -43,7 +45,14 @@ from pathlib import Path
 import yaml
 
 from asistente.alcance import respuesta_otro_cliente, verificar_alcance
-from asistente.herramientas import ROL_POR_DEFECTO, RAIZ, Contexto, ejecutar, esquemas
+from asistente.herramientas import (
+    HERRAMIENTAS,
+    ROL_POR_DEFECTO,
+    RAIZ,
+    Contexto,
+    ejecutar,
+    esquemas,
+)
 from asistente.origen import revisar_llamada
 from src.common.formato import formato_mxn
 
@@ -252,12 +261,12 @@ def niega_datos_que_hay(texto: str, pasos: list[Paso]) -> str | None:
     return None
 
 
-def llamada_en_texto(texto: str, rol: str = ROL_POR_DEFECTO) -> dict | None:
+def llamada_en_texto(texto: str) -> dict | None:
     """La llamada a herramienta que el modelo escribio como texto, o None.
     Solo cuenta si todo el texto es un objeto JSON con el nombre de una
-    herramienta del rol y sus argumentos ("parameters" o "arguments"). Con
-    el nombre de una herramienta de otro rol no es llamada; si llegara a
-    ejecutar(), este la rechazaria igual."""
+    herramienta y sus argumentos ("parameters" o "arguments"). Reconoce
+    todas las herramientas sin mirar el rol: si el rol no la tiene,
+    ejecutar() la rechaza y el modelo recibe el error."""
     texto = (texto or "").strip()
     cerca = _CERCA.match(texto)
     if cerca:
@@ -270,8 +279,7 @@ def llamada_en_texto(texto: str, rol: str = ROL_POR_DEFECTO) -> dict | None:
         objeto = json.loads(texto)
     except json.JSONDecodeError:
         return None
-    nombres = {e["function"]["name"] for e in esquemas(rol)}
-    if not isinstance(objeto, dict) or objeto.get("name") not in nombres:
+    if not isinstance(objeto, dict) or objeto.get("name") not in HERRAMIENTAS:
         return None
     argumentos = objeto.get("parameters", objeto.get("arguments", {}))
     if not isinstance(argumentos, dict):
@@ -315,7 +323,7 @@ def responder(
         mensaje = modelo.invoke(mensajes)
         llamadas = mensaje.get("tool_calls") or []
         if not llamadas:
-            en_texto = llamada_en_texto(mensaje.get("content") or "", ctx.rol)
+            en_texto = llamada_en_texto(mensaje.get("content") or "")
             if en_texto is not None:
                 log.info("llamada escrita como texto: herramienta=%s", en_texto["name"])
                 llamadas = [en_texto]
