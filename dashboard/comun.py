@@ -71,6 +71,7 @@ def config() -> dict:
     cfg["logs"] = str(RAIZ / cfg["logs"])
     cfg["deriva_psi"] = str(RAIZ / cfg["deriva_psi"])
     cfg["resumen_portafolio"] = str(RAIZ / cfg["resumen_portafolio"])
+    cfg["alertas_airflow"] = str(RAIZ / cfg["alertas_airflow"])
     cfg["monitoreo_psi"] = str(RAIZ / cfg["monitoreo_psi"])
     for llave in ("usuarios", "modelo", "probabilidad_oof", "modelos_pliegues"):
         cfg[llave] = str(RAIZ / cfg[llave])

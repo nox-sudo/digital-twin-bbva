@@ -29,6 +29,10 @@ construida.
    bash demo.sh
    ```
 
+   Al despausar el DAG, Airflow corre antes una corrida calendarizada del
+   ultimo mes cerrado; `demo.sh` espera a que termine y despues corre la
+   suya. Las dos procesan la misma sesion.
+
    Opcional, para confirmar el modelo de la base (unos minutos):
 
    ```bash
@@ -168,8 +172,9 @@ aleatorios, asi que la diferencia es la hipoteca, no el ruido.
 
 ### 5. Observabilidad (3 min)
 
-- Ultima corrida por capa: Bronze, Silver y Gold correctas, 8 corridas
-  registradas cada una; ninguna fila a cuarentena.
+- Ultima corrida por capa: Bronze, Silver y Gold correctas, 9 corridas
+  registradas cada una (la base, la calendarizada que Airflow crea al
+  despausar el DAG y las 7 entregas); ninguna fila a cuarentena.
 - Duracion por corrida en escala logaritmica: una corrida fuera de lo normal
   se ve aunque las demas tarden segundos.
 - Deriva (PSI) contra la referencia congelada de la base:

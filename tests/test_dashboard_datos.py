@@ -252,3 +252,26 @@ def test_resumen_del_dashboard_y_del_historico_usan_la_misma_definicion(gold):
 
     df = datos.portafolio(gold, BANDAS)
     assert datos.resumen_portafolio(df) == resumen(df)
+
+
+# --- Alertas de Airflow ----------------------------------------------------------
+
+
+def test_alertas_sin_archivo_es_vacio(tmp_path):
+    alertas = datos.alertas_airflow(str(tmp_path / "no_existe.jsonl"))
+    assert alertas.empty
+    assert list(alertas.columns) == datos.COLUMNAS_ALERTAS
+
+
+def test_alertas_recientes_primero_y_omite_lineas_cortadas(tmp_path):
+    archivo = tmp_path / "alertas_airflow.jsonl"
+    filas = [
+        {"fecha": "2026-11-01T10:00:00+00:00", "task_id": "a", "intento": 3},
+        {"fecha": "2026-11-03T10:00:00+00:00", "task_id": "b", "intento": 3},
+    ]
+    archivo.write_text(
+        "\n".join(json.dumps(f) for f in filas) + '\n{"fecha": "2026-11-0',
+        encoding="utf-8",
+    )
+    alertas = datos.alertas_airflow(str(archivo), limite=1)
+    assert alertas["task_id"].tolist() == ["b"]
