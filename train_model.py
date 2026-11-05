@@ -20,6 +20,14 @@ Guarda tambien los 5 modelos de los pliegues y el pliegue de cada cliente:
 la vista del cliente explica su score con los valores SHAP del modelo que
 lo produjo (src/gold/explicacion.py).
 
+Las probabilidades que se publican estan calibradas (Platt, ver
+src/gold/calibracion.py): scale_pos_weight las inflaba, y la media publicada
+quedaba arriba de la tasa real. Cada modelo de pliegue lleva su propia
+calibracion, ajustada con una validacion cruzada interna sobre su conjunto
+de entrenamiento, asi que tampoco la calibracion ve al cliente que califica.
+El modelo final se calibra con el margen fuera de pliegue de los 5 modelos
+sin calibrar. Decision y numeros en docs/technical-debt.md.
+
 El AUC que imprime sale de UN solo split 80/20; con pocos positivos en
 prueba oscila mucho (ver docs/technical-debt.md y experimentos/), asi que
 no debe citarse sin su intervalo.
@@ -54,6 +62,7 @@ from xgboost import XGBClassifier  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from src.gold.calibracion import ModeloCalibrado, ajustar_platt  # noqa: E402
 from src.gold.etiquetas_gold import cargar_etiquetas  # noqa: E402
 from src.gold.etiquetas_impago import verificar_sin_latentes  # noqa: E402
 from src.gold.risk_features import (  # noqa: E402
@@ -63,6 +72,12 @@ from src.gold.risk_features import (  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
+
+SEMILLA = 42
+# Semilla de los pliegues internos con los que se calibra cada modelo de
+# pliegue: distinta de la externa para que los cortes no coincidan.
+SEMILLA_INTERNA = SEMILLA + 1000
+PLIEGUES = 5
 
 
 def nuevo_modelo(y: pd.Series) -> XGBClassifier:
@@ -78,31 +93,55 @@ def nuevo_modelo(y: pd.Series) -> XGBClassifier:
         learning_rate=0.05,
         scale_pos_weight=peso_positivo,
         eval_metric="logloss",
-        random_state=42,
+        random_state=SEMILLA,
     )
+
+
+def margen_fuera_de_pliegue(
+    x: pd.DataFrame, y: pd.Series, peso_de: pd.Series, semilla: int
+) -> tuple[pd.Series, pd.Series, list[XGBClassifier]]:
+    """Margen (log-odds, sin calibrar) de cada cliente predicho por un modelo
+    entrenado sin el, el pliegue de cada cliente y los modelos. peso_de es
+    la serie con la que se calcula scale_pos_weight: siempre todas las
+    etiquetas, como el modelo final."""
+    pliegues = StratifiedKFold(n_splits=PLIEGUES, shuffle=True, random_state=semilla)
+    margen = pd.Series(float("nan"), index=x.index)
+    pliegue = pd.Series(-1, index=x.index)
+    modelos = []
+    for i, (entrena, prueba) in enumerate(pliegues.split(x, y)):
+        modelo = nuevo_modelo(peso_de)
+        modelo.fit(x.iloc[entrena], y.iloc[entrena])
+        margen.iloc[prueba] = modelo.predict(x.iloc[prueba], output_margin=True)
+        pliegue.iloc[prueba] = i
+        modelos.append(modelo)
+    return margen, pliegue, modelos
 
 
 def probabilidad_fuera_de_pliegue(
     x: pd.DataFrame, y: pd.Series
-) -> tuple[pd.DataFrame, list[XGBClassifier]]:
-    """Probabilidad de cada cliente predicha por un modelo entrenado sin el
-    (5 pliegues estratificados, semilla fija), el pliegue de cada cliente y
-    los 5 modelos. Mismo resultado que cross_val_predict con los mismos
-    pliegues; el ciclo explicito es para conservar los modelos."""
-    pliegues = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+) -> tuple[pd.DataFrame, list[ModeloCalibrado]]:
+    """Probabilidad calibrada de cada cliente predicha por un modelo
+    entrenado sin el (5 pliegues estratificados, semilla fija), su margen
+    sin calibrar, el pliegue de cada cliente y los 5 modelos calibrados.
+
+    La calibracion de cada pliegue se ajusta con el margen fuera de pliegue
+    de su propio conjunto de entrenamiento (validacion cruzada interna), no
+    con el pliegue que va a calificar."""
+    margen, pliegue, modelos_crudos = margen_fuera_de_pliegue(x, y, y, SEMILLA)
+    pliegues = StratifiedKFold(n_splits=PLIEGUES, shuffle=True, random_state=SEMILLA)
     probabilidad = pd.Series(float("nan"), index=x.index)
-    pliegue = pd.Series(-1, index=x.index)
     modelos = []
-    for i, (entrena, prueba) in enumerate(pliegues.split(x, y)):
-        modelo = nuevo_modelo(y)
-        modelo.fit(x.iloc[entrena], y.iloc[entrena])
-        probabilidad.iloc[prueba] = modelo.predict_proba(x.iloc[prueba])[:, 1]
-        pliegue.iloc[prueba] = i
-        modelos.append(modelo)
+    for modelo, (entrena, prueba) in zip(modelos_crudos, pliegues.split(x, y)):
+        x_e, y_e = x.iloc[entrena], y.iloc[entrena]
+        interno, _, _ = margen_fuera_de_pliegue(x_e, y_e, y, SEMILLA_INTERNA)
+        calibrado = ModeloCalibrado(modelo, *ajustar_platt(interno, y_e))
+        probabilidad.iloc[prueba] = calibrado.predict_proba(x.iloc[prueba])[:, 1]
+        modelos.append(calibrado)
     oof = pd.DataFrame(
         {
             "cliente_id": x.index,
             "probabilidad": probabilidad.values,
+            "margen": margen.values,
             "pliegue": pliegue.values,
         }
     )
@@ -148,33 +187,47 @@ def entrenar(
     modelo = nuevo_modelo(y_train)
     modelo.fit(x_train, y_train)
 
-    probabilidades = modelo.predict_proba(x_test)[:, 1]
+    # La calibracion del modelo final sale del margen fuera de pliegue de
+    # todos los clientes con etiqueta (src/gold/calibracion.py).
+    oof, modelos_pliegue = probabilidad_fuera_de_pliegue(x, y)
+    calibrado = ModeloCalibrado(modelo, *ajustar_platt(oof["margen"], y))
+    logger.info(
+        "Calibracion del modelo final: pendiente %.3f, intercepto %.3f",
+        calibrado.pendiente,
+        calibrado.intercepto,
+    )
+
+    probabilidades = calibrado.predict_proba(x_test)[:, 1]
     predicciones = (probabilidades >= 0.5).astype(int)
 
     auc_roc = roc_auc_score(y_test, probabilidades)
     matriz_confusion = confusion_matrix(y_test, predicciones)
     reporte_clasificacion = classification_report(
-        y_test, predicciones, output_dict=True
+        y_test, predicciones, output_dict=True, zero_division=0
     )
 
     model_out.parent.mkdir(parents=True, exist_ok=True)
-    joblib.dump(modelo, model_out)
+    joblib.dump(calibrado, model_out)
     logger.info("Modelo guardado en %s", model_out)
 
     if oof_out is not None:
-        oof, modelos_pliegue = probabilidad_fuera_de_pliegue(x, y)
         oof_out.parent.mkdir(parents=True, exist_ok=True)
         oof.to_parquet(oof_out, index=False)
         if pliegues_out is not None:
             joblib.dump(modelos_pliegue, pliegues_out)
             logger.info("Modelos de los pliegues guardados en %s", pliegues_out)
         logger.info(
-            "Probabilidad fuera de pliegue guardada en %s: %d clientes, AUC %.3f",
+            "Probabilidad fuera de pliegue guardada en %s: %d clientes, AUC %.3f, "
+            "media %.4f contra tasa real %.4f",
             oof_out,
             len(oof),
             roc_auc_score(y, oof["probabilidad"]),
+            oof["probabilidad"].mean(),
+            y.mean(),
         )
 
+    # La importancia SHAP es del arbol sin calibrar: la calibracion solo
+    # escala el margen y no cambia el orden de las variables.
     explainer = shap.TreeExplainer(modelo)
     valores_shap = explainer.shap_values(x_test)
     # Versiones distintas de shap devuelven una lista [clase_0, clase_1]

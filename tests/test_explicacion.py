@@ -118,8 +118,14 @@ def test_fuera_de_pliegue_igual_a_cross_val_predict(datos):
         cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=42),
         method="predict_proba",
     )[:, 1]
-    assert np.allclose(oof["probabilidad"], referencia, atol=1e-6)
+    # El margen sin calibrar es el de cross_val_predict; la probabilidad
+    # publicada es ese margen calibrado por el modelo de cada pliegue.
+    assert np.allclose(1 / (1 + np.exp(-oof["margen"])), referencia, atol=1e-6)
     assert len(modelos) == 5 and set(oof["pliegue"]) == set(range(5))
+    for fila in oof.itertuples():
+        m = modelos[fila.pliegue]
+        esperada = 1 / (1 + np.exp(-(m.pendiente * fila.margen + m.intercepto)))
+        assert fila.probabilidad == pytest.approx(esperada, abs=1e-6)
 
 
 def test_el_score_fuera_de_pliegue_se_explica_con_su_modelo(datos):

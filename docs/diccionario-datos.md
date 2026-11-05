@@ -181,7 +181,7 @@ que agregar un KPI no cambie el esquema.
 | `saldo_liquido_disponible` | ahorro_y_liquidez | MXN | Saldo de la cuenta digital |
 | `ratio_endeudamiento` | riesgo_y_endeudamiento | ratio | Saldo de tarjeta y prestamo entre ingreso mensual promedio |
 | `uso_linea_credito` | riesgo_y_endeudamiento | ratio | Saldo de tarjeta entre limite de credito |
-| `probabilidad_impago` | riesgo_y_endeudamiento | probabilidad | Salida del modelo de riesgo (`predict_risk.py`) |
+| `probabilidad_impago` | riesgo_y_endeudamiento | probabilidad | Salida del modelo de riesgo (`predict_risk.py`), calibrada (Platt): su media sigue a la tasa real de impago |
 | `frecuencia_transacciones` | comportamiento_transaccional | conteo mensual | Promedio de movimientos por mes en la ventana |
 | `actividad_p2p` | comportamiento_transaccional | MXN | Promedio mensual del neto P2P (recibido menos enviado) en la ventana |
 
@@ -287,7 +287,9 @@ que ninguna tabla de Gold tenga esas columnas.
 
 | Artefacto | Contenido |
 |---|---|
-| `models/risk_model.joblib` | Clasificador XGBoost entrenado sobre `gold_features_cliente` |
+| `models/risk_model.joblib` | Clasificador XGBoost entrenado sobre `gold_features_cliente`, con su calibracion logistica (pendiente e intercepto sobre el margen; `src/gold/calibracion.py`) |
+| `models/risk_model_pliegues.joblib` | Los 5 modelos de la validacion cruzada, cada uno con su calibracion; explican el score fuera de pliegue |
+| `models/probabilidad_fuera_de_pliegue.parquet` | `cliente_id`, `probabilidad` (calibrada, la que se publica), `margen` (log-odds sin calibrar), `pliegue` |
 | `models/shap_importancia.png` | Importancia media de cada feature (SHAP) |
 | `data/gold/predicciones/probabilidad_impago.parquet` | `cliente_id`, `valor_numerico` |
 | `data/auditoria/etiquetas_latentes.parquet` | `z`, `choque`, `logit` y `p` por cliente, solo para auditar las etiquetas; no es parte de Gold ni del respaldo |

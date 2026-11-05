@@ -128,6 +128,7 @@ digital-twin-bbva/
 │   │   ├── risk_features.py      # Feature store y gold_creditos_cliente: construir, persistir y leer
 │   │   ├── escalera.py           # Escalera financiera: paso del cliente con umbrales de CONDUSEF
 │   │   ├── explicacion.py        # Riesgo de un cliente explicado con sus valores SHAP (modelo que produjo el score)
+│   │   ├── calibracion.py        # Calibración logística (Platt) del modelo de riesgo sobre su margen
 │   │   ├── movimientos.py        # gold_movimientos_mensuales y gold_ingresos_quincenales
 │   │   ├── etiquetas_impago.py   # Modelo latente de la etiqueta de impago (módulo puro)
 │   │   └── etiquetas_gold.py     # Lectura/escritura de gold_etiquetas_impago y verificación del esquema
@@ -170,6 +171,7 @@ digital-twin-bbva/
 │   ├── test_eval_asistente.py    # Calificación de la evaluación del asistente y banco bien formado
 │   ├── test_acceso.py            # Login y roles: solo hashes, credenciales ignoradas por git, un cliente no ve a otro
 │   ├── test_explicacion.py       # SHAP por cliente: reproduce el score, modelo del pliegue, frases
+│   ├── test_calibracion.py       # Platt sobre el margen: recta, orden y SHAP que suma el score calibrado
 │   ├── test_vista_cliente.py     # Mi resumen: 1 salario mínimo, $20,000, ingreso variable, sin crédito; aislamiento
 │   ├── test_escalera.py          # Escalera financiera: un cliente por paso, sin crédito, ingreso variable, pagos omitidos
 │   ├── test_moneda_mxn.py        # Montos en pesos y nada en dólares: vistas (AppTest), asistente y escalera
@@ -195,6 +197,7 @@ digital-twin-bbva/
 │   └── technical-debt.md         # Deuda técnica conocida
 ├── experimentos/
 │   ├── auc_evento_posterior.py   # Evalúa el modelo contra el evento posterior: CV, oráculo, signos y orden
+│   ├── calibracion_riesgo.py     # Calibración de la probabilidad: con y sin scale_pos_weight, y con Platt
 │   ├── sondeo_herramientas.py    # Qué herramienta del asistente elige el modelo local, por pregunta y corrida
 │   ├── eval_asistente.py         # Evaluación del asistente completo con preguntas no vistas (métricas deterministas)
 │   └── eval_asistente.yaml       # Banco de preguntas de la evaluación (v1)
@@ -344,7 +347,7 @@ El esquema completo, con tipo de dato, regla de calidad y tratamiento de PII por
 
 Catálogo de 12 KPIs en 5 categorías (ingresos, gastos, ahorro y liquidez, riesgo y endeudamiento, comportamiento transaccional), calculados en Gold y almacenados en formato normalizado en DuckDB. El KPI `probabilidad_impago` se calcula en Gold como `NULL` y el modelo de riesgo (XGBoost) lo completa en el último paso del pipeline (`predict_risk.py`).
 
-**Etiquetas de impago.** No existen etiquetas reales. El modelo se entrena con un impago simulado como un evento posterior a las features, generado con un modelo latente (`config/etiquetas_impago.yaml`, tabla `gold_etiquetas_impago`): depende de las tres variables de riesgo, de un rasgo oculto y de un choque que el modelo no ve, para que el AUC mida poder predictivo y no la regla con que se generó la etiqueta. Los parámetros se fijaron antes de ver resultados y no se ajustaron después. Evaluación del 2026-10-13 con validación cruzada: AUC 0.725 con 500 clientes y 0.775 con 5,000, por debajo del oráculo (la probabilidad verdadera: 0.860 y 0.845), como debe ser porque el modelo no ve el rasgo oculto ni el choque. Detalle y límites en [docs/technical-debt.md](docs/technical-debt.md).
+**Etiquetas de impago.** No existen etiquetas reales. El modelo se entrena con un impago simulado como un evento posterior a las features, generado con un modelo latente (`config/etiquetas_impago.yaml`, tabla `gold_etiquetas_impago`): depende de las tres variables de riesgo, de un rasgo oculto y de un choque que el modelo no ve, para que el AUC mida poder predictivo y no la regla con que se generó la etiqueta. Los parámetros se fijaron antes de ver resultados y no se ajustaron después. Medición vigente (2026-11-04, después de amortizar los préstamos), con validación cruzada 5 x 5 sobre la sesión base: AUC 0.692 con 500 clientes y 0.777 con 5,000, por debajo del oráculo (la probabilidad verdadera: 0.852 y 0.842), como debe ser porque el modelo no ve el rasgo oculto ni el choque. Detalle y límites en [docs/technical-debt.md](docs/technical-debt.md).
 
 `gold_features_cliente` (misma base DuckDB) es el feature store del proyecto: una fila por cliente con los 11 KPIs restantes en columnas, más variables de perfil calculadas desde Silver (edad, antigüedad, ingreso declarado, número de productos, si tiene tarjeta de crédito, si tiene préstamo personal, proporción de retiros). Se persiste en vez de recalcularse en cada consumidor por dos razones: el modelo se entrena y predice sobre exactamente la misma tabla (sin desalineación entre entrenamiento e inferencia), y el dashboard, el simulador y el asistente RAG leen el perfil del cliente sin levantar Spark. Se guarda en forma legible (la categoría de gasto como texto); la codificación one-hot que necesita XGBoost se aplica al entrenar o predecir.
 
@@ -362,7 +365,7 @@ Catálogo de 12 KPIs en 5 categorías (ingresos, gastos, ahorro y liquidez, ries
 - [x] Pruebas de robustez con inyección deliberada de datos sucios: 5 brechas, 4 con cambios de código; 3 casos tienen prueba automatizada directa (detalle en [docs/pruebas-robustez.md](docs/pruebas-robustez.md))
 - [x] Capa Gold — catálogo de 12 KPIs en DuckDB
 - [x] Diccionario de datos formal
-- [x] Modelo predictivo de riesgo crediticio (XGBoost + SHAP), entrenado dentro del DAG
+- [x] Modelo predictivo de riesgo crediticio (XGBoost + SHAP), entrenado dentro del DAG, con probabilidad calibrada: media publicada 16.1 % contra una tasa real de 15.6 % en la instancia de la demo (detalle en [docs/technical-debt.md](docs/technical-debt.md))
 - [x] Feature store ligero en Gold (`gold_features_cliente`), fuente única de features
 - [x] PII sintética (CURP, RFC, teléfono, domicilio) validada y protegida en Silver con hash y enmascarado
 - [x] Seguridad base: secretos por máquina fuera del repo, puertos locales, escaneo de secretos en CI
@@ -373,7 +376,7 @@ Catálogo de 12 KPIs en 5 categorías (ingresos, gastos, ahorro y liquidez, ries
 - [x] Arranque reproducible con un comando en cualquier máquina con Docker (`demo.sh`)
 - [x] Simulador Monte Carlo de hipoteca: riesgo de déficit con y sin el crédito, enganche y capacidad hipotecaria, en línea de comandos y en el dashboard
 - [x] Monitoreo de deriva de datos con PSI contra una línea base congelada, con histórico en `data/calidad/deriva_psi/` (detalle en [docs/monitoreo-deriva.md](docs/monitoreo-deriva.md))
-- [ ] Asistente conversacional RAG local (Ollama + Llama 3.1 + LangChain): herramientas, conversación y página listas; faltan el RAG sobre la documentación y la evaluación con preguntas no vistas
+- [ ] Asistente conversacional RAG local (Ollama + Llama 3.1 + LangChain): herramientas, conversación, página y evaluación con preguntas no vistas (cinco rondas, [docs/evaluacion-asistente.md](docs/evaluacion-asistente.md)) listas; falta el RAG sobre la documentación
 - [x] Dashboard en Streamlit con las vistas de portafolio, cliente, simulador, asistente y observabilidad (decisión en [docs/arquitectura.md](docs/arquitectura.md#decisiones-de-diseno))
 
 ---
@@ -388,7 +391,7 @@ La documentación técnica vive en el repositorio y se actualiza en el mismo PR 
 | [docs/diccionario-datos.md](docs/diccionario-datos.md) | Columnas por entidad y capa: tipos, reglas de calidad, tratamiento de PII, KPIs y feature store |
 | [docs/seguridad.md](docs/seguridad.md) | Secretos, clasificación de datos por capa, protección de PII, auditoría del repositorio y riesgos aceptados |
 | [docs/ejecucion-local.md](docs/ejecucion-local.md) | Cómo correr el proyecto en otra máquina, comandos de `demo.sh` y problemas comunes |
-| [docs/evaluacion-asistente.md](docs/evaluacion-asistente.md) | Evaluación del asistente con 24 preguntas no vistas, 3 clientes y 3 repeticiones: resultados por categoría, fallas reales y de la métrica, revisión manual |
+| [docs/evaluacion-asistente.md](docs/evaluacion-asistente.md) | Evaluación del asistente en cinco bancos (v1 a v5), cada uno de 24 preguntas no vistas al escribirlo, 3 clientes y 3 repeticiones: resultados por ronda y categoría, fallas reales y de la métrica, revisión manual, línea base tras el cambio del generador y comparación con el modelo calibrado |
 | [docs/guion-demo.md](docs/guion-demo.md) | Cómo reconstruir en otra máquina la instancia de la presentación (base y 7 entregas con deriva), cifras esperadas y recorrido del dashboard |
 | [docs/pruebas-robustez.md](docs/pruebas-robustez.md) | Las 5 brechas de robustez probadas con datos sucios, su resultado y qué parte tiene prueba automatizada |
 | [docs/technical-debt.md](docs/technical-debt.md) | Deuda técnica conocida (incluye la evaluación de las etiquetas de impago), con fecha de última verificación |

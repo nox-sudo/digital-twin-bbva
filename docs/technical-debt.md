@@ -212,19 +212,6 @@ DockerOperator y en el servicio `worker`). Requiere mover el cache de
 Ivy con los JARs de Delta a una ruta legible por cualquier usuario,
 porque hoy vive en el home de root dentro de la imagen.
 
-### Probabilidad de impago descalibrada por scale_pos_weight
-
-**Que pasa:** `train_model.py` entrena con `scale_pos_weight` (negativos entre
-positivos, ~6). Eso sube la sensibilidad del modelo, pero sus probabilidades
-dejan de estar calibradas: con la sesion base, la media publicada en Gold es
-0.205 contra una tasa real de 0.164, y 14 clientes quedan por encima de 0.90.
-El dashboard muestra esa salida como "probabilidad de impago".
-
-**Posible fix:** quitar el peso y comparar AUC fuera de pliegue (el ordenamiento
-casi no deberia cambiar), o calibrar despues (`CalibratedClassifierCV`, isotonica)
-sobre las probabilidades fuera de pliegue. Cambia un hiperparametro fijado el
-2026-10-09, asi que la evaluacion se vuelve a correr y se reporta junto a la actual.
-
 ### Las entregas nuevas solo agregan transacciones
 
 **Que pasa:** una entrega mensual (`demo.sh nueva-entrega`) trae un mes
@@ -247,6 +234,156 @@ cuyo plazo termino antes del mes de corte, aunque Gold le muestre saldo
 (`prestamo_vigente` en `src/gold/escalera.py`).
 
 ## Resueltos
+
+### Probabilidad de impago descalibrada por scale_pos_weight
+
+**Que pasa:** `train_model.py` entrena con `scale_pos_weight` (negativos entre
+positivos, ~6). Eso sube la sensibilidad del modelo, pero sus probabilidades
+dejan de estar calibradas: con la sesion base, la media publicada en Gold es
+0.205 contra una tasa real de 0.164, y 14 clientes quedan por encima de 0.90.
+El dashboard muestra esa salida como "probabilidad de impago".
+
+**Posible fix:** quitar el peso y comparar AUC fuera de pliegue (el ordenamiento
+casi no deberia cambiar), o calibrar despues (`CalibratedClassifierCV`, isotonica)
+sobre las probabilidades fuera de pliegue. Cambia un hiperparametro fijado el
+2026-10-09, asi que la evaluacion se vuelve a correr y se reporta junto a la actual.
+
+**Criterio de decision (fijado el 2026-11-04, antes de correr el experimento).**
+Es una iteracion nueva y aparte: cambia un hiperparametro fijado el 2026-10-09, y
+la evaluacion del 2026-10-13 (arriba) se conserva tal cual como la del modelo con
+`scale_pos_weight`.
+
+- Que se mide: la probabilidad fuera de pliegue, que es la que publica
+  `predict_risk.py`, con validacion cruzada estratificada de 5 pliegues repetida 5
+  veces, sobre la sesion base (semilla 42, fecha de referencia 2026-09-30, 12
+  meses) con 500 y con 5,000 clientes. Script: `experimentos/calibracion_riesgo.py`.
+- Variantes: A, el modelo actual; B, el mismo XGBoost sin `scale_pos_weight`; C,
+  solo si B no cumple, A con calibracion logistica (Platt) ajustada sobre
+  probabilidades fuera de pliegue dentro de cada pliegue de entrenamiento. No se
+  usa isotonica con 500 clientes: con ~80 positivos tiene demasiados escalones
+  para los datos.
+- Una variante queda calibrada si, en los dos tamanos, cumple las tres:
+  1. la media predicha esta a 0.02 o menos de la tasa real;
+  2. Brier y log loss son menores o iguales que los de A (son reglas de puntaje
+     propias: premian la calibracion, no solo el orden);
+  3. el AUC fuera de pliegue, media de las 5 repeticiones, baja 0.01 o menos
+     contra A.
+- Decision: la opcion mas simple que cumpla. Si B cumple, va B. Si no, C si
+  cumple. Si ninguna, se queda A y la deuda sigue abierta con los numeros.
+- Las bandas de `config/dashboard.yaml` no se mueven para conservar un resultado.
+  Se reporta cuantos clientes cambian de banda; si la calibracion obligara a
+  cambiar las bandas, eso se decide aparte.
+
+**Resultados (2026-11-04).** Codigo de `develop` en `814c437` mas el script del
+experimento, imagen `gemelo-worker` (Linux, XGBoost 3.2.0), cada tamano en su
+propia carpeta de datos (la instancia viva no se toco). Primero se midio el estado
+actual con `experimentos/auc_evento_posterior.py`, porque tras amortizar los
+prestamos (#68) no se habia medido:
+
+| Sesion base | 500 clientes (81 positivos, 16.2 %) | 5,000 clientes (750 positivos, 15.0 %) |
+|---|---|---|
+| AUC, validacion cruzada (por pliegue) | 0.692 +- 0.051 (0.580 a 0.812) | 0.777 +- 0.017 (0.743 a 0.816) |
+| AUC fuera de pliegue, media de 5 repeticiones | 0.690 (0.676 a 0.702) | 0.777 (0.776 a 0.778) |
+| AUC del oraculo | 0.852 | 0.842 |
+| Sin las 3 variables observadas | 0.637 | 0.733 |
+
+Calibracion de la probabilidad fuera de pliegue (`experimentos/calibracion_riesgo.py`;
+media de 5 repeticiones, entre parentesis minimo y maximo; las bandas, en la
+repeticion con los pliegues de `train_model.py`, que es la que se publica):
+
+| 500 clientes, tasa real 0.162 | A (actual) | B (sin peso) | C (A + Platt) |
+|---|---|---|---|
+| AUC | 0.687 (0.672 a 0.701) | 0.681 (0.668 a 0.693) | 0.683 (0.668 a 0.695) |
+| Brier | 0.160 | 0.146 | 0.129 |
+| Log loss | 0.522 | 0.511 | 0.417 |
+| Media predicha | 0.205 | 0.135 | 0.168 |
+| Clientes por arriba de 0.90 | 9.4 | 3.6 | 0 |
+| Bandas bajo / medio / alto | 283 / 91 / 126 | 333 / 88 / 79 | 135 / 310 / 55 |
+
+| 5,000 clientes, tasa real 0.150 | A (actual) | B (sin peso) | C (A + Platt) |
+|---|---|---|---|
+| AUC | 0.777 (0.774 a 0.778) | 0.781 (0.778 a 0.783) | 0.776 (0.773 a 0.778) |
+| Brier | 0.156 | 0.106 | 0.106 |
+| Log loss | 0.482 | 0.352 | 0.353 |
+| Media predicha | 0.344 | 0.147 | 0.155 |
+| Clientes por arriba de 0.90 | 100.2 | 14.2 | 0 |
+| Bandas bajo / medio / alto | 641 / 2,100 / 2,259 | 2,977 / 1,292 / 731 | 2,475 / 1,812 / 713 |
+
+Curva de calibracion por deciles (predicha contra observada, repeticion publicada):
+
+| Decil | 500 A | 500 B | 500 C | 5,000 A | 5,000 B | 5,000 C |
+|---|---|---|---|---|---|---|
+| 1 | 0.005 / 0.08 | 0.003 / 0.08 | 0.064 / 0.06 | 0.049 / 0.040 | 0.015 / 0.032 | 0.022 / 0.044 |
+| 2 | 0.011 / 0.08 | 0.006 / 0.08 | 0.084 / 0.12 | 0.111 / 0.042 | 0.031 / 0.060 | 0.045 / 0.036 |
+| 3 | 0.018 / 0.04 | 0.010 / 0.02 | 0.097 / 0.02 | 0.158 / 0.066 | 0.042 / 0.054 | 0.061 / 0.064 |
+| 4 | 0.030 / 0.06 | 0.017 / 0.10 | 0.111 / 0.10 | 0.200 / 0.066 | 0.053 / 0.048 | 0.076 / 0.070 |
+| 5 | 0.049 / 0.16 | 0.029 / 0.08 | 0.128 / 0.10 | 0.245 / 0.062 | 0.067 / 0.066 | 0.092 / 0.062 |
+| 6 | 0.091 / 0.22 | 0.049 / 0.24 | 0.152 / 0.26 | 0.301 / 0.100 | 0.088 / 0.084 | 0.113 / 0.098 |
+| 7 | 0.178 / 0.24 | 0.092 / 0.20 | 0.183 / 0.24 | 0.379 / 0.108 | 0.122 / 0.122 | 0.144 / 0.114 |
+| 8 | 0.309 / 0.18 | 0.176 / 0.32 | 0.219 / 0.18 | 0.500 / 0.202 | 0.183 / 0.212 | 0.200 / 0.200 |
+| 9 | 0.508 / 0.20 | 0.321 / 0.24 | 0.269 / 0.24 | 0.652 / 0.312 | 0.300 / 0.322 | 0.293 / 0.310 |
+| 10 | 0.796 / 0.36 | 0.633 / 0.26 | 0.392 / 0.30 | 0.834 / 0.502 | 0.576 / 0.500 | 0.495 / 0.502 |
+
+Contra el criterio:
+
+- B cumple con 5,000 clientes (media a 0.003 de la tasa, Brier y log loss menores,
+  AUC sube 0.005), pero no con 500: su media queda 0.027 por debajo de la tasa, mas
+  de 0.02. Brier, log loss y AUC si cumplen. B no basta.
+- C cumple las tres en los dos tamanos: media a 0.006 (500) y 0.005 (5,000) de la
+  tasa; Brier y log loss menores que A; el AUC baja 0.004 (500) y 0.0002 (5,000).
+
+Por el criterio, la decision es C. Con 500 clientes el modelo distingue poco (AUC
+0.69), y una probabilidad calibrada se queda cerca de la tasa media: ningun decil
+predice menos de 0.06 ni mas de 0.40. Por eso la distribucion por bandas cambia
+mucho sin tocar las bandas.
+
+Sobre la instancia de la demo (base mas 7 entregas, 500 clientes, 78 positivos,
+tasa 0.156), el mismo script reproduce exactamente lo publicado hoy con A (AUC
+0.776, media 0.188, 12 clientes por arriba de 0.90, bandas 309 / 69 / 122) y da
+con C: AUC 0.777, media 0.161, ninguno por arriba de 0.90, Brier 0.116 contra 0.140,
+bandas 234 / 192 / 74.
+
+**Decision e implementacion (2026-11-04).** Va C: es la opcion mas simple que cumple
+el criterio, porque B no basta con 500 clientes. `scale_pos_weight` se queda (la
+iteracion no lo quita) y encima va una recta sobre el margen del modelo,
+`p = sigmoide(pendiente * margen + intercepto)` (`src/gold/calibracion.py`):
+
+- Cada uno de los 5 modelos de la validacion cruzada se calibra con el margen fuera
+  de pliegue de su propio conjunto de entrenamiento (5 pliegues internos, semilla
+  1042), asi que la probabilidad que se publica no ve al cliente ni para entrenar ni
+  para calibrar. El modelo final, que solo califica clientes sin etiqueta, se
+  calibra con el margen fuera de pliegue de todos.
+- `risk_model.joblib` y `risk_model_pliegues.joblib` guardan el modelo ya calibrado:
+  `predict_risk.py` y `monitor_drift.py` lo usan sin cambios.
+- La explicacion SHAP de "Mi resumen" sigue siendo exacta: la recta es sobre el
+  margen, asi que cada contribucion se multiplica por la pendiente y el valor base
+  pasa a `pendiente * base + intercepto` (`src/gold/explicacion.py`). La pendiente es
+  positiva, asi que no cambian el signo ni el orden de los factores.
+- El PSI del score no cambia: la calibracion es monotona y el PSI compara deciles
+  de la referencia. La serie de la demo da los mismos valores que antes.
+- Las bandas de `config/dashboard.yaml` no se tocaron.
+
+Instancia de la demo reconstruida con el DAG (base mas 7 entregas, `limpiar todo`,
+respaldo en `~/respaldos-gemelo/2026-11-04_113206`), contra la publicada antes con
+las mismas etiquetas:
+
+| Instancia de la demo | Antes (A) | Despues (C) |
+|---|---|---|
+| Tasa real de impago | 0.156 | 0.156 |
+| Media publicada | 0.188 | 0.161 |
+| Mediana publicada | 0.040 | 0.108 |
+| Minimo y maximo | 0.0005 a 0.976 | 0.021 a 0.655 |
+| Clientes por arriba de 0.90 | 12 | 0 |
+| AUC | 0.776 | 0.777 |
+| Brier | 0.140 | 0.116 |
+| Log loss | 0.445 | 0.371 |
+| Bandas bajo / medio / alto | 309 / 69 / 122 | 234 / 192 / 74 |
+
+Cambian de banda 123 clientes, todos hacia medio: 48 de alto y 75 de bajo; ninguno
+salta dos bandas. Que la banda media crezca tanto no es un defecto de la
+calibracion: con 500 clientes el modelo distingue poco, y una probabilidad honesta
+se queda cerca de la tasa media. Antes, `scale_pos_weight` empujaba a los clientes a
+los extremos, y las bandas separaban mas de lo que el modelo sabe.
 
 ### Capacidad hipotecaria con ahorro negativo o por debajo de cualquier vivienda
 
@@ -557,7 +694,7 @@ Resuelto en `fix/datos-perfil-cliente`:
 - **Score.** `train_model.py` guarda la probabilidad fuera de pliegue (5 pliegues) y
   `predict_risk.py` la publica para los clientes con etiqueta. Antes se predecian con
   el modelo final, que habia visto su etiqueta: 58 clientes salian por encima de 0.90,
-  ahora 14 (ver "Probabilidad de impago descalibrada" en Abiertos para el resto).
+  ahora 14 (ver "Probabilidad de impago descalibrada" en Resueltos para el resto).
 
 Medido sobre los CSV de la sesion base (500 clientes, semilla 42), antes y despues:
 

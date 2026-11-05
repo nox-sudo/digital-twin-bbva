@@ -221,8 +221,10 @@ verificacion y posibles soluciones, esta en
   fecha de corte; el monitoreo las reporta como `temporal`, sin alerta. Las
   demas features de flujo usan una ventana de 12 meses
   (`config/features.yaml`).
-- **La probabilidad de impago esta descalibrada** por `scale_pos_weight`: la
-  media publicada (0.205) es mayor que la tasa real (0.164).
+- **Con 500 clientes el modelo distingue poco** (AUC 0.69 en la base). La
+  probabilidad esta calibrada, asi que se queda cerca de la tasa real: en la
+  instancia de la demo va de 0.02 a 0.65 y la banda "medio" junta a 192 de
+  500 clientes.
 
 ## Sesiones de datos
 
