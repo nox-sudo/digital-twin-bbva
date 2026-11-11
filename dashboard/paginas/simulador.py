@@ -13,6 +13,7 @@ import yaml
 from dashboard import acceso, comun
 from src.common.mercado import cargar_mercado, precio_minimo_vivienda
 from src.simulacion import montecarlo as mc
+from src.simulacion.supuestos import cargar_simulacion
 
 st.title("Simulador de hipoteca")
 acceso.requiere_rol("admin", "cliente")
@@ -20,8 +21,7 @@ acceso.requiere_rol("admin", "cliente")
 
 @st.cache_data
 def config_simulacion() -> dict:
-    with open(comun.RAIZ / "config" / "simulacion.yaml", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+    return cargar_simulacion(comun.RAIZ / "config" / "simulacion.yaml")
 
 
 @st.cache_data
@@ -111,7 +111,7 @@ if comun.gold_disponible():
         "Plazo (años)", [5, 10, 15, 20, 25, 30], int(cfg["plazo_anios"])
     )
     tasa_pct = c3.slider(
-        "Tasa anual (%)", 6.0, 18.0, float(cfg["tasa_anual"]) * 100, 0.5
+        "Tasa anual (%)", 6.0, 18.0, round(float(cfg["tasa_anual"]) * 100, 2), 0.05
     )
     tasa = tasa_pct / 100
     renta = c4.number_input(

@@ -36,3 +36,12 @@ def precio_minimo_vivienda(mercado: dict | None = None) -> float:
     hipotecaria no alcanza para ninguna vivienda."""
     mercado = mercado or cargar_mercado()
     return float(mercado["vivienda_social_precio_minimo"]["valor"])
+
+
+def tasa_hipotecaria_referencia(mercado: dict | None = None) -> float:
+    """Tasa anual fija de partida del simulador de hipoteca: la que usa BBVA
+    para calcular el CAT promedio de su Hipoteca Fija (fuente primaria). Se
+    toma esa y no la "desde", porque la "desde" es el mejor caso del producto
+    y el simulador mide riesgo."""
+    mercado = mercado or cargar_mercado()
+    return float(mercado["hipoteca_bbva_fija"]["tasa_calculo_cat"])
