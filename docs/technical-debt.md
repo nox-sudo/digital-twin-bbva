@@ -135,10 +135,11 @@ razones se dispersan alrededor de 1 (de 0.94 a 1.14), mas ruido que atenuacion; 
 metrica de recuperacion, no una prueba.
 
 La ablacion no mide "cuanta senal queda sin las 3 variables": quitarlas de la matriz
-no las quita de la informacion. `capacidad_ahorro` es exactamente
-`ingreso_mensual_promedio - gasto_mensual_total`, y `ratio_endeudamiento` es deuda
-entre `ingreso_mensual_promedio`; el ingreso y el gasto siguen en la matriz, asi que el
-modelo puede reconstruir esa senal. Por eso se agrego la ablacion estricta (E6, agregada
+no las quita de la informacion. `capacidad_ahorro` es `ingreso_mensual_promedio` menos
+las salidas (compras, pagos recurrentes y retiros); las compras son cerca del 90% de esas
+salidas y son exactamente `gasto_mensual_total`. `ratio_endeudamiento` es deuda entre
+`ingreso_mensual_promedio`. El ingreso y el gasto siguen en la matriz, asi que el modelo
+puede reconstruir casi toda esa senal. Por eso se agrego la ablacion estricta (E6, agregada
 despues de ver E5, no estaba en el diseno original), que quita tambien
 `ingreso_mensual_promedio`, `gasto_mensual_total` y `gasto_promedio_3_meses`:
 
