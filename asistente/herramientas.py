@@ -454,7 +454,12 @@ def comparar_con_portafolio(ctx: Contexto, variables: list | None = None) -> dic
                 f" Banda de riesgo del cliente: {fila['banda_riesgo']} "
                 f"({_limites_bandas(ctx.bandas)})."
             )
-    return {"clientes_en_portafolio": len(df), "comparacion": comparacion}
+    resultado = {"comparacion": comparacion}
+    # El total de clientes es una cifra de todo el banco: solo para el admin,
+    # como resumen_portafolio. El cliente conserva la mediana y su posicion.
+    if ctx.rol == "admin":
+        resultado["clientes_en_portafolio"] = len(df)
+    return resultado
 
 
 def _limites_bandas(bandas: list) -> str:

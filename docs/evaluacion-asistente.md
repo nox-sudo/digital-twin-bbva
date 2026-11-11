@@ -1068,11 +1068,13 @@ respuesta del admin.
   - **`lista_morosos`, 9 corridas:** son las mismas respuestas que en v5,
     descritas en "Preguntas revisadas".
 
-**Pendiente: `comparar_con_portafolio` le da al cliente el total de
-clientes.** Devuelve `clientes_en_portafolio` (500) en cada resultado. En
-esta corrida el modelo no lo repitio, pero esta disponible para el
-cliente. Quitarlo, o no darlo al rol cliente, es un cambio aparte a esa
-herramienta.
+**`comparar_con_portafolio` le daba al cliente el total de clientes.**
+Devolvia `clientes_en_portafolio` (500) en cada resultado. En esta corrida
+el modelo no lo repitio, pero estaba disponible para el cliente. Resuelto
+el 2026-11-11 en `fix/total-clientes-solo-admin`: el campo solo se
+devuelve al rol admin; el cliente conserva la mediana y la proporcion por
+variable. No se repitio la evaluacion: el campo no aparecia en ninguna
+respuesta, asi que quitarlo no cambia lo medido.
 
 ### Llamadas escritas como texto
 
