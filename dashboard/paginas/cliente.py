@@ -83,10 +83,12 @@ if comun.gold_disponible():
     if fila["tiene_prestamo_personal"]:
         productos.append("préstamo")
     p3.metric("Productos", int(fila["numero_productos"]), help=", ".join(productos))
+    ratio = fila["ratio_endeudamiento"]
     p4.metric(
         "Deuda / ingreso",
-        f"{fila['ratio_endeudamiento']:.2f}",
-        help="Saldo de tarjeta y préstamo entre ingreso mensual. 0 si no tiene crédito.",
+        "Sin ingreso" if pd.isna(ratio) else f"{ratio:.2f}",
+        help="Saldo de tarjeta y préstamo entre ingreso mensual. 0 si no tiene "
+        "crédito; sin valor si tiene deuda y no tiene ingreso.",
     )
 
     # --- Flujo mensual ------------------------------------------------------
