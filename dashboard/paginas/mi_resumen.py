@@ -38,7 +38,8 @@ def config_simulacion() -> dict:
 
 
 def contexto(cliente_id: str) -> h.Contexto:
-    """Mismas rutas que el resto del dashboard (comun.config)."""
+    """Mismas rutas que el resto del dashboard (comun.config). El rol es el
+    de la sesion; la pagina solo usa evaluar_compra, que tienen los dos."""
     cfg = comun.config()
     return h.Contexto(
         cliente_id=cliente_id,
@@ -47,6 +48,7 @@ def contexto(cliente_id: str) -> h.Contexto:
         bandas=cfg["bandas_riesgo"],
         ventana_meses=cfg["ventana_meses"],
         simulacion=config_simulacion(),
+        rol=acceso.usuario_actual().rol,
     )
 
 

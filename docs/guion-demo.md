@@ -106,6 +106,11 @@ Pregunta que responde: a quien tengo que mirar.
   y en Observabilidad.
 - Bandas: 234 bajo (47 %), 192 medio (38 %), 74 alto (15 %).
 - Tabla "Clientes a revisar": seleccionar una fila abre al cliente.
+- En el Asistente, toda pregunta del portafolio ("¿Cuántos clientes están
+  en riesgo alto?") se hace como `admin`: es el unico rol con
+  `resumen_portafolio`. Con el usuario de un cliente el asistente contesta
+  que no da cifras de todo el banco y ofrece comparar al cliente con los
+  demas.
 
 ### 2. Cliente (2 min)
 

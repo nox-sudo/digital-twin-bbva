@@ -12,6 +12,13 @@ Reglas de diseno:
   - El cliente lo fija la interfaz, no el modelo. Contexto.cliente_id sale
     de la seleccion en el dashboard; ningun esquema expone cliente_id, asi
     que el modelo no puede consultar a otro cliente ni inventar un id.
+  - El rol tambien lo fija la interfaz (Contexto.rol, del usuario de la
+    sesion). Las cifras de todo el banco (resumen_portafolio) son solo para
+    el admin: esquemas(rol) no se las muestra al modelo de un cliente y
+    ejecutar() rechaza la llamada si el rol no la tiene, porque una llamada
+    escrita como texto llega a ejecutar() sin pasar por los esquemas. El
+    cliente conserva comparar_con_portafolio, que lo ubica frente a los
+    demas sin dar cifras de cabecera del banco.
   - Mismas consultas que el dashboard (dashboard/datos.py) y el simulador
     (src/simulacion/montecarlo.py), con la misma configuracion: el asistente
     da las mismas cifras que las vistas.
@@ -112,6 +119,10 @@ ENGANCHE_COMPRA = (0.0, 0.90)
 FORMAS_PAGO = ["contado", "credito"]
 
 
+ROLES = ("admin", "cliente")
+ROL_POR_DEFECTO = "cliente"
+
+
 class ErrorHerramienta(ValueError):
     """Argumento invalido o dato inexistente: se devuelve al modelo como
     {"error": mensaje}."""
@@ -125,9 +136,18 @@ class Contexto:
     bandas: list
     ventana_meses: int
     simulacion: dict
+    # Rol del usuario de la sesion (dashboard/acceso.py). Nunca sale del
+    # modelo ni de la URL; sin rol, el de menos permisos.
+    rol: str = ROL_POR_DEFECTO
+
+    def __post_init__(self):
+        if self.rol not in ROLES:
+            raise ValueError(f"Rol desconocido: {self.rol!r}")
 
     @classmethod
-    def desde_config(cls, cliente_id: str, raiz: Path = RAIZ) -> "Contexto":
+    def desde_config(
+        cls, cliente_id: str, rol: str = ROL_POR_DEFECTO, raiz: Path = RAIZ
+    ) -> "Contexto":
         """Las rutas y parametros que usa el dashboard."""
         dashboard = datos.cargar_config(str(raiz / "config" / "dashboard.yaml"))
         features = datos.cargar_config(str(raiz / "config" / "features.yaml"))
@@ -140,6 +160,7 @@ class Contexto:
             bandas=dashboard["bandas_riesgo"],
             ventana_meses=int(features["ventana_meses"]),
             simulacion=simulacion,
+            rol=rol,
         )
 
 
@@ -799,11 +820,15 @@ def escalera_financiera(ctx: Contexto) -> dict:
 
 def resumen_portafolio(ctx: Contexto) -> dict:
     """Cifras de cabecera del portafolio, su cambio contra la base y la
-    distribucion por banda de riesgo, como en la vista Portafolio."""
+    distribucion por banda de riesgo, como en la vista Portafolio.
+    proporcion_por_banda es la parte de los clientes en cada banda: el
+    porcentaje sale de aqui y no de una division que haga el modelo (en la
+    v5, "¿que parte de los clientes esta en riesgo alto?")."""
     df = _portafolio(ctx)
     cifras = datos.resumen_portafolio(df)
     base = datos.resumen_base(ctx.ruta_resumen, cifras["fecha_corte"])
     bandas = df["banda_riesgo"].value_counts()
+    total = int(bandas.sum())
     resultado = {
         "clientes": cifras["clientes"],
         "fecha_corte": str(pd.Timestamp(cifras["fecha_corte"]).date()),
@@ -811,6 +836,9 @@ def resumen_portafolio(ctx: Contexto) -> dict:
         "proporcion_ahorro_negativo": _numero(cifras["pct_ahorro_negativo"], 4),
         "probabilidad_media": _numero(cifras["probabilidad_media"], 4),
         "clientes_por_banda": {b: int(n) for b, n in bandas.items()},
+        "proporcion_por_banda": {
+            b: _numero(n / total, 4) if total else None for b, n in bandas.items()
+        },
         "base": None,
     }
     if base is not None:
@@ -838,6 +866,7 @@ _SI_LO_DIJO = " Omitelo si el usuario no lo dijo: se usa el valor de la configur
 HERRAMIENTAS = {
     "perfil_cliente": {
         "funcion": perfil_cliente,
+        "roles": ROLES,
         "descripcion": "Perfil, salud financiera (ingreso, gasto, capacidad de "
         "ahorro, saldo, endeudamiento) y riesgo de impago del cliente de esta "
         "conversacion. Solo de el, no del portafolio.",
@@ -846,6 +875,7 @@ HERRAMIENTAS = {
     },
     "gasto_por_categoria": {
         "funcion": gasto_por_categoria,
+        "roles": ROLES,
         "descripcion": "Salidas del cliente (en que gasta) por categoria en un "
         "rango de meses; sin rango, los ultimos 12. Sin categoria devuelve el "
         "desglose de todas, que es lo que responde 'en que se me va el dinero'. "
@@ -866,6 +896,7 @@ HERRAMIENTAS = {
     },
     "flujo_mensual": {
         "funcion": flujo_mensual,
+        "roles": ROLES,
         "descripcion": "Entradas, salidas y neto del cliente mes a mes en un "
         "rango de meses (por defecto, los ultimos 12).",
         "parametros": {"desde": _MES, "hasta": _MES, "ultimos_meses": _ULTIMOS},
@@ -873,6 +904,7 @@ HERRAMIENTAS = {
     },
     "comparar_con_portafolio": {
         "funcion": comparar_con_portafolio,
+        "roles": ROLES,
         "descripcion": "Donde queda este cliente frente a los demas, variable "
         "por variable: mediana del portafolio y proporcion de clientes con un "
         "valor menor o igual.",
@@ -887,6 +919,7 @@ HERRAMIENTAS = {
     },
     "simular_hipoteca": {
         "funcion": simular_hipoteca,
+        "roles": ROLES,
         "descripcion": "Solo para comprar vivienda: simula contratar una "
         "hipoteca (riesgo de quedar en saldo negativo con y sin ella, cuota "
         "mensual, capacidad hipotecaria y meses para reunir el enganche). Para "
@@ -916,6 +949,7 @@ HERRAMIENTAS = {
     },
     "evaluar_compra": {
         "funcion": evaluar_compra,
+        "roles": ROLES,
         "descripcion": "Compras que NO son vivienda (auto, viaje, equipo...), "
         "de contado o a credito. Una casa, departamento o terreno va siempre con "
         "simular_hipoteca. Devuelve  si el saldo alcanza, cuota, riesgo "
@@ -948,6 +982,7 @@ HERRAMIENTAS = {
     },
     "escalera_financiera": {
         "funcion": escalera_financiera,
+        "roles": ROLES,
         "descripcion": "En que paso de la escalera financiera esta el cliente "
         "(deudas, tarjeta, fondo de emergencia, ahorro, invertir) y que le falta "
         "para el siguiente. Para preguntas como 'como voy con mis finanzas' o 'que "
@@ -957,21 +992,34 @@ HERRAMIENTAS = {
     },
     "resumen_portafolio": {
         "funcion": resumen_portafolio,
+        "roles": ("admin",),
         "descripcion": "Cifras de todos los clientes juntos, no de este "
         "cliente: cuantos clientes hay y cuantos en cada banda de riesgo (bajo, "
         "medio, alto), ingreso mediano, proporcion que gasta mas de lo que "
         "gana, probabilidad media de impago y su cambio contra la sesion base. "
         "Es la que responde '¿cuantos clientes...?' y las preguntas sobre el "
-        "portafolio.",
+        "portafolio; proporcion_por_banda da la parte de los clientes en cada "
+        "banda.",
         "parametros": {},
         "requeridos": [],
     },
 }
 
 
-def esquemas() -> list[dict]:
-    """Esquemas de las herramientas en el formato de llamadas a funciones
-    (el que aceptan Ollama y LangChain). Ninguno incluye cliente_id."""
+def herramientas_de(rol: str) -> list[str]:
+    """Nombres de las herramientas que puede usar el rol, en el orden del
+    registro."""
+    if rol not in ROLES:
+        raise ValueError(f"Rol desconocido: {rol!r}")
+    return [n for n, h in HERRAMIENTAS.items() if rol in h["roles"]]
+
+
+def esquemas(rol: str) -> list[dict]:
+    """Esquemas de las herramientas del rol en el formato de llamadas a
+    funciones (el que aceptan Ollama y LangChain). Ninguno incluye
+    cliente_id. El rol es obligatorio: no hay una lista "de todas" que se
+    pueda pasar por descuido al modelo de un cliente."""
+    permitidas = herramientas_de(rol)
     return [
         {
             "type": "function",
@@ -986,6 +1034,7 @@ def esquemas() -> list[dict]:
             },
         }
         for nombre, h in HERRAMIENTAS.items()
+        if nombre in permitidas
     ]
 
 
@@ -1110,12 +1159,26 @@ def normalizar(nombre: str, argumentos: dict | None) -> tuple[dict, list[Coercio
     return limpios, coerciones
 
 
+ERROR_ROL = (
+    "Esta consulta no esta disponible para este usuario. Las cifras de todo "
+    "el banco son solo para el administrador; puedes comparar al cliente con "
+    "los demas con comparar_con_portafolio."
+)
+
+
 def ejecutar(nombre: str, argumentos: dict | None, ctx: Contexto) -> dict:
     """Ejecuta la herramienta que pidio el modelo. Un nombre o argumento
     que no esta en el esquema, o cualquier ErrorHerramienta, vuelve como
-    {"error": ...}. cliente_id siempre sale del contexto."""
+    {"error": ...}. cliente_id y rol siempre salen del contexto.
+
+    Una herramienta que el rol no tiene se rechaza antes de tocar Gold, con
+    un error que no trae cifras. Esta guarda no depende de los esquemas: una
+    llamada escrita como texto llega aqui sin haber pasado por ellos."""
     if nombre not in HERRAMIENTAS:
         return {"error": f"No existe la herramienta {nombre!r}"}
+    if nombre not in herramientas_de(ctx.rol):
+        log.info("herramienta fuera del rol: herramienta=%s rol=%s", nombre, ctx.rol)
+        return {"error": ERROR_ROL}
     try:
         argumentos, _ = normalizar(nombre, argumentos)
     except ErrorHerramienta as e:

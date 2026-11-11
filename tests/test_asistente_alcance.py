@@ -19,6 +19,8 @@ from asistente.alcance import (  # noqa: E402
     RESPUESTA_INVERSION,
     RESPUESTA_MONEDA,
     RESPUESTA_OTRO_CLIENTE,
+    RESPUESTA_OTRO_CLIENTE_ADMIN,
+    respuesta_otro_cliente,
     verificar_alcance,
 )
 
@@ -94,6 +96,24 @@ def test_otro_cliente(pregunta):
     respuesta = verificar_alcance(pregunta, "CLI-000001")
     assert respuesta == RESPUESTA_OTRO_CLIENTE.format(cliente_id="CLI-000001")
     assert "CLI-000005" not in respuesta
+
+
+def test_la_fija_de_otro_cliente_no_ofrece_cifras_del_banco():
+    respuesta = verificar_alcance("¿Cuánto gana CLI-000005?", "CLI-000001")
+    minusculas = respuesta.lower()
+    assert "agregad" not in minusculas and "portafolio" not in minusculas
+    assert "compara" in minusculas
+    # Lo mismo con el rol explicito y en la sustitucion de la respuesta final.
+    assert verificar_alcance("¿Y CLI-000005?", "CLI-000001", "cliente") == (
+        respuesta_otro_cliente("CLI-000001", "cliente")
+    )
+    assert respuesta == respuesta_otro_cliente("CLI-000001")
+
+
+def test_el_admin_conserva_la_oferta_de_cifras_agregadas():
+    respuesta = verificar_alcance("¿Cuánto gana CLI-000005?", "CLI-000001", "admin")
+    assert respuesta == RESPUESTA_OTRO_CLIENTE_ADMIN.format(cliente_id="CLI-000001")
+    assert "cifras agregadas del portafolio" in respuesta
 
 
 def test_el_propio_cliente_pasa():

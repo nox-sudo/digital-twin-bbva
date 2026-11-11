@@ -29,6 +29,7 @@ from asistente.alcance import (  # noqa: E402
     RESPUESTA_INVERSION,
     RESPUESTA_MONEDA,
     RESPUESTA_OTRO_CLIENTE,
+    RESPUESTA_OTRO_CLIENTE_ADMIN,
 )
 from datos_asistente import config_vistas, contexto, crear_gold  # noqa: E402
 from src.common.formato import formato_mxn  # noqa: E402
@@ -141,7 +142,8 @@ def test_cubre_todas_las_herramientas():
 
 @pytest.mark.parametrize("cliente", ["CLI-1", "CLI-2"])
 def test_lecturas_del_asistente_en_pesos(gold, tmp_path, cliente):
-    ctx = contexto(gold, tmp_path, cliente)
+    # Admin: tiene todas las herramientas, incluido resumen_portafolio.
+    ctx = contexto(gold, tmp_path, cliente, rol="admin")
     for nombre, argumentos in LLAMADAS:
         for texto in textos(h.ejecutar(nombre, argumentos, ctx)):
             assert problemas_de_moneda(texto) == [], (nombre, texto)
@@ -149,7 +151,12 @@ def test_lecturas_del_asistente_en_pesos(gold, tmp_path, cliente):
 
 @pytest.mark.parametrize(
     "respuesta",
-    [RESPUESTA_INVERSION, RESPUESTA_MONEDA, RESPUESTA_OTRO_CLIENTE],
+    [
+        RESPUESTA_INVERSION,
+        RESPUESTA_MONEDA,
+        RESPUESTA_OTRO_CLIENTE,
+        RESPUESTA_OTRO_CLIENTE_ADMIN,
+    ],
 )
 def test_respuestas_fijas_de_alcance(respuesta):
     assert problemas_de_moneda(respuesta) == []
