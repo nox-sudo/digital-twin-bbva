@@ -1176,9 +1176,22 @@ historial ya ocupan parte; con 5 hay riesgo de que Ollama recorte en silencio.
 
 ### Pendiente
 
-- Correr preguntas de documentacion con `llama3.1:8b` en la Mac: que elija
-  `buscar_documentacion` (y no una herramienta de datos) y que cite la fuente
-  sin agregar de memoria.
+- Correr el banco v6 con `llama3.1:8b` en la Mac: 10 preguntas de
+  documentacion y 2 de control, con rol admin. Mide que elija
+  `buscar_documentacion` (y no una herramienta de datos), que cite la
+  fuente (`cita_fuente`), que la fuente responda (`fuente_esperada`) y que
+  no agregue cifras de memoria. Sin el modelo, la busqueda trae la fuente
+  esperada en 10 de 10 (9 de 10 antes de ampliar las fuentes de
+  `doc_etiqueta_impago`, que tambien responden `arquitectura.md` y el README):
+
+  ```bash
+  uv run --group asistente python experimentos/eval_asistente.py \
+      --banco experimentos/eval_asistente_v6.yaml
+  uv run --group asistente python experimentos/eval_asistente.py \
+      --banco experimentos/eval_asistente_v6.yaml --rol cliente
+  ```
+
+  La segunda corrida comprueba que un cliente no reciba la documentacion.
 - Revisar el contexto efectivo de Ollama y, si hace falta, fijar `num_ctx`
   en `config/asistente.yaml`.
 - Si las parafrasis importan para la demo, comparar contra embeddings locales

@@ -375,7 +375,7 @@ def test_bancos_sin_preguntas_ni_clientes_repetidos():
     from experimentos.sondeo_herramientas import PREGUNTAS
 
     rutas = [ev.RAIZ / "experimentos" / "eval_asistente.yaml"] + [
-        ev.RAIZ / "experimentos" / f"eval_asistente_v{n}.yaml" for n in range(2, 6)
+        ev.RAIZ / "experimentos" / f"eval_asistente_v{n}.yaml" for n in range(2, 7)
     ]
     vistas, clientes = set(PREGUNTAS), set()
     for n, ruta in enumerate(rutas, start=1):
@@ -449,3 +449,79 @@ def test_los_bancos_tienen_ocho_preguntas_de_portafolio():
         if ev.rol_de(caso) == "admin"
     ]
     assert len(portafolio) == 8
+
+
+# --- Documentacion (banco v6) ------------------------------------------------------
+
+FRAGMENTOS = [
+    {
+        "fuente": "docs/seguridad.md § Seguridad > Secretos",
+        "texto": "La sal vive en .env.",
+    },
+    {"fuente": "README.md § Gemelo > Datos y KPIs", "texto": "Son 500 clientes."},
+]
+
+
+@pytest.mark.parametrize(
+    "texto, ok",
+    [
+        ("Según docs/seguridad.md, la sal vive en .env.", True),
+        ("Lo explica seguridad.md: la sal vive en .env.", True),
+        ("Como dice el README, son 500 clientes.", True),
+        ("La sal vive en .env.", False),
+        ("Según docs/arquitectura.md, la sal vive en .env.", False),
+    ],
+)
+def test_cita_fuente(texto, ok):
+    assert ev.cita_fuente(texto, FRAGMENTOS) is ok
+
+
+def test_sin_fragmentos_no_hay_cita():
+    assert ev.cita_fuente("Según docs/seguridad.md...", []) is False
+
+
+def test_revisiones_de_documentacion():
+    caso = {
+        "pregunta": "x",
+        "herramientas": ["buscar_documentacion"],
+        "cita_fuente": True,
+        "fuente_esperada": ["docs/seguridad.md"],
+    }
+    resultados = [{"fragmentos": FRAGMENTOS, "lectura": "Responde solo con esto."}]
+    pasos = [ev.PasoEval("buscar_documentacion", {"consulta": "sal"}, False)]
+    r = ev.calificar(
+        caso,
+        "Según docs/seguridad.md, son 500 clientes.",
+        "respuesta",
+        pasos,
+        resultados,
+        ["x"],
+        "C",
+    )["revision"]
+    assert r["herramienta"] and r["cita_fuente"] and r["fuente_esperada"]
+    # "500 clientes" viene del texto de un fragmento: no es inventado.
+    assert r["conteos_y_porcentajes_sin_inventar"]
+
+
+def test_banco_v6():
+    banco = ev.cargar_banco(ev.RAIZ / "experimentos" / "eval_asistente_v6.yaml")
+    assert banco["version"] == 6
+    doc = [c for c in banco["casos"] if "buscar_documentacion" in c["herramientas"]]
+    control = [
+        c for c in banco["casos"] if "buscar_documentacion" not in c["herramientas"]
+    ]
+    assert len(doc) == 10 and len(control) == 2
+    assert all(c["cita_fuente"] and c["fuente_esperada"] for c in doc)
+    # Todos corren con rol admin: solo el admin tiene buscar_documentacion.
+    assert {ev.rol_de(c) for c in banco["casos"]} == {"admin"}
+    assert "buscar_documentacion" in HERRAMIENTAS
+
+
+def test_las_fuentes_esperadas_existen():
+    from asistente.documentacion import indice_del_repo
+
+    archivos = {f.archivo for f in indice_del_repo().fragmentos}
+    banco = ev.cargar_banco(ev.RAIZ / "experimentos" / "eval_asistente_v6.yaml")
+    for caso in banco["casos"]:
+        for archivo in caso.get("fuente_esperada", []):
+            assert archivo in archivos, (caso["id"], archivo)
