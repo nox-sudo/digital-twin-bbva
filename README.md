@@ -57,7 +57,7 @@ Cada capa tiene una responsabilidad distinta:
 | Capa | Responsabilidad |
 |---|---|
 | **Bronze** | Captura y preserva datos crudos tal como llegan. Sin limpieza ni lógica de negocio. Trazabilidad completa (timestamp de ingesta, archivo de origen). |
-| **Silver** | Tipado correcto, deduplicación, y validación contra reglas de negocio declaradas en `config/business_rules.yaml`. Motor genérico basado en configuración — agregar una regla no requiere código nuevo. Registros inválidos se aíslan en cuarentena, sin detener el pipeline. |
+| **Silver** | Tipado correcto, deduplicación, y validación contra reglas de negocio declaradas en `config/business_rules.yaml`. Motor genérico basado en configuración — agregar una regla no requiere código nuevo. Registros inválidos se aíslan en cuarentena, sin detener el pipeline; si la proporción en cuarentena de una entidad pasa su umbral, se registra una alerta y, desde el umbral de bloqueo, Silver no se sobrescribe con la entrega rota. |
 | **Gold** | KPIs calculados a partir de Silver, en formato normalizado en DuckDB. Catálogo declarado en `config/kpi_catalog.yaml`. Incluye `gold_features_cliente`, el feature store: una fila por cliente que consumen el modelo, el dashboard, el simulador y el asistente. |
 
 Detalle completo de zonas, tareas del DAG y decisiones de diseño en [docs/arquitectura.md](docs/arquitectura.md).
@@ -122,7 +122,8 @@ digital-twin-bbva/
 │   │   ├── pii.py                # Hash con sal (HMAC), enmascarado y descarte de PII
 │   │   └── typing_rules.py       # Tipado específico por entidad
 │   ├── calidad/
-│   │   └── registro.py           # Registro histórico: incidencias, perfil de nulos, errores de tipo
+│   │   ├── registro.py           # Registro histórico: incidencias, perfil de nulos, errores de tipo
+│   │   └── umbrales.py           # Umbral de cuarentena por entidad: aviso y bloqueo
 │   ├── gold/
 │   │   ├── kpi_definitions.py    # Lógica de cálculo de cada KPI
 │   │   ├── risk_features.py      # Feature store y gold_creditos_cliente: construir, persistir y leer

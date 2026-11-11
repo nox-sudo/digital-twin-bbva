@@ -151,6 +151,7 @@ def config_vistas(tmp_path, ruta_usuarios: str | None = None) -> dict:
         "deriva_psi": str(tmp_path / "deriva_psi"),
         "resumen_portafolio": str(tmp_path / "resumen"),
         "alertas_airflow": str(tmp_path / "alertas_airflow.jsonl"),
+        "alertas_cuarentena": str(tmp_path / "alertas_cuarentena.jsonl"),
         "monitoreo_psi": str(RAIZ / "config" / "monitoreo_psi.yaml"),
         "usuarios": ruta_usuarios or str(tmp_path / "auth" / "usuarios.duckdb"),
         "modelo": str(tmp_path / "models" / "risk_model.joblib"),

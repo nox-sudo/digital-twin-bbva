@@ -19,6 +19,9 @@ Responsabilidad de este script:
     el pipeline (la cuarentena es la foto de esta corrida)
   - Agregar al registro historico de calidad (src/calidad/registro.py):
     una fila por regla violada y el perfil de nulos por columna
+  - Comparar la tasa de cuarentena con su umbral (src/calidad/umbrales.py):
+    sobre el aviso, registra una alerta; sobre el bloqueo, no escribe
+    Silver y falla, para no publicar una entrega rota
 
 Orden de procesamiento: respeta las dependencias de llave foranea
 declaradas en business_rules.yaml (clientes antes que cuentas, cuentas
@@ -56,6 +59,7 @@ from src.calidad.registro import (  # noqa: E402
     perfil_columnas,
     tipar_con_control,
 )
+from src.calidad import umbrales as um  # noqa: E402
 from src.silver.pii import columnas_en_claro, proteger_pii  # noqa: E402
 from src.silver.validation import validate_entity  # noqa: E402
 from src.silver.typing_rules import TYPING_REGISTRY  # noqa: E402
@@ -102,6 +106,7 @@ def process_entity(
     calidad_path: str,
     run_id: str,
     fecha_corte: date | None = None,
+    umbrales: dict | None = None,
 ) -> DataFrame:
     logger.start_entity(entity_name)
 
@@ -156,13 +161,32 @@ def process_entity(
                 f"[{entity_name}] PII en claro rumbo a {nombre}: {en_claro}"
             )
 
-    (
-        df_valido.write.mode("overwrite")
-        .format("delta")
-        .save(f"{silver_path}/{entity_name}")
+    # Umbral de cuarentena: se decide antes de escribir Silver, para que una
+    # entrega rota no reemplace la tabla buena de la corrida anterior.
+    evaluacion = um.evaluar(
+        entity_name,
+        reporte.filas_entrada,
+        reporte.filas_cuarentena,
+        reporte.violaciones_por_regla,
+        um.umbral_de(entity_name, umbrales or um.cargar_umbrales(rules)),
     )
+    if evaluacion.nivel != um.OK:
+        um.escribir_alerta(
+            um.registro_de_alerta(evaluacion, run_id),
+            Path(calidad_path) / um.ARCHIVO_ALERTAS,
+        )
+        print(f"[Silver] {um.mensaje(evaluacion)}")
+    bloquear = evaluacion.nivel == um.BLOQUEO
 
-    # La cuarentena es la foto de ESTA corrida. Antes solo se escribia si
+    if not bloquear:
+        (
+            df_valido.write.mode("overwrite")
+            .format("delta")
+            .save(f"{silver_path}/{entity_name}")
+        )
+
+    # La cuarentena es la foto de ESTA corrida (tambien en un bloqueo: es lo
+    # que explica por que se detuvo). Antes solo se escribia si
     # habia rechazos, asi que una corrida limpia dejaba visible la
     # cuarentena de la corrida anterior, con problemas que ya no existian.
     destino_cuarentena = Path(quarantine_path) / entity_name
@@ -183,12 +207,16 @@ def process_entity(
 
     logger.end_entity(
         entity_name,
+        **({"estatus": "FAILED"} if bloquear else {}),
         filas_entrada=reporte.filas_entrada,
         duplicados_removidos=duplicados_removidos,
         filas_validas=reporte.filas_validas,
         filas_cuarentena=reporte.filas_cuarentena,
         violaciones_por_regla=reporte.violaciones_por_regla,
+        nivel_cuarentena=evaluacion.nivel,
     )
+    if bloquear:
+        raise um.CuarentenaExcedida(um.mensaje(evaluacion))
 
     return df_valido
 
@@ -259,6 +287,8 @@ def main():
 
     with open(args.rules, encoding="utf-8") as f:
         rules = yaml.safe_load(f)
+    # Se validan antes de levantar Spark: un umbral mal escrito falla aqui.
+    umbrales = um.cargar_umbrales(rules)
     with open(args.politica_pii, encoding="utf-8") as f:
         politica_pii = yaml.safe_load(f) or {}
     # Se lee antes de levantar Spark: si falta, falla en un segundo con
@@ -294,6 +324,7 @@ def main():
                 args.calidad,
                 run_id,
                 fecha_corte,
+                umbrales,
             )
             escritas.append(entity_name)
             silver_context[entity_name] = df_valido

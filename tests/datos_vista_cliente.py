@@ -300,6 +300,7 @@ def crear_gold_vista(tmp_path: Path) -> dict:
         "deriva_psi": str(tmp_path / "deriva_psi"),
         "resumen_portafolio": str(tmp_path / "resumen"),
         "alertas_airflow": str(tmp_path / "alertas_airflow.jsonl"),
+        "alertas_cuarentena": str(tmp_path / "alertas_cuarentena.jsonl"),
         "monitoreo_psi": str(RAIZ / "config" / "monitoreo_psi.yaml"),
         "usuarios": str(tmp_path / "auth" / "usuarios.duckdb"),
         "modelo": str(modelos / "risk_model.joblib"),

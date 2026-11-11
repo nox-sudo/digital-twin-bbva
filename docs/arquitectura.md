@@ -94,6 +94,17 @@ Todos los pasos tambien se pueden correr sin Airflow con el CLI unico:
   pagina de Observabilidad muestra las 20 mas recientes. Webhook opcional: si
   `ALERTAS_WEBHOOK_URL` esta en `.env`, la misma alerta se manda por POST;
   vacia (el default) no se manda nada y un webhook caido no afecta la linea.
+- **Umbral de cuarentena.** `transform_silver.py` compara, por entidad, la
+  proporcion de filas en cuarentena con `umbrales_cuarentena` de
+  `config/business_rules.yaml` (`src/calidad/umbrales.py`). Desde el aviso
+  (1 %) escribe una linea en `data/calidad/alertas_cuarentena.jsonl` y sigue.
+  Desde el bloqueo (10 %, con al menos 100 filas) tambien escribe la
+  cuarentena y el historico, no escribe Silver y falla; el manejo de errores
+  restaura las tablas que la corrida alcanzo a escribir y la tarea termina en
+  la alerta de Airflow de arriba. La alerta lleva conteos, tasa y nombres de
+  regla, sin valores. Comportamiento conocido: Airflow reintenta la tarea con
+  la misma entrega, asi que un bloqueo deja una linea por intento (3) y una
+  sola alerta de tarea fallida.
 
 ## Configuracion declarativa
 
@@ -131,6 +142,7 @@ regla del proyecto sin fuente externa, dicha como tal. Sin fuente verificable,
 | Delta Lake en Bronze y Silver | Escrituras atomicas (ACID), versionado y evolucion de esquema (`mergeSchema`) | Parquet plano: una escritura interrumpida deja la tabla corrupta |
 | DuckDB para Gold | Motor analitico sin servidor; suficiente para consultas de consumo | PostgreSQL: un servicio mas sin beneficio a esta escala |
 | Validacion declarativa con motor generico y cuarentena | Una regla nueva es una linea de YAML; las filas invalidas se aislan sin detener el pipeline | Validaciones escritas a mano por entidad |
+| Umbral de cuarentena con aviso y bloqueo (`src/calidad/umbrales.py`) | La cuarentena por fila no distingue unas cuantas filas malas de una entrega rota: con 60 % de transacciones rechazadas, Silver se sobrescribia con el 40 % restante y Gold calculaba KPIs sobre esa fraccion sin aviso. El aviso deja rastro sin detener nada; el bloqueo conserva la version anterior de Silver. Se decide antes de escribir Silver, y por debajo de 100 filas no se bloquea porque el porcentaje no dice nada de la fuente. Valores de partida del proyecto (1 % y 10 %), no un estandar: una entrega limpia da 0 % | Solo avisar (Gold seguiria publicando sobre datos incompletos); detener con la primera fila invalida (pierde la ventaja de la cuarentena); umbral global en vez de por entidad (no permite ajustar una entidad) |
 | Registro historico de calidad separado de la cuarentena | La cuarentena muestra el estado actual; el registro permite ver tendencias entre entregas sin guardar valores (sin PII) | Conservar cuarentenas viejas, que duplicarian la PII protegida |
 | Motor de calidad propio (`src/silver/validation.py`) en lugar de una herramienta de calidad | Hace cinco cosas que el proyecto necesita juntas: cuarentena por fila (la fila invalida se aparta con su motivo y el resto sigue a Silver), reglas declaradas en `config/business_rules.yaml`, validaciones de Mexico (CURP y RFC con digito verificador y coherencia con la fecha de nacimiento, telefono de 10 digitos, codigo postal), historico de incidencias sin valores, es decir sin PII (`src/calidad/registro.py`), y todo dentro del mismo job de Spark, sin otro servicio que levantar. Costo: el codigo es nuestro. Son 1,067 lineas (`src/silver/validation.py`, `src/silver/typing_rules.py`, `src/silver/identificadores_spark.py`, `src/common/identificadores.py` y `src/calidad/registro.py`) y 751 de pruebas (`tests/test_validation.py`, `tests/test_calidad.py`, `tests/test_pii.py` y `tests/test_bronze_estructura.py`; `test_pii.py` prueba CURP y RFC y tambien el hash y el enmascarado de PII, que no son parte del motor), contadas el 2026-11-04; un tipo de regla nuevo exige codigo y prueba (una regla de un tipo existente, solo YAML); no hay documentacion ni comunidad externas, y si el proyecto creciera a decenas de fuentes o equipos convendria migrar a una herramienta estandar | Great Expectations: valida un lote completo y reporta, pero apartar filas a cuarentena y guardar el historico sin valores habria que construirlo encima, y CURP y RFC serian expectativas propias de todas formas. dbt: sus pruebas corren despues de construir la tabla y fallan o advierten por tabla; `store_failures` guarda las filas que fallan, con sus valores (la PII incluida), pero no las saca de la tabla, y agrega otra herramienta al flujo de Spark y Delta |
 | `try_cast` en el tipado de Silver | Spark 4 activa el modo ANSI: un cast invalido lanza error y detenia todo Silver por un solo valor corrupto | `cast` normal, o desactivar ANSI (ocultaria los errores en vez de registrarlos) |
@@ -171,4 +183,5 @@ regla del proyecto sin fuente externa, dicha como tal. Sin fuente verificable,
 | CURP/RFC se validan igual en Spark que en Python | `tests/test_pii.py`, 150 casos validos y alterados |
 | No hay secretos ni datos en el repo | Escaneo de secretos y de archivos de datos en cada PR |
 | Un valor corrupto no detiene el pipeline | `tests/test_calidad.py`: fechas imposibles, montos mal formados y valores fuera de catalogo van a cuarentena |
+| Una entrega rota no reemplaza Silver | `tests/test_umbral_cuarentena.py`: con 15 % de filas en cuarentena la entidad falla sin escribir Silver y si escribe cuarentena e historico; con 2 % avisa y escribe Silver |
 | Ninguna fila desaparece en la validacion | Toda violacion se normaliza a verdadero/falso; validas + cuarentena = filas de entrada |
