@@ -235,6 +235,28 @@ cuyo plazo termino antes del mes de corte, aunque Gold le muestre saldo
 
 ## Resueltos
 
+### Tasa del simulador de hipoteca sin fuente
+
+Registrado el 2026-11-11: `config/simulacion.yaml` fijaba la tasa en 11 % con el
+comentario "no consultados a una fuente", mientras `config/mercado_mx.yaml` ya
+traia la Hipoteca Fija de BBVA con fuente primaria (tasa de 11.20 % para el CAT,
+"desde" 9.05 %). Dos cifras para lo mismo, y la que usaba el simulador era la
+que no tenia respaldo.
+
+Resuelto en `fix/tasa-hipotecaria-con-fuente`: `simulacion.yaml` ya no trae la
+tasa y `src/simulacion/supuestos.py` la completa con
+`hipoteca_bbva_fija.tasa_calculo_cat`. El CLI, la vista del simulador, "Mi
+resumen" y la herramienta `simular_hipoteca` del asistente cargan los supuestos
+con esa funcion. Si alguien vuelve a escribir `tasa_anual` en `simulacion.yaml`,
+la carga falla con un mensaje en vez de elegir una de las dos. Se usa la tasa
+del CAT y no la "desde" porque la "desde" es el mejor caso del producto y el
+simulador mide riesgo. El slider de la tasa paso a pasos de 0.05 para que 11.20
+y 9.05 caigan en un valor exacto.
+
+Efecto en la cuota (precio de 900,000, enganche de 10 %, 20 anos): de $8,360.73
+a $8,471.25 al mes. Las tablas de las secciones de capacidad hipotecaria de
+abajo se midieron con 11 % y no se volvieron a correr con 11.20 %.
+
 ### Probabilidad de impago descalibrada por scale_pos_weight
 
 **Que pasa:** `train_model.py` entrena con `scale_pos_weight` (negativos entre

@@ -22,12 +22,11 @@ import argparse
 import sys
 from pathlib import Path
 
-import yaml
-
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from src.common.formato import formato_mxn  # noqa: E402
 from src.common.mercado import precio_minimo_vivienda  # noqa: E402
+from src.simulacion.supuestos import cargar_simulacion  # noqa: E402
 from src.simulacion.montecarlo import (  # noqa: E402
     Hipoteca,
     Supuestos,
@@ -40,11 +39,6 @@ from src.simulacion.montecarlo import (  # noqa: E402
     saldo_inicial_cliente,
     simular,
 )
-
-
-def cargar_config(ruta: str) -> dict:
-    with open(ruta, encoding="utf-8") as f:
-        return yaml.safe_load(f)
 
 
 def supuestos_desde_config(cfg: dict, semilla: int | None = None) -> Supuestos:
@@ -73,7 +67,7 @@ def main():
     )
     parser.add_argument("--gold", default="data/gold/kpis.duckdb")
     parser.add_argument("--config", default="config/simulacion.yaml")
-    parser.add_argument("--tasa", type=float, help="Tasa anual, por ejemplo 0.11")
+    parser.add_argument("--tasa", type=float, help="Tasa anual, por ejemplo 0.112")
     parser.add_argument("--plazo", type=int, help="Plazo en anios")
     parser.add_argument(
         "--enganche", type=float, help="Fraccion del precio, por ejemplo 0.10"
@@ -87,7 +81,7 @@ def main():
     parser.add_argument("--semilla", type=int)
     args = parser.parse_args()
 
-    cfg = cargar_config(args.config)
+    cfg = cargar_simulacion(args.config)
     condiciones = cfg["hipoteca"]
     hipoteca = Hipoteca(
         precio=args.precio,

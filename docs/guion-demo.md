@@ -156,7 +156,10 @@ le quedan $10,730 al mes; está en el paso 3
 
 ### 4. Simulador de hipoteca (2 min)
 
-Con los parametros por defecto (vivienda de $900,000), dos clientes:
+Con los parametros por defecto (vivienda de $900,000), dos clientes.
+**Pendiente de volver a medir:** la tabla se midio con la tasa anterior de
+11 %; desde `fix/tasa-hipotecaria-con-fuente` el simulador usa 11.20 %
+(`config/mercado_mx.yaml`). Actualizarla con la instancia reconstruida.
 
 | | CLI-000001 | CLI-000162 |
 |---|---|---|
@@ -169,7 +172,7 @@ Para CLI-000001 la capacidad no aplica: ni una vivienda social de $214,047
 (el minimo de la Sociedad Hipotecaria Federal) cabe sin subir su riesgo mas
 de 5 puntos.
 
-Cuota mensual $8,361 en ambos. Riesgo = escenarios (de 5,000 trayectorias)
+Cuota mensual $8,471 en ambos (con 11.20 %; era $8,361 con 11 %). Riesgo = escenarios (de 5,000 trayectorias)
 en los que el saldo queda negativo en algun mes de los proximos 36. Las
 trayectorias remuestrean los meses del propio cliente mas un choque de
 perdida de ingreso; todos los escenarios usan los mismos numeros

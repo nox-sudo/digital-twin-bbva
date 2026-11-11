@@ -136,7 +136,8 @@ digital-twin-bbva/
 │   │   ├── psi.py                # PSI: cortes por deciles, proporciones, epsilon y estados
 │   │   └── referencia.py         # Línea base congelada: crear, archivar y cargar la activa
 │   └── simulacion/
-│       └── montecarlo.py         # Simulador Monte Carlo de hipoteca (módulo puro, sin Spark)
+│       ├── montecarlo.py         # Simulador Monte Carlo de hipoteca (módulo puro, sin Spark)
+│       └── supuestos.py          # Carga config/simulacion.yaml con la tasa de mercado_mx.yaml
 ├── asistente/
 │   ├── herramientas.py           # Herramientas del asistente: cifras de Gold y del simulador, cliente fijado por la interfaz
 │   ├── conversacion.py           # Bucle de herramientas con Ollama (LangChain) y prompt de sistema
@@ -309,7 +310,7 @@ Las bandas de riesgo (bajo, medio, alto) se configuran en `config/dashboard.yaml
 uv run --group dashboard --group asistente streamlit run dashboard/app.py
 ```
 
-**Simulador de hipoteca.** Responde, para un cliente, qué tan probable es que su saldo quede negativo en los próximos 36 meses si contrata una hipoteca, y cuál es el precio máximo de vivienda que puede asumir. Cada una de las 5,000 trayectorias arma el futuro eligiendo al azar meses del historial real del cliente (`gold_movimientos_mensuales`), más un choque de pérdida de ingreso que el historial no contiene; con y sin hipoteca se evalúan sobre los mismos meses simulados, así que la diferencia es solo el crédito. Los supuestos (tasa, plazo, enganche, gastos, choque y umbral de capacidad) están en `config/simulacion.yaml`. Está en el dashboard y en línea de comandos:
+**Simulador de hipoteca.** Responde, para un cliente, qué tan probable es que su saldo quede negativo en los próximos 36 meses si contrata una hipoteca, y cuál es el precio máximo de vivienda que puede asumir. Cada una de las 5,000 trayectorias arma el futuro eligiendo al azar meses del historial real del cliente (`gold_movimientos_mensuales`), más un choque de pérdida de ingreso que el historial no contiene; con y sin hipoteca se evalúan sobre los mismos meses simulados, así que la diferencia es solo el crédito. Los supuestos del escenario (plazo, enganche, gastos, choque y umbral de capacidad) están en `config/simulacion.yaml`; la tasa se toma de `config/mercado_mx.yaml` (tasa con la que BBVA calcula el CAT de su Hipoteca Fija, con fuente y fecha). Está en el dashboard y en línea de comandos:
 
 ```bash
 uv run python main.py simulate --cliente CLI-000001 --precio 900000 --renta 7000

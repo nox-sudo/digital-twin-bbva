@@ -11,13 +11,13 @@ cifras las calcula Python.
 
 import altair as alt
 import streamlit as st
-import yaml
 
 from asistente import herramientas as h
 from dashboard import acceso, comun
 from dashboard import vista_cliente as vc
 from src.gold import escalera as esc
 from src.gold import explicacion as ex
+from src.simulacion.supuestos import cargar_simulacion
 
 usuario = acceso.requiere_rol("admin", "cliente")
 st.title("Mi resumen" if usuario.rol == "cliente" else "Vista del cliente")
@@ -33,8 +33,7 @@ EJE_PESOS = alt.Axis(
 
 @st.cache_data
 def config_simulacion() -> dict:
-    with open(comun.RAIZ / "config" / "simulacion.yaml", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+    return cargar_simulacion(comun.RAIZ / "config" / "simulacion.yaml")
 
 
 def contexto(cliente_id: str) -> h.Contexto:

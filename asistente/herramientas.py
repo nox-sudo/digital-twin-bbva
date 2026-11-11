@@ -43,7 +43,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import yaml
 
 from asistente import documentacion as doc
 from dashboard import datos
@@ -55,6 +54,7 @@ from src.common.mercado import (
 )
 from src.gold import escalera as esc
 from src.simulacion import montecarlo as mc
+from src.simulacion.supuestos import cargar_simulacion
 
 RAIZ = Path(__file__).resolve().parents[1]
 
@@ -152,8 +152,7 @@ class Contexto:
         """Las rutas y parametros que usa el dashboard."""
         dashboard = datos.cargar_config(str(raiz / "config" / "dashboard.yaml"))
         features = datos.cargar_config(str(raiz / "config" / "features.yaml"))
-        with open(raiz / "config" / "simulacion.yaml", encoding="utf-8") as f:
-            simulacion = yaml.safe_load(f)
+        simulacion = cargar_simulacion(raiz / "config" / "simulacion.yaml")
         return cls(
             cliente_id=cliente_id,
             ruta_gold=str(raiz / dashboard["gold_duckdb"]),
@@ -493,7 +492,7 @@ def simular_hipoteca(
     """Mismo calculo que la vista del simulador: riesgo de deficit con y sin
     la hipoteca sobre las mismas muestras, cuota, capacidad hipotecaria y
     meses para reunir el enganche. Sin un parametro, el de
-    config/simulacion.yaml."""
+    config/simulacion.yaml (la tasa, de config/mercado_mx.yaml)."""
     cfg = ctx.simulacion
     if enganche_pct is None:
         enganche_pct = float(cfg["hipoteca"]["enganche_pct"])
