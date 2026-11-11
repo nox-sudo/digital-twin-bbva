@@ -68,6 +68,9 @@ def _required_columns_from_rules(rules: dict) -> set[str]:
     columnas.update(rules.get("numeric_not_zero", []))
     columnas.update(rules.get("date_not_future", []))
     columnas.update(rules.get("foreign_keys", {}).keys())
+    for col, regla in rules.get("date_not_before", {}).items():
+        columnas.add(col)
+        columnas.add(regla["via"])
 
     for regla in rules.get("conditional_not_null", []):
         columnas.add(regla["column"])
@@ -273,6 +276,40 @@ def _check_foreign_keys(df: DataFrame, rules: dict, silver_context: dict) -> Dat
     return df
 
 
+def _check_date_not_before(
+    df: DataFrame, rules: dict, silver_context: dict
+) -> DataFrame:
+    """Coherencia temporal entre entidades: la fecha de la fila no puede ser
+    anterior a una fecha de la entidad a la que pertenece (un movimiento
+    antes de que exista su cuenta, una cuenta antes de que exista su
+    cliente). Se une por la columna `via` contra la entidad de referencia
+    ya validada.
+
+    Si la fila no encuentra su referencia, la comparacion da NULL y queda
+    en False: esa fila ya la marca la regla de llave foranea, y no se
+    cuenta dos veces como otra cosa."""
+    for col, regla in rules.items():
+        ref_entity = regla["references_entity"]
+        via = regla["via"]
+        ref_key = regla.get("references_key", via)
+        ref_col = regla["references_column"]
+        if ref_entity not in silver_context:
+            raise ValueError(
+                f"date_not_before hacia '{ref_entity}' pero esa entidad aun no fue "
+                f"procesada. Revisa el orden en transform_silver.py."
+            )
+        alias_key, alias_fecha = f"_dnb_key_{col}", f"_dnb_fecha_{col}"
+        ref = silver_context[ref_entity].select(
+            F.col(ref_key).alias(alias_key), F.to_date(ref_col).alias(alias_fecha)
+        )
+        df = df.join(F.broadcast(ref), df[via] == F.col(alias_key), how="left")
+        df = df.withColumn(
+            f"_viol_datebefore_{col}", F.to_date(F.col(col)) < F.col(alias_fecha)
+        )
+        df = df.drop(alias_key, alias_fecha)
+    return df
+
+
 def validate_entity(
     df: DataFrame,
     entity_name: str,
@@ -316,6 +353,8 @@ def validate_entity(
         df = _check_identificadores(df, rules["identificadores"])
     if "foreign_keys" in rules:
         df = _check_foreign_keys(df, rules["foreign_keys"], silver_context)
+    if "date_not_before" in rules:
+        df = _check_date_not_before(df, rules["date_not_before"], silver_context)
 
     viol_cols = [c for c in df.columns if c.startswith("_viol_")]
 

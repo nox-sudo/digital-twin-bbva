@@ -95,15 +95,15 @@ def test_la_cuota_solo_se_paga_dentro_del_plazo(poblacion):
     assert pagos_en_plazo > 0
 
 
-def test_el_plazo_solo_quita_pagos_de_prestamo(poblacion):
+def test_el_plazo_solo_quita_pagos_de_deuda(poblacion):
     """Revisar el plazo consume los mismos sorteos y avanza el contador igual:
-    fuera de las cuotas de prestamo, el mes sale identico al de una poblacion
-    con todos los prestamos vigentes (ids incluidos)."""
+    fuera de las cuotas de deuda, el mes sale identico al de una poblacion
+    con todas las deudas vigentes desde antes del historial (ids incluidos)."""
     cuentas, perfiles = poblacion
     vigentes = [
         (
             dict(c, fecha_apertura="2025-01-15", plazo_meses=48)
-            if c["tipo_cuenta"] == "prestamo_personal"
+            if c["tipo_cuenta"] in ("prestamo_personal", "tarjeta_credito")
             else c
         )
         for c in cuentas
@@ -112,12 +112,12 @@ def test_el_plazo_solo_quita_pagos_de_prestamo(poblacion):
     for anio, mes in MESES:
         real = _mes(cuentas, perfiles, anio, mes)
         todos = _mes(vigentes, perfiles, anio, mes)
-        es_prestamo = todos["contraparte"] == "Pago Préstamo Personal"
+        es_deuda = todos["tipo_transaccion"] == "pago_recurrente"
         quitados += len(todos) - len(real)
         assert (
-            real[real["contraparte"] != "Pago Préstamo Personal"]
+            real[real["tipo_transaccion"] != "pago_recurrente"]
             .reset_index(drop=True)
-            .equals(todos[~es_prestamo].reset_index(drop=True))
+            .equals(todos[~es_deuda].reset_index(drop=True))
         )
         assert set(real["transaccion_id"]) <= set(todos["transaccion_id"])
     assert quitados > 0

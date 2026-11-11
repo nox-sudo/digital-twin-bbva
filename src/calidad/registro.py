@@ -44,6 +44,7 @@ REGLAS = [
     "range",
     "notzero",
     "futuredate",
+    "datebefore",
     "condnull",
     "pattern",
     "ident",

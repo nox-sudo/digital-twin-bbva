@@ -115,10 +115,17 @@ def fecha_entre(fecha_ref: date, desde: relativedelta, hasta: relativedelta) -> 
     diferia en la fecha de nacimiento de 34 de 500 clientes (y su CURP y
     RFC). El sorteo es el mismo; solo cambia como se lee.
     """
+    return fecha_entre_fechas(fecha_ref - desde, fecha_ref - hasta)
+
+
+def fecha_entre_fechas(inicio: date, fin: date) -> date:
+    """Fecha aleatoria entre inicio y fin (inclusive). Hace un solo sorteo
+    sin importar el rango, asi que cambiar los limites no desfasa los
+    sorteos que siguen. Ver fecha_entre para el porque de UTC."""
+    if inicio > fin:
+        raise ValueError(f"rango de fechas vacio: {inicio} > {fin}")
     return fake.date_time_between_dates(
-        datetime_start=fecha_ref - desde,
-        datetime_end=fecha_ref - hasta,
-        tzinfo=timezone.utc,
+        datetime_start=inicio, datetime_end=fin, tzinfo=timezone.utc
     ).date()
 
 
@@ -153,6 +160,12 @@ def meses_a_generar(fecha_ref: date, n_meses: int) -> list[tuple[int, int]]:
         fecha_mes = mes_mas_reciente - relativedelta(months=i)
         meses.append((fecha_mes.year, fecha_mes.month))
     return meses
+
+
+def inicio_historial(fecha_ref: date, n_meses: int) -> date:
+    """Primer dia del mes mas antiguo del historial base (los n_meses que
+    terminan en fecha_ref)."""
+    return date(*meses_a_generar(fecha_ref, n_meses)[-1], 1)
 
 
 # ---------------------------------------------------------------------------
@@ -364,11 +377,24 @@ def ingreso_declarado(ocupacion: str, modelo: dict) -> float:
 
 
 def generar_clientes(
-    n_clientes: int, fecha_ref: date, modelo_ingresos: dict | None = None
+    n_clientes: int,
+    fecha_ref: date,
+    modelo_ingresos: dict | None = None,
+    meses_historial: int = 12,
 ) -> pd.DataFrame:
     """Genera el perfil demográfico base de los clientes, con su PII. El
-    ingreso depende de la ocupacion (config/ingresos.yaml)."""
+    ingreso depende de la ocupacion (config/ingresos.yaml).
+
+    fecha_alta cae antes del primer mes del historial: todos los clientes
+    ya existian cuando empiezan sus movimientos. Antes se sorteaba hasta un
+    mes antes de fecha_ref y el 32 % de los clientes tenia movimientos
+    anteriores a su alta (y una antiguedad_dias que contradecia su propio
+    historial)."""
     modelo_ingresos = modelo_ingresos or cargar_modelo_ingresos()
+    ultima_alta = inicio_historial(fecha_ref, meses_historial) - relativedelta(days=1)
+    primera_alta = min(
+        fecha_ref - relativedelta(years=3), ultima_alta - relativedelta(years=1)
+    )
     registros = []
     for i in range(n_clientes):
         fecha_nacimiento = fecha_entre(
@@ -387,9 +413,7 @@ def generar_clientes(
                 "ocupacion": ocupacion,
                 "ingreso_mensual_declarado": round(float(ingreso_base), 2),
                 "ciudad": ciudad,
-                "fecha_alta": fecha_entre(
-                    fecha_ref, relativedelta(years=3), relativedelta(months=1)
-                ).isoformat(),
+                "fecha_alta": fecha_entre_fechas(primera_alta, ultima_alta).isoformat(),
                 **generar_identidad(fecha_nacimiento, ciudad, ocupacion),
             }
         )
@@ -440,7 +464,15 @@ def generar_cuentas(clientes_df: pd.DataFrame, fecha_ref: date) -> list[dict]:
     """
     cuentas = []
     contador = 1
+    ultima_apertura = fecha_ref - relativedelta(months=1)
+
+    def apertura_desde(alta: date, antiguedad_maxima: relativedelta) -> str:
+        # Un producto no se abre antes de que el cliente exista.
+        inicio = max(alta, fecha_ref - antiguedad_maxima)
+        return fecha_entre_fechas(inicio, ultima_apertura).isoformat()
+
     for _, cliente in clientes_df.iterrows():
+        alta = date.fromisoformat(cliente["fecha_alta"])
         # Saldos, limites y prestamos escalan con el ingreso declarado, como
         # los otorgaria un banco: sin esto, un cliente de 8,000 al mes podia
         # tener una linea de 120,000 y cuotas mayores que su ingreso.
@@ -470,9 +502,7 @@ def generar_cuentas(clientes_df: pd.DataFrame, fecha_ref: date) -> list[dict]:
                     "cuenta_id": f"CTA-{contador:06d}",
                     "cliente_id": cliente["cliente_id"],
                     "tipo_cuenta": TIPOS_CUENTA[1],
-                    "fecha_apertura": fecha_entre(
-                        fecha_ref, relativedelta(years=2), relativedelta(months=1)
-                    ).isoformat(),
+                    "fecha_apertura": apertura_desde(alta, relativedelta(years=2)),
                     "saldo_actual": round(float(np.random.uniform(0, limite * 0.6)), 2),
                     "limite_credito": limite,
                     "moneda": "MXN",
@@ -490,9 +520,7 @@ def generar_cuentas(clientes_df: pd.DataFrame, fecha_ref: date) -> list[dict]:
             tasa_mensual = TASA_PRESTAMO_PERSONAL / 12
             monto = cuota_objetivo * (1 - (1 + tasa_mensual) ** -plazo) / tasa_mensual
             monto = max(10000.0, round(float(monto), -2))
-            apertura = fecha_entre(
-                fecha_ref, relativedelta(years=2), relativedelta(months=1)
-            ).isoformat()
+            apertura = apertura_desde(alta, relativedelta(years=2))
             # El saldo sale de la tabla de amortizacion: lo que queda tras las
             # cuotas vencidas hasta el ultimo mes completo de la fecha base (0
             # si el plazo ya termino). Antes era un sorteo; se sigue haciendo
@@ -524,9 +552,7 @@ def generar_cuentas(clientes_df: pd.DataFrame, fecha_ref: date) -> list[dict]:
                     "cuenta_id": f"CTA-{contador:06d}",
                     "cliente_id": cliente["cliente_id"],
                     "tipo_cuenta": TIPOS_CUENTA[3],
-                    "fecha_apertura": fecha_entre(
-                        fecha_ref, relativedelta(years=1), relativedelta(months=1)
-                    ).isoformat(),
+                    "fecha_apertura": apertura_desde(alta, relativedelta(years=1)),
                     "saldo_actual": round(float(np.random.uniform(2000, 80000)), 2),
                     "moneda": "MXN",
                     "estatus": "activa",
@@ -663,12 +689,12 @@ def generar_perfiles(
 
 
 def _cuota_vigente(deuda: dict, anio: int, mes: int) -> bool:
-    """True si la deuda tiene pago que hacer en (anio, mes). Las tarjetas
-    siempre; un prestamo, del mes 1 al mes plazo_meses despues de su
-    apertura."""
-    if deuda["tipo_cuenta"] != "prestamo_personal":
-        return True
+    """True si la deuda tiene pago que hacer en (anio, mes). Ninguna paga
+    antes del mes siguiente a su apertura; una tarjeta paga desde ahi sin
+    fin, un prestamo hasta el mes plazo_meses."""
     transcurridos = _meses_desde_apertura(deuda["fecha_apertura"], anio, mes)
+    if deuda["tipo_cuenta"] != "prestamo_personal":
+        return transcurridos >= 1
     return 1 <= transcurridos <= deuda["plazo_meses"]
 
 
@@ -810,8 +836,8 @@ def generar_transacciones_mes(
 
         # Pago de deudas: la cuota es fija por cuenta (perfil); que se pague
         # o no en un mes depende de la puntualidad del cliente. Un cliente
-        # impuntual deja huella en los datos, no solo en la etiqueta. Un
-        # prestamo no paga antes de existir ni despues de liquidarse.
+        # impuntual deja huella en los datos, no solo en la etiqueta. Una
+        # deuda no paga antes de existir, ni un prestamo despues de liquidarse.
         for deuda in deudas_por_cliente.get(cliente_id, []):
             sorteo = random.random()
             paga = sorteo < perfil["puntualidad"]
@@ -819,8 +845,8 @@ def generar_transacciones_mes(
                 afectado and sorteo >= perfil["puntualidad"] - caida_puntualidad
             )
             if paga and (omitido_por_deriva or not _cuota_vigente(deuda, anio, mes)):
-                # Pago que se habria hecho sin escenario, o cuota de un
-                # prestamo fuera de su plazo. Se consume el mismo
+                # Pago que se habria hecho sin escenario, o cuota de una
+                # deuda fuera de su plazo. Se consume el mismo
                 # sorteo de fecha que haria el pago, para no desfasar el
                 # generador global (todo lo que sigue en el mes cambiaria), y
                 # el contador avanza igual: queda un hueco en la numeracion y
@@ -966,7 +992,10 @@ def generar_fuentes(out_dir: Path, parametros: dict) -> dict:
 
     print(f"Generando {parametros['clientes']} clientes...")
     clientes_df = generar_clientes(
-        parametros["clientes"], fecha_ref, parametros.get("modelo_ingresos")
+        parametros["clientes"],
+        fecha_ref,
+        parametros.get("modelo_ingresos"),
+        meses_historial=parametros["meses"],
     )
     clientes_df.to_csv(out_dir / "clientes.csv", index=False)
 

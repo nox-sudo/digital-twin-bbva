@@ -636,6 +636,40 @@ Silver. Cambio de comportamiento: una fila truncada a la que le falta una
 columna opcional (por ejemplo `email`) ahora va a cuarentena; un campo vacio
 con su separador sigue siendo valido.
 
+### Movimientos anteriores al alta del cliente
+
+Encontrado el 2026-11-11 en una revision de bugs. El generador sorteaba
+`fecha_alta` entre 3 anios y 1 mes antes de la fecha base, pero el historial
+es de 12 meses y `generar_transacciones_mes` no revisaba la apertura de la
+cuenta. En la sesion base (semilla 42, 500 clientes), 160 clientes (32 %)
+tenian movimientos antes de su alta: 18,762 de 124,599 transacciones
+(15.1 %). Ademas 162 productos se abrian antes que su cliente, y las
+tarjetas pagaban desde antes de abrirse (`_cuota_vigente` siempre devolvia
+True para ellas). `antiguedad_dias`, variable del modelo, contradecia el
+historial del propio cliente. Ninguna regla de Silver lo revisaba.
+
+Fix:
+
+- `fecha_alta` cae antes del primer mes del historial base
+  (`inicio_historial`); con 12 meses, del 2023-09-30 al 2025-09-30.
+- Tarjeta, prestamo y CETES se abren entre el alta del cliente y un mes antes
+  de la fecha base.
+- Ninguna deuda paga antes del mes siguiente a su apertura.
+- Regla nueva de Silver, `date_not_before` (motivo `datebefore`): una cuenta
+  no se abre antes del alta de su cliente y un movimiento no ocurre antes de
+  que exista su cuenta.
+
+Cada sorteo de fecha sigue siendo uno solo, asi que el resto de la sesion no
+se desfasa: las compras, depositos, nominas, P2P y retiros salen identicos.
+Solo cambian las fechas de alta y apertura y desaparecen 864 pagos de
+tarjeta anteriores a su apertura (`pago_recurrente` pasa de 4,188 a 3,324).
+Las cifras del modelo, las bandas y el simulador cambian y se vuelven a medir
+con una instancia nueva. Una sesion ya generada se sigue reutilizando con sus
+datos (`version_generador` queda registrado en el manifest), y una entrega
+nueva sobre una instancia vieja la detiene `verificar_continuacion`:
+hay que empezar una instancia nueva. Pruebas en
+`tests/test_coherencia_temporal.py`.
+
 ### Sesiones distintas segun la zona horaria de la maquina
 
 Encontrado el 2026-10-16 al correr la primera entrega con escenario de

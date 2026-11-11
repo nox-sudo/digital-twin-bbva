@@ -83,6 +83,13 @@ cuentas:
     cliente_id:
       references_entity: clientes
       references_column: cliente_id
+  # Coherencia temporal entre entidades: una cuenta no se abre antes del
+  # alta de su cliente. Se une por `via` contra la entidad ya validada.
+  date_not_before:
+    fecha_apertura:
+      via: cliente_id
+      references_entity: clientes
+      references_column: fecha_alta
   conditional_not_null:
     - column: limite_credito
       when_column: tipo_cuenta
@@ -137,6 +144,12 @@ transacciones:
     cuenta_id:
       references_entity: cuentas
       references_column: cuenta_id
+  # Un movimiento no ocurre antes de que exista su cuenta.
+  date_not_before:
+    fecha:
+      via: cuenta_id
+      references_entity: cuentas
+      references_column: fecha_apertura
 
 # Umbral de cuarentena por entidad (src/calidad/umbrales.py). La tasa es
 # filas en cuarentena / filas que entraron a validar (ya deduplicadas).
