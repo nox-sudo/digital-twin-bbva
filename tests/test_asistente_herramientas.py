@@ -81,6 +81,19 @@ def test_el_cliente_no_ejecuta_el_resumen_del_portafolio(gold, tmp_path, caplog)
 def test_el_cliente_conserva_la_comparacion(gold, tmp_path):
     resultado = h.ejecutar("comparar_con_portafolio", {}, contexto(gold, tmp_path))
     assert "error" not in resultado
+    assert all("mediana_portafolio" in c for c in resultado["comparacion"])
+
+
+def test_el_total_de_clientes_solo_para_admin(gold, tmp_path):
+    """El total de clientes es una cifra de todo el banco, como las de
+    resumen_portafolio: el cliente no lo recibe, el admin si."""
+    cliente = h.ejecutar("comparar_con_portafolio", {}, contexto(gold, tmp_path))
+    admin = h.ejecutar(
+        "comparar_con_portafolio", {}, contexto(gold, tmp_path, rol="admin")
+    )
+    assert "clientes_en_portafolio" not in cliente
+    assert admin["clientes_en_portafolio"] == 2
+    assert cliente["comparacion"] == admin["comparacion"]
 
 
 def test_los_esquemas_coinciden_con_las_firmas():
