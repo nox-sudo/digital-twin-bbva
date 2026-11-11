@@ -318,11 +318,10 @@ COLUMNAS_ALERTAS = [
 ]
 
 
-def alertas_airflow(ruta: str, limite: int = 20) -> pd.DataFrame:
-    """Las alertas mas recientes primero (dags/alertas.py escribe una linea
-    JSON por tarea que agoto sus reintentos). Una linea ilegible se omite:
-    el archivo es acumulable y una escritura cortada no debe ocultar las
-    demas."""
+def _alertas_jsonl(ruta: str, columnas: list[str], limite: int) -> pd.DataFrame:
+    """Lee un archivo de alertas acumulable (una linea JSON por alerta), las
+    mas recientes primero. Una linea ilegible se omite: una escritura cortada
+    no debe ocultar las demas."""
     archivo = Path(ruta)
     filas = []
     if archivo.exists():
@@ -331,13 +330,49 @@ def alertas_airflow(ruta: str, limite: int = 20) -> pd.DataFrame:
                 filas.append(json.loads(linea))
             except json.JSONDecodeError:
                 continue
-    alertas = pd.DataFrame(filas).reindex(columns=COLUMNAS_ALERTAS)
+    alertas = pd.DataFrame(filas).reindex(columns=columnas)
     alertas["fecha"] = pd.to_datetime(alertas["fecha"], utc=True)
     return (
         alertas.sort_values("fecha", ascending=False)
         .head(limite)
         .reset_index(drop=True)
     )
+
+
+def alertas_airflow(ruta: str, limite: int = 20) -> pd.DataFrame:
+    """Tareas del DAG que agotaron sus reintentos (dags/alertas.py)."""
+    return _alertas_jsonl(ruta, COLUMNAS_ALERTAS, limite)
+
+
+COLUMNAS_ALERTAS_CUARENTENA = [
+    "fecha",
+    "run_id",
+    "entidad",
+    "nivel",
+    "filas_entrada",
+    "filas_cuarentena",
+    "tasa",
+    "umbral_aviso",
+    "umbral_bloqueo",
+    "reglas",
+]
+
+
+def alertas_cuarentena(ruta: str, limite: int = 20) -> pd.DataFrame:
+    """Entidades que alcanzaron su umbral de aviso o de bloqueo en Silver
+    (src/calidad/umbrales.py). Las reglas principales se muestran en una
+    columna de texto, como en la tabla de calidad por entidad."""
+    crudas = _alertas_jsonl(
+        ruta, COLUMNAS_ALERTAS_CUARENTENA + ["reglas_principales"], limite
+    )
+    crudas["reglas"] = crudas["reglas_principales"].map(
+        lambda rs: (
+            ", ".join(f"{r['regla']} ({r['filas']})" for r in rs)
+            if isinstance(rs, list)
+            else ""
+        )
+    )
+    return crudas[COLUMNAS_ALERTAS_CUARENTENA]
 
 
 # ---------------------------------------------------------------------------

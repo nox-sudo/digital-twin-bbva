@@ -137,3 +137,23 @@ transacciones:
     cuenta_id:
       references_entity: cuentas
       references_column: cuenta_id
+
+# Umbral de cuarentena por entidad (src/calidad/umbrales.py). La tasa es
+# filas en cuarentena / filas que entraron a validar (ya deduplicadas).
+#   aviso:   se registra una alerta en data/calidad/alertas_cuarentena.jsonl
+#            y la corrida sigue.
+#   bloqueo: ademas, Silver no se escribe, la tarea falla y se restauran las
+#            tablas que la corrida alcanzo a escribir. null = solo avisar.
+#   filas_minimas: por debajo no se bloquea (con pocas filas el porcentaje
+#            no dice nada de la fuente).
+# Valores de partida del proyecto, no un estandar: una entrega limpia da 0 %
+# (el smoke test de CI lo exige), asi que 1 % ya es una senal; con 10 % Gold
+# calcularia KPIs sin uno de cada diez registros. Por la cascada de llaves
+# foraneas, un problema en clientes se propaga a cuentas y transacciones con
+# una tasa parecida, asi que un mismo umbral sirve para las cuatro.
+# Para ajustar una entidad: agregar su bloque con las claves que cambian.
+umbrales_cuarentena:
+  default:
+    aviso: 0.01
+    bloqueo: 0.10
+    filas_minimas: 100

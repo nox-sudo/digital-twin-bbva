@@ -275,3 +275,26 @@ def test_alertas_recientes_primero_y_omite_lineas_cortadas(tmp_path):
     )
     alertas = datos.alertas_airflow(str(archivo), limite=1)
     assert alertas["task_id"].tolist() == ["b"]
+
+
+# --- Alertas de cuarentena -------------------------------------------------------
+
+
+def test_alertas_cuarentena_sin_archivo_es_vacio(tmp_path):
+    alertas = datos.alertas_cuarentena(str(tmp_path / "no_existe.jsonl"))
+    assert alertas.empty
+    assert list(alertas.columns) == datos.COLUMNAS_ALERTAS_CUARENTENA
+
+
+def test_alertas_cuarentena_lee_lo_que_escribe_umbrales(tmp_path):
+    from src.calidad import umbrales as um
+
+    archivo = tmp_path / um.ARCHIVO_ALERTAS
+    umbral = um.Umbral(aviso=0.01, bloqueo=0.10, filas_minimas=100)
+    for cuarentena in (20, 300):
+        ev = um.evaluar("transacciones", 1000, cuarentena, {"fk_cuenta_id": 7}, umbral)
+        um.escribir_alerta(um.registro_de_alerta(ev, "silver_x"), archivo)
+    alertas = datos.alertas_cuarentena(str(archivo))
+    assert sorted(alertas["nivel"]) == ["aviso", "bloqueo"]
+    assert set(alertas["reglas"]) == {"fk_cuenta_id (7)"}
+    assert set(alertas["tasa"]) == {0.02, 0.3}

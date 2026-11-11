@@ -16,6 +16,9 @@ resumen_portafolio: data/calidad/resumen_portafolio
 # Alertas de Airflow: una linea JSON por tarea que agoto sus reintentos
 # (dags/alertas.py).
 alertas_airflow: data/calidad/alertas_airflow.jsonl
+# Alertas de cuarentena: una linea JSON por entidad que alcanzo su umbral de
+# aviso o de bloqueo en Silver (src/calidad/umbrales.py).
+alertas_cuarentena: data/calidad/alertas_cuarentena.jsonl
 monitoreo_psi: config/monitoreo_psi.yaml
 # Usuarios del dashboard (generate_credentials.py): solo hashes argon2id.
 usuarios: data/auth/usuarios.duckdb

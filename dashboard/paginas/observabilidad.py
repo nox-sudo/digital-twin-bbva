@@ -189,6 +189,44 @@ else:
         },
     )
 
+# --- Alertas de cuarentena -------------------------------------------------
+st.subheader("Alertas de cuarentena")
+cuarentena = comun.datos.alertas_cuarentena(cfg["alertas_cuarentena"])
+if cuarentena.empty:
+    st.success(
+        "Sin alertas: ninguna entidad ha superado su umbral de cuarentena en Silver."
+    )
+else:
+    st.caption(
+        "Entidades cuya proporción de filas en cuarentena alcanzó su umbral "
+        "(config/business_rules.yaml, umbrales_cuarentena). Un aviso deja seguir "
+        "la corrida; un bloqueo detiene Silver y conserva la versión anterior, "
+        "para no publicar una entrega rota."
+    )
+    st.dataframe(
+        cuarentena,
+        hide_index=True,
+        use_container_width=True,
+        column_config={
+            "fecha": st.column_config.DatetimeColumn(
+                "Fecha (UTC)", format="DD/MM/YYYY HH:mm:ss"
+            ),
+            "run_id": "Corrida",
+            "entidad": "Entidad",
+            "nivel": "Nivel",
+            "filas_entrada": st.column_config.NumberColumn("Entrada", format="%,d"),
+            "filas_cuarentena": st.column_config.NumberColumn(
+                "En cuarentena", format="%,d"
+            ),
+            "tasa": st.column_config.NumberColumn("Tasa", format="percent"),
+            "umbral_aviso": st.column_config.NumberColumn("Aviso", format="percent"),
+            "umbral_bloqueo": st.column_config.NumberColumn(
+                "Bloqueo", format="percent"
+            ),
+            "reglas": "Reglas principales",
+        },
+    )
+
 # --- Deriva de datos (PSI) -------------------------------------------------
 st.subheader("Deriva de datos (PSI)")
 historico_psi = comun.datos.deriva_psi(cfg["deriva_psi"])
