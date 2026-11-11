@@ -1,0 +1,103 @@
+# experimentos/eval_asistente_v6.yaml
+#
+# Banco de evaluacion del asistente, v6: preguntas sobre la documentacion
+# del proyecto (herramienta buscar_documentacion, solo para el admin).
+# Escrito el 2026-11-11, antes de correrlo con el modelo: no se usa para
+# ajustar el prompt ni la busqueda. Ninguna pregunta esta en v1 a v5, el
+# sondeo ni experimentos/eval_rag_documentacion.yaml.
+#
+# Mide lo que la evaluacion de recuperacion no puede: que el modelo elija
+# buscar_documentacion para una pregunta sobre el proyecto, que cite la
+# fuente que recibio y que no agregue cifras de memoria. Dos casos de
+# control: preguntas de datos que el admin hace y que NO van a la
+# documentacion.
+#
+# Campos como en la v2 a la v5, mas:
+#   cita_fuente: la respuesta nombra el archivo de algun fragmento recibido.
+#   fuente_esperada: algun fragmento recibido viene de uno de estos archivos
+#     (la busqueda trajo una fuente que responde).
+#
+# Todos los casos corren con rol admin (categoria documentacion). Con
+# --rol cliente se mide que un cliente no reciba la documentacion.
+
+version: 6
+clientes:
+  CLI-000001: riesgo alto, el cliente del simulador en el guion de la demo
+  CLI-000210: gasta mas de lo que le entra
+  CLI-000377: sin uso particular; tercer contexto
+repeticiones: 3
+
+casos:
+  # --- Preguntas sobre el proyecto ------------------------------------------------
+  - id: doc_proteccion_datos_personales
+    categoria: documentacion
+    pregunta: "¿Cómo se protege la información personal de los clientes dentro del pipeline?"
+    herramientas: [buscar_documentacion]
+    cita_fuente: true
+    fuente_esperada: [docs/seguridad.md]
+  - id: doc_motor_calidad_propio
+    categoria: documentacion
+    pregunta: "¿Por qué hicieron su propio motor de calidad y no usaron Great Expectations?"
+    herramientas: [buscar_documentacion]
+    cita_fuente: true
+    fuente_esperada: [docs/arquitectura.md]
+  - id: doc_fila_invalida
+    categoria: documentacion
+    pregunta: "¿Qué le pasa a un registro que no cumple las reglas de negocio?"
+    herramientas: [buscar_documentacion]
+    cita_fuente: true
+    fuente_esperada: [docs/arquitectura.md, README.md, docs/seguridad.md, docs/diccionario-datos.md]
+  - id: doc_etiqueta_impago
+    categoria: documentacion
+    pregunta: "¿De dónde sale la etiqueta de impago con la que se entrena el modelo?"
+    herramientas: [buscar_documentacion]
+    cita_fuente: true
+    # arquitectura.md y README.md agregados al revisar la busqueda sin el
+    # modelo: las dos explican la etiqueta como evento posterior.
+    fuente_esperada: [docs/technical-debt.md, docs/diccionario-datos.md, docs/arquitectura.md, README.md]
+  - id: doc_psi_umbral
+    categoria: documentacion
+    pregunta: "¿Qué quiere decir que el PSI pase de 0.25?"
+    herramientas: [buscar_documentacion]
+    cita_fuente: true
+    fuente_esperada: [docs/monitoreo-deriva.md, docs/arquitectura.md]
+  - id: doc_levantar_proyecto
+    categoria: documentacion
+    pregunta: "¿Qué necesito para correr el proyecto en otra computadora?"
+    herramientas: [buscar_documentacion]
+    cita_fuente: true
+    fuente_esperada: [docs/ejecucion-local.md, README.md]
+  - id: doc_bootstrap_simulador
+    categoria: documentacion
+    pregunta: "¿Por qué el simulador remuestrea meses reales en vez de usar una distribución normal?"
+    herramientas: [buscar_documentacion]
+    cita_fuente: true
+    fuente_esperada: [docs/arquitectura.md, docs/technical-debt.md, README.md]
+  - id: doc_sal_pii
+    categoria: documentacion
+    pregunta: "¿Quién genera la sal del hash y en qué archivo se guarda?"
+    herramientas: [buscar_documentacion]
+    cita_fuente: true
+    fuente_esperada: [docs/seguridad.md, docs/ejecucion-local.md]
+  - id: doc_evaluacion_asistente
+    categoria: documentacion
+    pregunta: "¿Cómo se evaluó al asistente y qué tan bien salió?"
+    herramientas: [buscar_documentacion]
+    cita_fuente: true
+    fuente_esperada: [docs/evaluacion-asistente.md]
+  - id: doc_riesgos_aceptados
+    categoria: documentacion
+    pregunta: "¿Qué riesgos de seguridad decidió aceptar el proyecto?"
+    herramientas: [buscar_documentacion]
+    cita_fuente: true
+    fuente_esperada: [docs/seguridad.md]
+
+  # --- Control: preguntas de datos del admin, no de documentacion -------------------
+  - id: control_riesgo_cliente
+    categoria: documentacion
+    pregunta: "¿Qué probabilidad de impago tiene este cliente?"
+    herramientas: [perfil_cliente]
+  - id: control_clientes_riesgo_alto
+    categoria: documentacion
+    pregunta: "¿Cuántos clientes están hoy en la banda de riesgo alto?"
+    herramientas: [resumen_portafolio]

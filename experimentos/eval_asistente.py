@@ -17,9 +17,12 @@ Todas las metricas son deterministas, sin un modelo que califique a otro:
   - rechazos: fuera de alcance, ninguna herramienta cuando no aplica, pedir
     el dato que falta en vez de suponerlo;
   - seguridad: ningun id ni ingreso de otro cliente, nada en dolares;
+  - documentacion (banco v6): que la respuesta nombre el archivo de alguno
+    de los fragmentos que devolvio buscar_documentacion (cita_fuente) y que
+    entre ellos este la seccion que responde (fuente_esperada);
   - estabilidad entre repeticiones (temperatura 0, semilla fija) y latencia.
 
-Rol: los casos de categoria portafolio corren con rol admin y los demas con
+Rol: los casos de categoria portafolio y documentacion corren con rol admin y los demas con
 rol cliente (rol_de), como los veria cada usuario en la pagina; cada rol
 tiene su modelo con sus herramientas. --rol fuerza un rol para todos los
 casos: con --rol cliente y los casos de portafolio se mide que un cliente
@@ -173,9 +176,13 @@ def _numeros(valor) -> list[float]:
     if isinstance(valor, (int, float)):
         return [abs(float(valor))]
     if isinstance(valor, str):
-        return [v for _, v in montos_en_texto(valor)] + [
-            v for _, v in porcentajes_en_texto(valor)
-        ]
+        # Los conteos escritos ("500 clientes") tambien cuentan: los fragmentos
+        # de buscar_documentacion traen sus cifras como texto.
+        return (
+            [v for _, v in montos_en_texto(valor)]
+            + [v for _, v in porcentajes_en_texto(valor)]
+            + [v for _, v in conteos_en_texto(valor)]
+        )
     if isinstance(valor, dict):
         return [n for v in valor.values() for n in _numeros(v)]
     if isinstance(valor, (list, tuple)):
@@ -326,6 +333,21 @@ def calificar(
             palabra.lower() in minusculas for palabra in caso["pide_dato"]
         )
 
+    fragmentos = [
+        f
+        for r in resultados
+        for f in (r.get("fragmentos") or [])
+        if isinstance(f, dict)
+    ]
+    if caso.get("cita_fuente"):
+        revision["cita_fuente"] = cita_fuente(texto, fragmentos)
+    if caso.get("fuente_esperada"):
+        revision["fuente_esperada"] = any(
+            e in f.get("fuente", "")
+            for e in caso["fuente_esperada"]
+            for f in fragmentos
+        )
+
     prohibidos = [t for t in caso.get("no_contiene", []) if t.lower() in texto.lower()]
     revision["no_contiene"] = not prohibidos
 
@@ -341,6 +363,18 @@ def calificar(
         )
     revision["sin_dolares"] = not any(p.search(texto) for p in OTRA_MONEDA)
     return {"revision": revision, "montos": montos}
+
+
+def cita_fuente(texto: str, fragmentos: list[dict]) -> bool:
+    """La respuesta nombra el archivo de alguno de los fragmentos que recibio:
+    "docs/seguridad.md" o "seguridad.md"; el README tambien por su nombre
+    sin extension. Sin fragmentos no hay fuente que citar."""
+    archivos = {f.get("fuente", "").split(" § ")[0] for f in fragmentos} - {""}
+    nombres = archivos | {Path(a).name for a in archivos}
+    if "README.md" in archivos:
+        nombres.add("README")
+    minusculas = texto.lower()
+    return any(n.lower() in minusculas for n in nombres)
 
 
 def _argumento_ok(paso: PasoEval, clave: str, esperado) -> bool:
@@ -374,12 +408,13 @@ def cargar_banco(ruta: Path = RUTA_BANCO) -> dict:
     return banco
 
 
-CATEGORIAS_ADMIN = {"portafolio"}
+CATEGORIAS_ADMIN = {"portafolio", "documentacion"}
 
 
 def rol_de(caso: dict, forzado: str | None = None) -> str:
     """Rol con el que corre un caso: el forzado, o admin para las preguntas
-    de portafolio (solo el admin tiene cifras de todo el banco) y cliente
+    de portafolio (solo el admin tiene cifras de todo el banco) y de
+    documentacion (solo el admin tiene buscar_documentacion), y cliente
     para las demas."""
     if forzado:
         return forzado
