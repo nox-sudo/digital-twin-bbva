@@ -21,6 +21,7 @@ dependencies = [
     "pyyaml>=6.0.3",
     "scikit-learn>=1.9.0",
     "shap>=0.51.0",
+    "snowballstemmer>=3.0",
     "sqlalchemy>=2.0.51",
     "xgboost>=3.2.0",
 ]

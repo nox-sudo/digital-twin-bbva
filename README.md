@@ -141,6 +141,7 @@ digital-twin-bbva/
 │   ├── herramientas.py           # Herramientas del asistente: cifras de Gold y del simulador, cliente fijado por la interfaz
 │   ├── conversacion.py           # Bucle de herramientas con Ollama (LangChain) y prompt de sistema
 │   ├── origen.py                 # Guardas: datos que el usuario no dio y vivienda evaluada como compra
+│   ├── documentacion.py          # Búsqueda BM25 en README y docs/ para buscar_documentacion (solo admin)
 │   └── alcance.py                # Verificación previa: preguntas fuera de alcance (recomendaciones de inversión)
 ├── dags/
 │   ├── gemelo_pipeline_dag.py    # DAG de Airflow (DockerOperator), mensual y con alertas
@@ -168,6 +169,7 @@ digital-twin-bbva/
 │   ├── test_asistente_conversacion.py  # Bucle de conversación con un modelo falso (sin Ollama)
 │   ├── test_asistente_origen.py  # Guardas de datos inventados y de vivienda
 │   ├── test_asistente_alcance.py # Verificación previa de alcance
+│   ├── test_asistente_documentacion.py # Búsqueda en la documentación y su regresión contra el banco
 │   ├── test_eval_asistente.py    # Calificación de la evaluación del asistente y banco bien formado
 │   ├── test_acceso.py            # Login y roles: solo hashes, credenciales ignoradas por git, un cliente no ve a otro
 │   ├── test_explicacion.py       # SHAP por cliente: reproduce el score, modelo del pliegue, frases
@@ -376,7 +378,7 @@ Catálogo de 12 KPIs en 5 categorías (ingresos, gastos, ahorro y liquidez, ries
 - [x] Arranque reproducible con un comando en cualquier máquina con Docker (`demo.sh`)
 - [x] Simulador Monte Carlo de hipoteca: riesgo de déficit con y sin el crédito, enganche y capacidad hipotecaria, en línea de comandos y en el dashboard
 - [x] Monitoreo de deriva de datos con PSI contra una línea base congelada, con histórico en `data/calidad/deriva_psi/` (detalle en [docs/monitoreo-deriva.md](docs/monitoreo-deriva.md))
-- [ ] Asistente conversacional RAG local (Ollama + Llama 3.1 + LangChain): herramientas, conversación, página y evaluación con preguntas no vistas (cinco rondas, [docs/evaluacion-asistente.md](docs/evaluacion-asistente.md)) listas; falta el RAG sobre la documentación
+- [ ] Asistente conversacional RAG local (Ollama + Llama 3.1 + LangChain): herramientas, conversación, página y evaluación con preguntas no vistas (cinco rondas, [docs/evaluacion-asistente.md](docs/evaluacion-asistente.md)) listas; búsqueda en la documentación con BM25 y su evaluación de recuperación lista; falta probarla con el modelo en local
 - [x] Dashboard en Streamlit con las vistas de portafolio, cliente, simulador, asistente y observabilidad (decisión en [docs/arquitectura.md](docs/arquitectura.md#decisiones-de-diseno))
 
 ---

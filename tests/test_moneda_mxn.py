@@ -128,6 +128,7 @@ LLAMADAS = [
     ),
     ("escalera_financiera", {}),
     ("resumen_portafolio", {}),
+    ("buscar_documentacion", {"consulta": "capacidad hipotecaria y cuota"}),
 ]
 
 

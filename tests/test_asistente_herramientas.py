@@ -51,7 +51,8 @@ def test_esquemas_por_rol():
     admin = [e["function"]["name"] for e in h.esquemas("admin")]
     cliente = [e["function"]["name"] for e in h.esquemas("cliente")]
     assert admin == list(h.HERRAMIENTAS)
-    assert cliente == [n for n in h.HERRAMIENTAS if n != "resumen_portafolio"]
+    solo_admin = {"resumen_portafolio", "buscar_documentacion"}
+    assert cliente == [n for n in h.HERRAMIENTAS if n not in solo_admin]
     assert "comparar_con_portafolio" in cliente
     with pytest.raises(ValueError):
         h.esquemas("gerente")
