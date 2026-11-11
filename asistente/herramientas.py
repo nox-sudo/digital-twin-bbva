@@ -45,6 +45,7 @@ import numpy as np
 import pandas as pd
 import yaml
 
+from asistente import documentacion as doc
 from dashboard import datos
 from src.common.formato import formato_mxn
 from src.common.mercado import (
@@ -851,6 +852,45 @@ def resumen_portafolio(ctx: Contexto) -> dict:
     return resultado
 
 
+# Fragmentos por consulta. Con 5 la evaluacion sube de 17 a 19 de 20
+# preguntas directas, pero config/asistente.yaml no fija el contexto de
+# Ollama y el prompt, los esquemas y 6 turnos de historial ya ocupan parte;
+# con 3 (unas 540 palabras) no hay riesgo de que Ollama recorte en silencio.
+FRAGMENTOS_DOCUMENTACION = 3
+LARGO_MAXIMO_CONSULTA = 300
+
+
+def buscar_documentacion(ctx: Contexto, consulta: str) -> dict:
+    """Fragmentos de README.md y docs/*.md que responden una pregunta sobre
+    como funciona el proyecto, con su fuente (archivo § seccion) para
+    citarla. La busqueda la hace Python (asistente/documentacion.py); el
+    modelo solo redacta con lo que vuelve. Sin datos de clientes: la
+    documentacion no los tiene."""
+    consulta = str(consulta).strip()
+    if not consulta:
+        raise ErrorHerramienta("consulta no puede estar vacia")
+    if len(consulta) > LARGO_MAXIMO_CONSULTA:
+        raise ErrorHerramienta(
+            f"consulta debe tener a lo mas {LARGO_MAXIMO_CONSULTA} caracteres"
+        )
+    resultados = doc.indice_del_repo().buscar(consulta, k=FRAGMENTOS_DOCUMENTACION)
+    if not resultados:
+        return {
+            "sin_resultados": True,
+            "lectura": "La documentacion del proyecto no trae nada sobre esto.",
+        }
+    return {
+        "fragmentos": [
+            {"fuente": r.fragmento.fuente, "texto": r.fragmento.texto}
+            for r in resultados
+        ],
+        # Los fragmentos son los mejores por palabras en comun, no
+        # necesariamente una respuesta: el modelo debe poder decir que no.
+        "lectura": "Responde solo con lo que dicen estos fragmentos y cita la "
+        "fuente (archivo § seccion). Si no responden la pregunta, dilo.",
+    }
+
+
 # ---------------------------------------------------------------------------
 # Registro: lo que ve el modelo
 # ---------------------------------------------------------------------------
@@ -1002,6 +1042,28 @@ HERRAMIENTAS = {
         "banda.",
         "parametros": {},
         "requeridos": [],
+    },
+    "buscar_documentacion": {
+        "funcion": buscar_documentacion,
+        "roles": ("admin",),
+        "descripcion": "Busca en la documentacion tecnica del proyecto (README y "
+        "docs/) como funciona algo: arquitectura, capas Bronze/Silver/Gold, "
+        "reglas de calidad y cuarentena, seguridad y PII, modelo de riesgo, "
+        "monitoreo de deriva, simulador, decisiones de diseno, como correrlo. "
+        "No trae datos de clientes ni del portafolio. Devuelve fragmentos con "
+        "su fuente.",
+        "parametros": {
+            "consulta": {
+                "type": "string",
+                "description": "La pregunta sobre el proyecto, con las palabras "
+                "del usuario",
+            }
+        },
+        "requeridos": ["consulta"],
+        # Mensaje propio al rechazarla por rol: el de ERROR_ROL habla de
+        # cifras del banco, que aqui no aplica.
+        "error_rol": "La documentacion tecnica del proyecto es solo para el "
+        "administrador. Puedo responder sobre los datos de este cliente.",
     },
 }
 
@@ -1178,7 +1240,7 @@ def ejecutar(nombre: str, argumentos: dict | None, ctx: Contexto) -> dict:
         return {"error": f"No existe la herramienta {nombre!r}"}
     if nombre not in herramientas_de(ctx.rol):
         log.info("herramienta fuera del rol: herramienta=%s rol=%s", nombre, ctx.rol)
-        return {"error": ERROR_ROL}
+        return {"error": HERRAMIENTAS[nombre].get("error_rol", ERROR_ROL)}
     try:
         argumentos, _ = normalizar(nombre, argumentos)
     except ErrorHerramienta as e:

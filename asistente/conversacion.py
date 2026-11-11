@@ -186,7 +186,20 @@ def prompt_sistema(ctx: Contexto, ultimo_mes: str) -> str:
         "- Los montos son pesos mexicanos; las proporciones y probabilidades "
         "dilas como porcentaje.\n"
         "- Los datos son sinteticos, de un gemelo digital; no son de una persona "
-        "real."
+        "real." + _regla_documentacion(ctx)
+    )
+
+
+def _regla_documentacion(ctx: Contexto) -> str:
+    """Solo el admin tiene buscar_documentacion; el prompt del cliente no la
+    nombra."""
+    if ctx.rol != "admin":
+        return ""
+    return (
+        "\n- Para preguntas sobre como funciona el proyecto (arquitectura, "
+        "calidad de datos, seguridad, modelo, decisiones de diseno, como "
+        "correrlo), usa buscar_documentacion y cita la fuente que devuelve. No "
+        "lo respondas de memoria; si los fragmentos no lo responden, dilo."
     )
 
 

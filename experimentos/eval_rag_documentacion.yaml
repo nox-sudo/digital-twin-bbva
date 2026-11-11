@@ -1,0 +1,121 @@
+# experimentos/eval_rag_documentacion.yaml
+#
+# Banco para medir la recuperacion de asistente/documentacion.py. Cada
+# pregunta esta redactada con otras palabras que el encabezado de la seccion
+# que la responde. "esperado" lista las secciones aceptables como
+# archivo + texto que debe aparecer en la ruta de encabezados; acierta si
+# alguna sale entre los primeros k fragmentos.
+#
+# "parafrasis: true" marca las preguntas que comparten pocas palabras con la
+# seccion; ahi se espera el limite de BM25 y se reportan aparte.
+# "fuera_del_corpus" son preguntas que la documentacion no responde: no
+# deben traer fragmentos de ninguna seccion esperada (se reportan, no se
+# exigen vacias: comparten palabras sueltas con el corpus).
+
+k: 3
+
+preguntas:
+  - id: d01
+    pregunta: "¿Por qué no usaron Great Expectations o dbt para validar?"
+    esperado: [{archivo: docs/arquitectura.md, seccion: "Decisiones de diseno"}]
+  - id: d02
+    pregunta: "¿Cada cuánto corre el DAG y qué pasa si una tarea falla?"
+    # ejecucion-local.md agregado al revisar la primera corrida: esa seccion
+    # responde las dos partes (mensual; 3 intentos y alerta).
+    esperado:
+      - {archivo: docs/arquitectura.md, seccion: "Calendario, reintentos y alertas"}
+      - {archivo: docs/ejecucion-local.md, seccion: "Calendario y alertas"}
+  - id: d03
+    pregunta: "¿Qué campos tiene la entidad de clientes?"
+    esperado: [{archivo: docs/diccionario-datos.md, seccion: "clientes"}]
+  - id: d04
+    pregunta: "¿Cómo protegen la CURP y el RFC en Silver?"
+    esperado:
+      - {archivo: docs/seguridad.md, seccion: "Clasificacion de datos por capa"}
+      - {archivo: docs/seguridad.md, seccion: "Datos personales sinteticos"}
+      - {archivo: docs/diccionario-datos.md, seccion: "clientes"}
+  - id: d05
+    pregunta: "¿Qué mide el PSI y cómo se interpreta?"
+    esperado: [{archivo: docs/monitoreo-deriva.md, seccion: "Que mide el PSI"}]
+  - id: d06
+    pregunta: "¿Por qué los cortes del PSI no se recalculan en cada corrida?"
+    esperado:
+      - {archivo: docs/monitoreo-deriva.md, seccion: "Por que los intervalos son fijos"}
+      - {archivo: docs/monitoreo-deriva.md, seccion: "Linea base congelada"}
+  - id: d07
+    pregunta: "¿Cómo levanto el asistente con Ollama en mi computadora?"
+    esperado: [{archivo: docs/ejecucion-local.md, seccion: "Asistente (Ollama)"}]
+  - id: d08
+    pregunta: "¿Cómo hago un respaldo y lo restauro después?"
+    esperado: [{archivo: docs/ejecucion-local.md, seccion: "Respaldo y restauracion"}]
+  - id: d09
+    pregunta: "¿Por qué la probabilidad de impago estaba descalibrada y cómo se corrigió?"
+    esperado: [{archivo: docs/technical-debt.md, seccion: "descalibrada"}]
+  - id: d10
+    pregunta: "¿Por qué la capacidad hipotecaria salía en 20 millones?"
+    esperado: [{archivo: docs/technical-debt.md, seccion: "tope de la busqueda"}]
+  - id: d11
+    pregunta: "¿Dónde se guarda la sal del hash de PII?"
+    esperado:
+      - {archivo: docs/seguridad.md, seccion: "Secretos"}
+      - {archivo: docs/ejecucion-local.md, seccion: "Respaldo y restauracion"}
+  - id: d12
+    pregunta: "¿Qué riesgos de seguridad se aceptaron conscientemente?"
+    esperado: [{archivo: docs/seguridad.md, seccion: "Riesgos aceptados"}]
+  - id: d13
+    pregunta: "¿Qué hace la tarea transformacion_silver del DAG?"
+    esperado: [{archivo: docs/arquitectura.md, seccion: "Tareas del DAG"}]
+  - id: d14
+    pregunta: "¿Cómo reconstruyo la instancia que se usa en la demo?"
+    esperado: [{archivo: docs/guion-demo.md, seccion: "Reconstruir la instancia"}]
+  - id: d15
+    pregunta: "¿Qué pasa si llega un CSV con líneas mal formadas?"
+    esperado:
+      - {archivo: docs/technical-debt.md, seccion: "Corrupcion estructural"}
+      - {archivo: docs/pruebas-robustez.md, seccion: "Pruebas de robustez"}
+  - id: d16
+    pregunta: "¿De dónde salen las tasas de mercado que usa el proyecto?"
+    esperado: [{archivo: docs/arquitectura.md, seccion: "Cifras externas"}]
+  - id: d17
+    pregunta: "¿Qué es el feature store y por qué se persiste?"
+    esperado:
+      - {archivo: README.md, seccion: "Datos y KPIs"}
+      - {archivo: docs/diccionario-datos.md, seccion: "gold_features_cliente"}
+  - id: d18
+    pregunta: "¿Cómo se define la etiqueta de impago del modelo?"
+    esperado:
+      - {archivo: docs/diccionario-datos.md, seccion: "gold_etiquetas_impago"}
+      - {archivo: docs/technical-debt.md, seccion: "Etiquetas de impago como evento posterior"}
+  - id: d19
+    pregunta: "¿Qué jobs corre GitHub Actions?"
+    esperado:
+      - {archivo: README.md, seccion: "Pruebas y CI/CD"}
+      - {archivo: docs/seguridad.md, seccion: "Controles automaticos en CI"}
+  - id: d20
+    pregunta: "¿Qué columnas de trazabilidad agrega Bronze?"
+    esperado: [{archivo: docs/diccionario-datos.md, seccion: "Columnas de trazabilidad"}]
+  - id: d21
+    pregunta: "¿Qué tan bien contestó el asistente en las evaluaciones?"
+    parafrasis: true
+    esperado: [{archivo: docs/evaluacion-asistente.md, seccion: "Resultados"}]
+  - id: d22
+    pregunta: "¿Cómo se dan cuenta de que los clientes cambiaron de comportamiento con el tiempo?"
+    parafrasis: true
+    esperado: [{archivo: docs/monitoreo-deriva.md, seccion: ""}]
+  - id: d23
+    pregunta: "¿Cómo evitan que alguien suba una contraseña al repositorio?"
+    parafrasis: true
+    esperado:
+      - {archivo: docs/seguridad.md, seccion: "Controles automaticos en CI"}
+      - {archivo: docs/seguridad.md, seccion: "Secretos"}
+  - id: d24
+    pregunta: "¿Qué tan morosos son los clientes según el modelo?"
+    parafrasis: true
+    esperado:
+      - {archivo: docs/diccionario-datos.md, seccion: "Modelo de riesgo"}
+      - {archivo: docs/technical-debt.md, seccion: "descalibrada"}
+
+fuera_del_corpus:
+  - "¿Cuál es la capital de Francia?"
+  - "¿Quién ganó el último mundial de futbol?"
+  - "Dame una receta de enchiladas"

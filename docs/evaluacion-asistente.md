@@ -1113,6 +1113,77 @@ sigue limitando lo que ve el modelo.
 No se repitieron los bancos: con 0 llamadas en texto, la correccion no pudo
 cambiar ninguna respuesta de esta corrida.
 
+## Busqueda en la documentacion (2026-11-11)
+
+Herramienta `buscar_documentacion`, solo para el admin: recupera fragmentos de
+`README.md` y `docs/*.md` (286 fragmentos) con BM25 y el modelo responde
+citando la fuente. Diseno en `asistente/documentacion.py` y en la tabla de
+decisiones de [arquitectura.md](arquitectura.md).
+
+### Que se midio
+
+Las preguntas del banco no se citan en este archivo: es parte del corpus y
+citarlas haria que la busqueda se encontrara a si misma.
+
+Solo la recuperacion, sin el modelo: si la seccion que responde cada pregunta
+sale entre los 3 fragmentos que recibiria el modelo. Banco en
+`experimentos/eval_rag_documentacion.yaml`: 20 preguntas directas, 4 de
+parafrasis (pocas palabras en comun con la seccion) y 3 fuera de la
+documentacion, redactadas con otras palabras que los encabezados.
+
+```bash
+uv run python experimentos/eval_rag_documentacion.py --detalle
+```
+
+### Resultados
+
+| Configuracion | Directas | Parafrasis | Seccion correcta en primer lugar |
+|---|---|---|---|
+| Terminos con recorte de plural | 16 de 20 | 0 de 4 | 11 de 24 |
+| Stemmer Snowball para espanol | 17 de 20 | 1 de 4 | 11 de 24 |
+| Snowball y encabezado con peso 2 (la que queda) | 17 de 20 | 1 de 4 | 13 de 24 |
+| La misma con 5 fragmentos | 19 de 20 | 1 de 4 | 13 de 24 |
+
+La primera fila ya incluye una correccion al banco: d02 se acepta tambien
+con `ejecucion-local.md § Calendario y alertas`, que responde las dos partes
+de la pregunta. Se
+agrego despues de leer la seccion, no para subir la cifra: d08 y d14, donde lo
+recuperado menciona el tema pero no lo responde, siguen como fallas.
+
+Pesos de encabezado de 1 a 4 quedan dentro de una pregunta entre si; se dejo 2
+y no se afino mas, porque con 24 preguntas una pregunta es ruido. Se quedan 3
+fragmentos y no 5: `config/asistente.yaml` no fija el contexto de Ollama
+(`num_ctx`) y el prompt, los esquemas de 9 herramientas y 6 turnos de
+historial ya ocupan parte; con 5 hay riesgo de que Ollama recorte en silencio.
+
+### Fallas que quedan
+
+- **d02:** con el stemmer, una forma del verbo correr coincide con el
+  "Como correrlo" del README y la instalacion gana. Es el costo de unir
+  formas verbales.
+- **d03:** la pregunta usa palabras que el diccionario de datos no usa (dice
+  "columnas"), y el nombre de la entidad aparece en casi todo el corpus.
+- **d14:** sale la introduccion del guion, que nombra el tema sin dar los
+  pasos.
+- **Parafrasis (3 de 4):** sin palabras en comun BM25 no tiene como
+  encontrarlas (un sinonimo coloquial de impago, o contrasena contra
+  secretos).
+  Es el caso en el que ayudarian los embeddings.
+- **Fuera de la documentacion:** de las 3 preguntas del banco (geografia,
+  deportes y cocina), una no trae nada y las otras dos traen 2 y 3 fragmentos
+  por palabras sueltas. El modelo recibe la instruccion de decir que los fragmentos no
+  responden; eso falta probarlo con el modelo.
+
+### Pendiente
+
+- Correr preguntas de documentacion con `llama3.1:8b` en la Mac: que elija
+  `buscar_documentacion` (y no una herramienta de datos) y que cite la fuente
+  sin agregar de memoria.
+- Revisar el contexto efectivo de Ollama y, si hace falta, fijar `num_ctx`
+  en `config/asistente.yaml`.
+- Si las parafrasis importan para la demo, comparar contra embeddings locales
+  (por ejemplo `nomic-embed-text` en Ollama) con este mismo banco.
+
 ## Limites de esta evaluacion
 
 - **Alcance:** un modelo, tres clientes y 24 preguntas en espanol. Cada
