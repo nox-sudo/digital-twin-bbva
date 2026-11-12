@@ -201,6 +201,27 @@ aleatorios, asi que la diferencia es la hipoteca, no el ruido.
   2027. Al ultimo corte: 3 reentrenar, 1 vigilar, 12 estables, 2 temporales
   (antiguedad y edad derivan por el paso del tiempo y no alertan).
 
+### 6. Asistente sobre la documentacion (1 min)
+
+Como `admin`, en la pagina "Asistente", una pregunta sobre como se
+resguarda la clave unica de registro de poblacion. Lo que hay que mostrar no es
+la respuesta sino la cita: el asistente usa `buscar_documentacion` y
+termina con la fuente (`archivo § seccion`), no con algo de memoria.
+
+- Fuente esperada: `docs/seguridad.md § ... > Clasificacion de datos por
+  capa` (los tres fragmentos que recibe el modelo salen de ahi y del
+  diccionario de datos).
+- Respaldo si la primera no cita bien: el origen de la informacion con
+  la que se construyo el gemelo; fuente esperada `docs/seguridad.md § ... > Datos
+  personales sinteticos`.
+- **Pendiente de probar en la Mac** con `llama3.1:8b` antes de grabar el
+  clip: que elija la herramienta y cite la fuente.
+
+Las preguntas se describen aqui sin su redaccion literal a proposito: este
+archivo tambien esta indexado, y una pregunta escrita igual que en la demo
+haria que el buscador devolviera este guion en lugar de la seccion que la
+responde.
+
 ## Preguntas probables
 
 - **Que tan bueno es el modelo?** AUC 0.692 +- 0.051 en validacion cruzada
