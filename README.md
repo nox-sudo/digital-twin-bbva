@@ -220,7 +220,6 @@ digital-twin-bbva/
 ├── monitor_drift.py
 ├── generate_credentials.py      # Usuarios del dashboard (admin y uno por cliente), solo hashes en la base
 ├── quality_report.py             # Reporte del registro histórico de calidad
-├── pipeline_summary.py           # Reporte visual HTML: volumen por capa en la última corrida
 ├── Dockerfile                    # Imagen del worker (PySpark + Delta)
 ├── docker-compose.yml            # Airflow, Postgres, MinIO, worker
 ├── demo.sh                       # Arranque de un comando: levanta todo y corre el DAG
@@ -240,7 +239,7 @@ Solo requiere Docker; no hace falta Python, Java ni Spark en la máquina.
 bash demo.sh
 ```
 
-Genera `.env`, construye el worker, levanta Airflow, Postgres y MinIO, dispara el DAG y muestra el avance tarea por tarea hasta terminar. Medido en esta máquina: unos 1:30 con la imagen ya construida y unos 2 minutos si Airflow y Postgres se recrean; la primera vez, construir la imagen suma unos 3 minutos antes de lanzar el DAG. Requisitos, comandos adicionales (`pipeline`, `reporte`, `calidad`, `nueva-entrega`, `sesiones`, `limpiar`, `respaldar`, `restaurar`), instrucciones para Windows y problemas comunes: [docs/ejecucion-local.md](docs/ejecucion-local.md).
+Genera `.env`, construye el worker, levanta Airflow, Postgres y MinIO, dispara el DAG y muestra el avance tarea por tarea hasta terminar. Medido en esta máquina: unos 1:30 con la imagen ya construida y unos 2 minutos si Airflow y Postgres se recrean; la primera vez, construir la imagen suma unos 3 minutos antes de lanzar el DAG. Requisitos, comandos adicionales (`pipeline`, `calidad`, `nueva-entrega`, `sesiones`, `limpiar`, `respaldar`, `restaurar`), instrucciones para Windows y problemas comunes: [docs/ejecucion-local.md](docs/ejecucion-local.md).
 
 - Airflow: `http://localhost:8080` y consola de MinIO: `http://localhost:9001`. Las credenciales se generan al azar por máquina en `.env` (nunca en el repo) y `demo.sh` las muestra al terminar. Detalle en [docs/seguridad.md](docs/seguridad.md).
 
@@ -280,12 +279,7 @@ uv run python main.py bronze --source data/raw_sources --out data/bronze
 
 Ver las opciones de un paso puntual: `uv run python main.py <paso> --help`.
 
-Dos reportes, para preguntas distintas:
-
-| Reporte | Responde | Comando |
-|---|---|---|
-| `pipeline_summary.py` | ¿Cuántas filas hay en cada capa en la última corrida? (HTML) | `uv run python pipeline_summary.py` |
-| `quality_report.py` | ¿Qué se rechazó, por qué regla, y cómo cambia entre corridas? | `uv run python main.py calidad` |
+Reporte de calidad: `quality_report.py` responde qué se rechazó, por qué regla y cómo cambia entre corridas (`uv run python main.py calidad`). El estado de la última corrida de cada capa y las filas por entidad de Silver están en el dashboard, vista Observabilidad.
 
 **Dashboard.** Tres vistas sobre Gold: portafolio (dónde se concentra el riesgo y quién revisar), cliente (perfil, flujo de efectivo mes a mes y a dónde se va el dinero) y observabilidad (última corrida por capa, calidad en Silver, coherencia entre las tablas de Gold y tendencia de la deriva de datos con PSI). Portafolio compara sus cifras de cabecera contra la sesión base, guardadas por corte en `data/calidad/resumen_portafolio/`. Solo lee: abre DuckDB en modo solo lectura, los logs de `data/logs/` y el histórico de `data/calidad/deriva_psi/`, sin Spark ni servicios de Docker. Streamlit vive en su propio grupo de dependencias, así que la imagen del worker no lo instala:
 

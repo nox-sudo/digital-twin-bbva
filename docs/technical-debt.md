@@ -839,7 +839,9 @@ version fija" mas arriba.
 Fuera de la auditoria, mismo patron que el hallazgo 3: `pipeline_summary.py`
 convertia cualquier error de lectura en 0 filas y podia reportar "Sin
 errores". Ahora distingue tabla inexistente (0) de error de lectura, que se
-muestra como tal y cambia el estado a "Lectura incompleta".
+muestra como tal y cambia el estado a "Lectura incompleta". El 2026-11-11 el
+script se elimino: el dashboard (vista Observabilidad) ya muestra el estado
+de cada capa y las filas por entidad de Silver.
 
 ### Etiquetas de impago: entradas y configuraciones sin guarda
 

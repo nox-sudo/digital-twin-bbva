@@ -36,9 +36,6 @@ rewrite_visual.py
 credentials.json
 token.json
 
-# Output de pipeline_summary.py (se regenera, no es codigo fuente)
-reporte_pipeline.html
-
 # Zip temporal de descarga
 gfd:silver.zip
 

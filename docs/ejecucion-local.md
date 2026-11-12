@@ -61,7 +61,6 @@ el escenario de deriva) y comparar contra las cifras esperadas, ver
 | Filas rechazadas por validaciones de Silver | `data/silver_quarantine/` (vacio con datos limpios) |
 | Logs de cada corrida | `data/logs/` |
 | Sesion de datos usada, con parametros y checksums | `data/sesiones/<id>/manifest.json` |
-| Resumen visual Bronze/Silver | `bash demo.sh reporte` genera `data/reporte_pipeline.html` |
 | Deriva de datos (PSI) por corrida | `data/calidad/deriva_psi/`; tendencia en el dashboard, vista Observabilidad ([monitoreo-deriva.md](monitoreo-deriva.md)) |
 | Alertas de tareas que agotaron sus reintentos | `data/calidad/alertas_airflow.jsonl`; las recientes en el dashboard, vista Observabilidad |
 
@@ -81,7 +80,6 @@ print(con.sql('SELECT kpi_id, COUNT(*) AS clientes FROM gold_kpis GROUP BY 1 ORD
 |---|---|
 | `bash demo.sh` | Levanta todo y corre el pipeline (igual a `levantar`) |
 | `bash demo.sh pipeline` | Corre los 9 pasos directo en el worker, sin Airflow. Mas rapido; util si solo interesa ver el procesamiento de datos |
-| `bash demo.sh reporte` | Genera el reporte HTML de conteos y tiempos |
 | `bash demo.sh estado` | Lista las corridas del DAG |
 | `bash demo.sh bajar` | Detiene los contenedores, conserva datos |
 | `bash demo.sh nueva-entrega` | Simula que llega el siguiente mes: genera la entrega, la publica en MinIO y Bronze ingiere solo lo nuevo |

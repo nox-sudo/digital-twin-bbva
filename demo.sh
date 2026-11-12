@@ -11,7 +11,6 @@
 #   bash demo.sh levantar     igual que arriba
 #   bash demo.sh pipeline     corre el pipeline directo en el worker, sin Airflow
 #                             (ruta rapida: no levanta Airflow, Postgres ni MinIO)
-#   bash demo.sh reporte      genera data/reporte_pipeline.html con conteos y tiempos
 #   bash demo.sh estado       muestra el estado de las ultimas corridas del DAG
 #   bash demo.sh bajar        detiene los contenedores (conserva datos)
 #   bash demo.sh nueva-entrega  simula que llega el siguiente mes de datos y lo procesa
@@ -205,7 +204,7 @@ Pipeline completado.
   KPIs en Gold (DuckDB)            data/gold/kpis.duckdb
   Modelo de riesgo y grafico SHAP  models/
 
-Siguiente paso sugerido: bash demo.sh reporte
+Siguiente paso sugerido: bash demo.sh calidad
 EOF
 }
 
@@ -246,13 +245,6 @@ cmd_pipeline() {
         docker compose run --rm worker main.py ${paso}
     done
     resumen_final
-}
-
-cmd_reporte() {
-    preparar_entorno
-    info "Generando reporte del pipeline"
-    docker compose run --rm worker pipeline_summary.py --no-abrir --out data/reporte_pipeline.html
-    echo "Reporte: ${PROJECT_DIR}/data/reporte_pipeline.html"
 }
 
 cmd_estado() {
@@ -529,7 +521,6 @@ cmd_limpiar() {
 case "${1:-levantar}" in
     levantar) cmd_levantar ;;
     pipeline) cmd_pipeline ;;
-    reporte) cmd_reporte ;;
     estado) cmd_estado ;;
     bajar) cmd_bajar ;;
     nueva-entrega) cmd_nueva_entrega ;;
