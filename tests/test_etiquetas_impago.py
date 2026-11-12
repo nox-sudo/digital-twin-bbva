@@ -182,15 +182,30 @@ def test_sin_producto_queda_en_el_valor_minimo(features_5k, estandarizadas_5k):
     )
 
 
-def test_un_faltante_en_producto_equivale_a_cero(features_5k, cfg):
+def test_un_faltante_en_uso_de_linea_equivale_a_cero(features_5k, cfg):
+    columna = features_5k.columns.get_loc("uso_linea_credito")
     con_nan = features_5k.copy()
-    con_nan.iloc[:50, con_nan.columns.get_loc("ratio_endeudamiento")] = np.nan
+    con_nan.iloc[:50, columna] = np.nan
     con_cero = features_5k.copy()
-    con_cero.iloc[:50, con_cero.columns.get_loc("ratio_endeudamiento")] = 0.0
+    con_cero.iloc[:50, columna] = 0.0
 
     pd.testing.assert_frame_equal(
         estandarizar_variables(con_nan, cfg.winsor_inferior, cfg.winsor_superior),
         estandarizar_variables(con_cero, cfg.winsor_inferior, cfg.winsor_superior),
+    )
+
+
+def test_un_faltante_en_ratio_equivale_al_maximo(features_5k, cfg):
+    """Ratio faltante = deuda sin ingreso: la mayor exposicion observada."""
+    columna = features_5k.columns.get_loc("ratio_endeudamiento")
+    con_nan = features_5k.copy()
+    con_nan.iloc[:50, columna] = np.nan
+    con_maximo = features_5k.copy()
+    con_maximo.iloc[:50, columna] = features_5k.iloc[50:, columna].max()
+
+    pd.testing.assert_frame_equal(
+        estandarizar_variables(con_nan, cfg.winsor_inferior, cfg.winsor_superior),
+        estandarizar_variables(con_maximo, cfg.winsor_inferior, cfg.winsor_superior),
     )
 
 

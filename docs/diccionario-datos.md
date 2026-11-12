@@ -202,7 +202,7 @@ Sin PII.
 | Columna | Origen | Descripcion |
 |---|---|---|
 | `cliente_id` | | |
-| Los 11 KPIs de `gold_kpis` salvo `probabilidad_impago` | Gold | Una columna por KPI. `ratio_endeudamiento` y `uso_linea_credito` valen 0 si el cliente no tiene el producto |
+| Los 11 KPIs de `gold_kpis` salvo `probabilidad_impago` | Gold | Una columna por KPI. `ratio_endeudamiento` y `uso_linea_credito` valen 0 si el cliente no tiene el producto. `ratio_endeudamiento` queda nulo si tiene deuda y no tiene ingreso |
 | `edad_anios` | Silver | Contra la fecha de corte de los datos (ultima transaccion), no contra la fecha del sistema |
 | `antiguedad_dias` | Silver | Dias desde `fecha_alta`, contra la fecha de corte |
 | `ingreso_declarado` | Silver | `ingreso_mensual_declarado` |

@@ -30,7 +30,10 @@ nueva del mismo proceso.
 
 Clientes sin producto. En el feature store ratio_endeudamiento y
 uso_linea_credito valen 0 para quien no tiene prestamo o tarjeta: no es un dato
-faltante, es ausencia de exposicion. Se deja en 0 ANTES de winsorizar y
+faltante, es ausencia de exposicion. Lo contrario es ratio_endeudamiento
+faltante: el cliente tiene deuda y no tiene ingreso. Ese cliente toma la razon
+mas alta observada (que el winsorizado lleva al p99), la mayor exposicion del
+portafolio, y no 0. Se deja en 0 ANTES de winsorizar y
 estandarizar, y no se imputa ni se excluye: asi el cliente sin producto recibe
 menos riesgo por ese canal que el que lo tiene (no puede caer en impago de un
 credito que no tiene), pero conserva el riesgo por capacidad de ahorro, rasgo
@@ -66,7 +69,9 @@ COLUMNAS_ETIQUETAS = [
 
 VARIABLES_OBSERVADAS = ["ratio_endeudamiento", "uso_linea_credito", "capacidad_ahorro"]
 # Ausencia de producto = 0 (no es dato faltante), igual que en risk_features.py.
-SIN_PRODUCTO_ES_CERO = ["ratio_endeudamiento", "uso_linea_credito"]
+SIN_PRODUCTO_ES_CERO = ["uso_linea_credito"]
+# Faltante = deuda sin ingreso: toma la razon mas alta observada.
+FALTANTE_ES_MAXIMO = ["ratio_endeudamiento"]
 
 # Columnas del proceso latente: no pueden aparecer en ninguna tabla de Gold ni en
 # la matriz con la que se entrena el modelo.
@@ -175,6 +180,10 @@ def estandarizar_variables(
     datos = features[VARIABLES_OBSERVADAS].astype(float).copy()
     for col in SIN_PRODUCTO_ES_CERO:
         datos[col] = datos[col].fillna(0.0)
+    for col in FALTANTE_ES_MAXIMO:
+        observados = datos[col][np.isfinite(datos[col])]
+        if datos[col].isna().any() and not observados.empty:
+            datos[col] = datos[col].fillna(observados.max())
     if datos.isna().any().any():
         malas = datos.columns[datos.isna().any()].tolist()
         raise ValueError(f"valores faltantes inesperados en {malas}")

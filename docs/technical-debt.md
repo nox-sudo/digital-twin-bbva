@@ -696,6 +696,22 @@ worker. `test_misma_sesion_en_cualquier_zona_horaria` genera la misma
 sesion en tres zonas (UTC, America/Mazatlan, Asia/Tokyo) en procesos
 separados y exige archivos identicos; con el codigo anterior falla.
 
+### Deuda sin ingreso contaba como cliente sin credito
+
+Encontrado el 2026-11-11 en una revision de bugs. `kpi_ratio_endeudamiento`
+descartaba a los clientes con deuda e ingreso 0 o nulo, y el feature store
+rellenaba la ausencia con 0, el valor de quien no tiene tarjeta ni prestamo.
+Un desempleado con deuda salia como el cliente menos expuesto, en el modelo y
+en las etiquetas. En la sesion base no afecta a nadie (el ingreso mas bajo de
+los 324 clientes con deuda es de unos 684 pesos al mes), pero con datos reales
+si.
+
+Fix: con deuda y sin ingreso la razon queda faltante (NaN) en `gold_kpis` y
+en el feature store; solo vale 0 quien no tiene fila, es decir, no tiene
+credito. XGBoost trata el faltante de forma nativa. En las etiquetas, el
+faltante toma la razon mas alta observada (el winsorizado la lleva al p99).
+El dashboard muestra "Sin ingreso". Pruebas en `tests/test_ratio_sin_ingreso.py`.
+
 ### Imagenes sin version fija (MinIO y worker)
 
 Senalado en la auditoria del 2026-10-14 (hallazgo 6). Resuelto en

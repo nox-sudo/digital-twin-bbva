@@ -189,8 +189,16 @@ def kpi_ratio_endeudamiento(ctx):
 
     deuda_pd = deuda.toPandas()
     combinado = deuda_pd.merge(ingreso, on="cliente_id", how="left")
-    combinado = combinado[combinado["ingreso"].notna() & (combinado["ingreso"] != 0)]
-    combinado["valor_numerico"] = combinado["deuda_total"] / combinado["ingreso"]
+    # Con deuda y sin ingreso la razon no existe: queda faltante (NaN), no se
+    # descarta. Descartar la fila hacia que el feature store la rellenara con
+    # 0, el valor de quien no tiene credito: un desempleado con deuda salia
+    # como el cliente menos expuesto. Sin saldo, la razon es 0 con o sin
+    # ingreso.
+    tiene_ingreso = combinado["ingreso"].notna() & (combinado["ingreso"] > 0)
+    combinado["valor_numerico"] = combinado["deuda_total"] / combinado["ingreso"].where(
+        tiene_ingreso
+    )
+    combinado.loc[combinado["deuda_total"] == 0, "valor_numerico"] = 0.0
     return combinado[["cliente_id", "valor_numerico"]]
 
 

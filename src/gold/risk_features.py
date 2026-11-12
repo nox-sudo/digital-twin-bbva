@@ -65,8 +65,11 @@ KPI_CATEGORICO = "categoria_gasto_dominante"
 # prediccion: ahi un 0 significa "el cliente no es de esa categoria".
 PREFIJO_ONEHOT = "categoria_dominante"
 
-# Ausencia de estos dos KPIs significa que el cliente no tiene ese
-# producto (tarjeta de credito o prestamo), no un dato faltante.
+# Ausencia de estos dos KPIs (el cliente no tiene fila en gold_kpis)
+# significa que no tiene ese producto (tarjeta de credito o prestamo): vale
+# 0. Una fila presente con valor nulo si es dato faltante y se conserva:
+# ratio_endeudamiento de quien tiene deuda y no tiene ingreso. XGBoost lo
+# trata como faltante de forma nativa.
 KPIS_CON_CERO_POR_DEFECTO = ["ratio_endeudamiento", "uso_linea_credito"]
 
 
@@ -94,7 +97,10 @@ def _pivotear_kpis_gold(gold_duckdb_path: str) -> pd.DataFrame:
     )
     ancho = ancho.join(categorico, how="left")
 
-    ancho[KPIS_CON_CERO_POR_DEFECTO] = ancho[KPIS_CON_CERO_POR_DEFECTO].fillna(0.0)
+    for kpi in KPIS_CON_CERO_POR_DEFECTO:
+        con_fila = numericos.loc[numericos["kpi_id"] == kpi, "cliente_id"]
+        sin_producto = ~ancho.index.isin(con_fila)
+        ancho.loc[sin_producto, kpi] = 0.0
     return ancho
 
 
