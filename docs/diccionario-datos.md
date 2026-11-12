@@ -54,7 +54,7 @@ Origen: `clientes.csv`. Llave: `cliente_id`.
 | `municipio` | string | | | |
 | `estado` | string | | | Estado de residencia |
 | `ciudad` | string | not_null | | Una de 10 ciudades |
-| `fecha_alta` | date | not_null, no futura | | Alta como cliente |
+| `fecha_alta` | date | not_null, no futura | | Alta como cliente; anterior al primer mes del historial |
 
 ## cuentas
 
@@ -67,7 +67,7 @@ cuentas: todos tienen `cuenta_digital`; ~55% `tarjeta_credito`; ~30%
 | `cuenta_id` | string | not_null, unique | `CTA-######` |
 | `cliente_id` | string | not_null, llave foranea a clientes | |
 | `tipo_cuenta` | string | not_null, valores `cuenta_digital`, `tarjeta_credito`, `prestamo_personal`, `cetes` | |
-| `fecha_apertura` | date | not_null | |
+| `fecha_apertura` | date | not_null, no anterior a `fecha_alta` del cliente | |
 | `saldo_actual` | decimal(12,2) | not_null | MXN. En credito y prestamo, saldo adeudado |
 | `limite_credito` | decimal(12,2) | obligatorio si `tarjeta_credito` | MXN |
 | `monto_original` | decimal(12,2) | obligatorio si `prestamo_personal` | MXN |
@@ -98,7 +98,7 @@ Llave: `transaccion_id`. Bronze particiona por `anio_mes`.
 | `transaccion_id` | string | not_null, unique | | `TX-AAAAMM-#######` |
 | `cuenta_id` | string | not_null, llave foranea a cuentas | | |
 | `cliente_id` | string | | | |
-| `fecha` | date | not_null | | Dias 1-28; nomina el 15 y el ultimo dia del mes |
+| `fecha` | date | not_null, no anterior a `fecha_apertura` de la cuenta | | Dias 1-28; nomina el 15 y el ultimo dia del mes |
 | `tipo_transaccion` | string | not_null, valores `compra`, `p2p_enviado`, `p2p_recibido`, `pago_recurrente`, `nomina`, `deposito`, `retiro` | | `deposito`: ingreso informal (efectivo o transferencia de un cliente) |
 | `categoria` | string | | | Categoria de gasto o del movimiento |
 | `monto` | decimal(12,2) | not_null, distinto de 0 | | MXN. Negativo = salida de dinero |
@@ -136,7 +136,7 @@ Una fila por cada (fila rechazada, regla violada).
 | `capa` | `silver` |
 | `entidad` | |
 | `llave` | Llave primaria de la fila rechazada |
-| `regla` | `not_null`, `unique`, `allowed`, `range`, `notzero`, `futuredate`, `condnull`, `pattern`, `ident`, `fk`, `tipo` |
+| `regla` | `not_null`, `unique`, `allowed`, `range`, `notzero`, `futuredate`, `datebefore`, `condnull`, `pattern`, `ident`, `fk`, `tipo` |
 | `columna` | Columna que viola la regla |
 | `sesion_id` | Sesion o entrega de origen |
 | `archivo_origen` | Archivo de origen |
