@@ -91,12 +91,9 @@ las cifras de abajo cambiarian.
 
 ## Recorrido
 
-**Cifras en revision.** La instancia se reconstruyo el 2026-11-12 en un clon
-limpio, despues de la correccion de coherencia temporal (PR #80). De esa
-corrida estan medidas la probabilidad media, las bandas y la probabilidad
-de CLI-000283. El resto de las cifras de esta seccion vienen de la
-instancia anterior y hay que volver a medirlas en el dashboard antes de
-grabar.
+Cifras medidas en la instancia reconstruida el 2026-11-12 en un clon limpio
+(despues de la correccion de coherencia temporal, PR #80), renderizando las
+paginas del dashboard sobre su Gold y su modelo.
 
 Entrar como `admin` (contraseña en `data/credenciales_prueba.md`): ve todas
 las vistas. Para mostrar lo que ve un cliente, cerrar sesión y entrar con su
@@ -107,8 +104,8 @@ las vistas. Para mostrar lo que ve un cliente, cerrar sesión y entrar con su
 Pregunta que responde: a quien tengo que mirar.
 
 - Cabecera contra la base: ingreso mensual mediano $9,797 (-$1,675), 57 %
-  gastan mas de lo que ganan (+35.4 pts).
-- La probabilidad media (15.8 %) no sube: el modelo se reentrena
+  gastan mas de lo que ganan (+37.0 pts).
+- La probabilidad media (15.8 %, -1.3 pts) no sube: el modelo se reentrena
   en cada corrida y la etiqueta se calibra a una tasa media de 15 %. La nota
   bajo las metricas lo explica; el deterioro se lee en las otras dos cifras
   y en Observabilidad.
@@ -124,12 +121,12 @@ Pregunta que responde: a quien tengo que mirar.
 
 Ejemplo de riesgo alto: **CLI-000283**.
 
-- Probabilidad de impago 59.7 %. 26 anos, 1.2 anos de antiguedad.
-- Ingreso $55,535 al mes, capacidad de ahorro -$20,387, deuda / ingreso 2.49.
-- Ultimos 12 meses: neto promedio -$20,173 al mes; salidas mayores que
+- Probabilidad de impago 59.7 %. 26 anos, 1.9 anos de antiguedad.
+- Ingreso $55,535 al mes, capacidad de ahorro -$27,030, deuda / ingreso 4.63.
+- Ultimos 12 meses: neto promedio -$26,816 al mes; salidas mayores que
   entradas en 10 de 12 meses.
-- A donde se va el dinero: pago de deuda 20 %, suscripciones 16 %,
-  servicios 14 %.
+- A donde se va el dinero: pago de deuda 26 %, suscripciones 15 %,
+  servicios 13 %.
 
 Las metricas, el neto y el desglose usan la misma ventana de 12 meses; la
 grafica mes a mes muestra los 19 meses de historial.
@@ -139,35 +136,35 @@ grafica mes a mes muestra los 19 meses de historial.
 El mismo **CLI-000283**, ahora como lo ve el cliente al entrar con su
 usuario: solo sus datos, sin selector de cliente, en frases cortas y en pesos.
 
-- Este mes (abr 2027): le entraron $32,876 y salieron $86,922. En un mes
-  normal gasta $13,336 más de lo que le entra.
+- Este mes (abr 2027): le entraron $32,876 y salieron $106,852. En un mes
+  normal gasta $16,658 más de lo que le entra.
 - Quincenas: le llegan unos $16,438 cada quincena; en may 2026 le llegaban
   unos $34,368 (su ingreso bajó 52 %, el escenario de deriva).
-- A dónde se va su dinero (3 meses): otros 23 %, suscripciones 21 %,
-  servicios 17 %.
-- Su crédito: paso 2 de 6 de la escalera (tarjeta bajo control), pagos de
-  deuda de $4,745 al mes; usa 38 % de su tarjeta y el siguiente paso es
-  bajarlo a 30 %.
-- Su riesgo, alto, explicado con sus propios valores SHAP. Lo sube: gasta $20,387
-  más de lo que le entra al mes, en los últimos 3 meses gastó $79,825 al mes
-  y usa 38 % del límite de su tarjeta.
+- A dónde se va su dinero (3 meses): pago de deuda 24 %, otros 18 %,
+  suscripciones 17 %.
+- Su crédito: paso 1 de 6 de la escalera (pagos de deuda bajo control).
+  Paga $25,513 al mes de deudas, el 70 % de su ingreso de los últimos 3
+  meses ($36,665 al mes); para el siguiente paso deberían quedar en $10,999
+  o menos. Usa 38 % de su tarjeta.
+- Su riesgo, alto (puntaje 60 %), explicado con sus propios valores SHAP. Lo
+  sube: gasta $27,030 más de lo que le entra al mes y debe 4.6 veces su
+  ingreso de un mes. Lo baja: lleva 1.9 años como cliente.
 - ¿Me alcanza para algo de $15,000? De contado el saldo alcanza ($15,216),
   pero con o sin la compra se queda sin dinero algún mes en 100 de cada 100
   escenarios. A crédito a 12 meses con 45 % anual: $1,631 al mes con IVA
   sobre intereses.
 
 La explicación reproduce el score publicado: usa el modelo que lo produjo
-(el del pliegue de la validación cruzada). Contraste: **CLI-000162** (riesgo
-bajo, 8 %) lo baja sobre todo que debe 0.6 veces su ingreso de un mes y que
-le quedan $10,730 al mes; está en el paso 3
-(fondo de emergencia: su saldo cubre 1.1 meses de gastos).
+(el del pliegue de la validación cruzada). Contraste: **CLI-000379** (riesgo
+bajo, 5 %): lo baja sobre todo que le quedan $11,313 al mes, su ingreso
+declarado ($40,926 al mes) y su edad (42 años); está en el paso 5 de 6
+(fondo de emergencia completo: su saldo cubre 3.4 meses de gastos).
+CLI-000162, el contraste anterior, quedó en 13 % (banda media) tras #80.
 
 ### 4. Simulador de hipoteca (2 min)
 
-Con los parametros por defecto (vivienda de $900,000), dos clientes.
-**Pendiente de volver a medir:** la tabla se midio con la tasa anterior de
-11 %; desde `fix/tasa-hipotecaria-con-fuente` el simulador usa 11.20 %
-(`config/mercado_mx.yaml`). Actualizarla con la instancia reconstruida.
+Con los parametros por defecto (vivienda de $900,000, tasa de 11.20 % de
+`config/mercado_mx.yaml`), dos clientes:
 
 | | CLI-000001 | CLI-000162 |
 |---|---|---|
@@ -197,11 +194,11 @@ aleatorios, asi que la diferencia es la hipoteca, no el ruido.
 
 | Corte | Score | capacidad_ahorro | estabilidad_ingreso | gasto_promedio_3_meses | ingreso_mensual_promedio |
 |---|---|---|---|---|---|
-| 2026-10 | 0.050 | 0.008 | 0.005 | 0.006 | 0.002 |
-| 2026-12 | 0.182 | 0.057 | 0.099 | 0.061 | 0.011 |
-| 2027-01 | 0.275 | 0.127 | 0.257 | 0.086 | 0.034 |
-| 2027-02 | 0.382 | 0.232 | 0.359 | 0.129 | 0.072 |
-| 2027-04 | 0.563 | 0.626 | 0.371 | 0.166 | 0.077 |
+| 2026-10 | 0.082 | 0.025 | 0.005 | 0.006 | 0.002 |
+| 2026-12 | 0.169 | 0.074 | 0.099 | 0.061 | 0.011 |
+| 2027-01 | 0.341 | 0.126 | 0.257 | 0.086 | 0.034 |
+| 2027-02 | 0.363 | 0.246 | 0.359 | 0.129 | 0.072 |
+| 2027-04 | 0.540 | 0.668 | 0.371 | 0.166 | 0.077 |
 
   Umbrales: 0.10 vigilar, 0.25 reentrenar. El score es lo primero que se
   mueve (vigilar desde nov 2026, reentrenar en ene 2027); la estabilidad del
@@ -237,18 +234,20 @@ responde.
   que conoce el rasgo oculto y el choque). Sin las 3 variables de la
   etiqueta baja a 0.637. `experimentos/auc_evento_posterior.py`. Con 500
   clientes el AUC depende mucho de la muestra; con 5,000 clientes es 0.777
-  +- 0.017.
+  +- 0.017. Estas cifras de validacion cruzada se midieron antes de la
+  correccion de coherencia temporal (#80); falta volver a correr el
+  experimento.
 - **La probabilidad es una probabilidad?** Si: esta calibrada. En la
-  instancia, la media publicada es 15.8 % (tasa real de impago: pendiente
-  de medir en la instancia nueva). Con 500 clientes el modelo distingue
-  poco, asi que una probabilidad honesta se queda cerca de la media y la
-  banda media junta a 159 clientes. Ordena igual que antes (AUC 0.777 contra 0.776).
+  instancia, la media publicada es 15.8 % y la tasa real de impago 15.6 %;
+  ningun cliente pasa de 90 %. Con 500 clientes el modelo distingue poco,
+  asi que una probabilidad honesta se queda cerca de la media (de 1 % a
+  68 %) y la banda media junta a 159 clientes. Ordena igual que antes (AUC 0.777 contra 0.776).
   `experimentos/calibracion_riesgo.py` y
   [technical-debt.md](technical-debt.md).
 - **Por que el modelo y el simulador dan cifras distintas para el mismo
   cliente?** Miden cosas distintas: el modelo ordena el riesgo de atrasarse
   en pagos con todo el historial, el Monte Carlo remuestrea su flujo.
-  CLI-000001 tiene riesgo alto (33.3 %); en el simulador, sin hipoteca, se
+  CLI-000001 tiene riesgo medio (19.8 %); en el simulador, sin hipoteca, se
   queda sin dinero algun mes en 41 de cada 100 escenarios a 36 meses y en 7
   de cada 100 a 6 meses, el horizonte del modelo.
 - **Por que no sube la probabilidad media?** Ver Portafolio: calibracion a
