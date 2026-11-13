@@ -239,7 +239,7 @@ Solo requiere Docker; no hace falta Python, Java ni Spark en la máquina.
 bash demo.sh
 ```
 
-Genera `.env`, construye el worker, levanta Airflow, Postgres y MinIO, dispara el DAG y muestra el avance tarea por tarea hasta terminar. Medido en esta máquina: unos 1:30 con la imagen ya construida y unos 2 minutos si Airflow y Postgres se recrean; la primera vez, construir la imagen suma unos 3 minutos antes de lanzar el DAG. Requisitos, comandos adicionales (`pipeline`, `calidad`, `nueva-entrega`, `sesiones`, `limpiar`, `respaldar`, `restaurar`), instrucciones para Windows y problemas comunes: [docs/ejecucion-local.md](docs/ejecucion-local.md).
+Genera `.env`, construye el worker, levanta Airflow, Postgres y MinIO, dispara el DAG y muestra el avance tarea por tarea hasta terminar. Medido en esta máquina: unos 1:30 con la imagen ya construida y unos 2 minutos si Airflow y Postgres se recrean; la primera vez, en un clon limpio, la corrida completa tardó 20 minutos en una MacBook Pro M5 porque incluye construir la imagen. Requisitos, comandos adicionales (`pipeline`, `calidad`, `nueva-entrega`, `sesiones`, `limpiar`, `respaldar`, `restaurar`), instrucciones para Windows y problemas comunes: [docs/ejecucion-local.md](docs/ejecucion-local.md).
 
 - Airflow: `http://localhost:8080` y consola de MinIO: `http://localhost:9001`. Las credenciales se generan al azar por máquina en `.env` (nunca en el repo) y `demo.sh` las muestra al terminar. Detalle en [docs/seguridad.md](docs/seguridad.md).
 
@@ -363,7 +363,7 @@ Catálogo de 12 KPIs en 5 categorías (ingresos, gastos, ahorro y liquidez, ries
 - [x] Pruebas de robustez con inyección deliberada de datos sucios: 5 brechas, 4 con cambios de código; 3 casos tienen prueba automatizada directa (detalle en [docs/pruebas-robustez.md](docs/pruebas-robustez.md))
 - [x] Capa Gold — catálogo de 12 KPIs en DuckDB
 - [x] Diccionario de datos formal
-- [x] Modelo predictivo de riesgo crediticio (XGBoost + SHAP), entrenado dentro del DAG, con probabilidad calibrada: media publicada 16.1 % contra una tasa real de 15.6 % en la instancia de la demo (detalle en [docs/technical-debt.md](docs/technical-debt.md))
+- [x] Modelo predictivo de riesgo crediticio (XGBoost + SHAP), entrenado dentro del DAG, con probabilidad calibrada: media publicada 15.8 % en la instancia de la demo (detalle en [docs/technical-debt.md](docs/technical-debt.md))
 - [x] Feature store ligero en Gold (`gold_features_cliente`), fuente única de features
 - [x] PII sintética (CURP, RFC, teléfono, domicilio) validada y protegida en Silver con hash y enmascarado
 - [x] Seguridad base: secretos por máquina fuera del repo, puertos locales, escaneo de secretos en CI

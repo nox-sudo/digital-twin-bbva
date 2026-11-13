@@ -221,8 +221,7 @@ verificacion y posibles soluciones, esta en
   (`config/features.yaml`).
 - **Con 500 clientes el modelo distingue poco** (AUC 0.69 en la base). La
   probabilidad esta calibrada, asi que se queda cerca de la tasa real: en la
-  instancia de la demo va de 0.02 a 0.65 y la banda "medio" junta a 192 de
-  500 clientes.
+  instancia de la demo la banda "medio" junta a 159 de 500 clientes.
 
 ## Sesiones de datos
 
