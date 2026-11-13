@@ -11,8 +11,9 @@ Requisitos e instalacion: [ejecucion-local.md](ejecucion-local.md).
 
 Los datos salen de la configuracion versionada (semilla 42, fecha de
 referencia, 500 clientes), asi que la misma secuencia produce la misma
-instancia en otra maquina. Unos 15 minutos con la imagen del worker ya
-construida.
+instancia en otra maquina. Medido en un clon limpio en la Mac (2026-11-12):
+la base tardo 20 minutos (incluye construir la imagen del worker) y cada
+entrega entre 1:46 y 2:25; unos 34 minutos en total.
 
 1. **Partir de cero.** En un clon nuevo no hay nada que borrar. Si ya hay una
    instancia, respaldarla y limpiar:
@@ -90,6 +91,13 @@ las cifras de abajo cambiarian.
 
 ## Recorrido
 
+**Cifras en revision.** La instancia se reconstruyo el 2026-11-12 en un clon
+limpio, despues de la correccion de coherencia temporal (PR #80). De esa
+corrida estan medidas la probabilidad media, las bandas y la probabilidad
+de CLI-000283. El resto de las cifras de esta seccion vienen de la
+instancia anterior y hay que volver a medirlas en el dashboard antes de
+grabar.
+
 Entrar como `admin` (contraseña en `data/credenciales_prueba.md`): ve todas
 las vistas. Para mostrar lo que ve un cliente, cerrar sesión y entrar con su
 `cliente_id` (por ejemplo CLI-000283), o abrir "Vista del cliente" como admin.
@@ -100,11 +108,11 @@ Pregunta que responde: a quien tengo que mirar.
 
 - Cabecera contra la base: ingreso mensual mediano $9,797 (-$1,675), 57 %
   gastan mas de lo que ganan (+35.4 pts).
-- La probabilidad media (16.1 %, -0.9 pts) no sube: el modelo se reentrena
+- La probabilidad media (15.8 %) no sube: el modelo se reentrena
   en cada corrida y la etiqueta se calibra a una tasa media de 15 %. La nota
   bajo las metricas lo explica; el deterioro se lee en las otras dos cifras
   y en Observabilidad.
-- Bandas: 234 bajo (47 %), 192 medio (38 %), 74 alto (15 %).
+- Bandas: 255 bajo (51 %), 159 medio (32 %), 86 alto (17 %).
 - Tabla "Clientes a revisar": seleccionar una fila abre al cliente.
 - En el Asistente, toda pregunta del portafolio ("¿Cuántos clientes están
   en riesgo alto?") se hace como `admin`: es el unico rol con
@@ -116,7 +124,7 @@ Pregunta que responde: a quien tengo que mirar.
 
 Ejemplo de riesgo alto: **CLI-000283**.
 
-- Probabilidad de impago 59.1 %. 26 anos, 1.2 anos de antiguedad.
+- Probabilidad de impago 59.7 %. 26 anos, 1.2 anos de antiguedad.
 - Ingreso $55,535 al mes, capacidad de ahorro -$20,387, deuda / ingreso 2.49.
 - Ultimos 12 meses: neto promedio -$20,173 al mes; salidas mayores que
   entradas en 10 de 12 meses.
@@ -231,11 +239,10 @@ responde.
   clientes el AUC depende mucho de la muestra; con 5,000 clientes es 0.777
   +- 0.017.
 - **La probabilidad es una probabilidad?** Si: esta calibrada. En la
-  instancia, la media publicada es 16.1 % y la tasa real de impago 15.6 %;
-  antes de calibrarla era 18.8 %, y 12 clientes pasaban de 90 %. Con 500
-  clientes el modelo distingue poco, asi que una probabilidad honesta se
-  queda cerca de la media (de 2 % a 65 %) y la banda media junta a 192
-  clientes. Ordena igual que antes (AUC 0.777 contra 0.776).
+  instancia, la media publicada es 15.8 % (tasa real de impago: pendiente
+  de medir en la instancia nueva). Con 500 clientes el modelo distingue
+  poco, asi que una probabilidad honesta se queda cerca de la media y la
+  banda media junta a 159 clientes. Ordena igual que antes (AUC 0.777 contra 0.776).
   `experimentos/calibracion_riesgo.py` y
   [technical-debt.md](technical-debt.md).
 - **Por que el modelo y el simulador dan cifras distintas para el mismo
