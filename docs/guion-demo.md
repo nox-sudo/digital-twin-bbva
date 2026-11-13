@@ -40,7 +40,7 @@ entrega entre 1:46 y 2:25; unos 34 minutos en total.
    docker compose run --rm worker experimentos/auc_evento_posterior.py
    ```
 
-   Debe reportar 81 positivos y AUC por pliegue 0.692.
+   Debe reportar 80 positivos y AUC por pliegue 0.690.
 
 3. **Activar el escenario de deriva.** En `config/sesion.yaml`, poner
    `escenario_deriva.activo: true`. Es un cambio local: no se sube al repo.
@@ -229,14 +229,15 @@ responde.
 
 ## Preguntas probables
 
-- **Que tan bueno es el modelo?** AUC 0.692 +- 0.051 en validacion cruzada
-  (5 x 5) sobre la base, contra 0.852 del oraculo (la probabilidad verdadera,
+- **Que tan bueno es el modelo?** AUC 0.690 +- 0.052 en validacion cruzada
+  (5 x 5) sobre la base, contra 0.851 del oraculo (la probabilidad verdadera,
   que conoce el rasgo oculto y el choque). Sin las 3 variables de la
-  etiqueta baja a 0.637. `experimentos/auc_evento_posterior.py`. Con 500
-  clientes el AUC depende mucho de la muestra; con 5,000 clientes es 0.777
-  +- 0.017. Estas cifras de validacion cruzada se midieron antes de la
-  correccion de coherencia temporal (#80); falta volver a correr el
-  experimento.
+  etiqueta baja a 0.638. `experimentos/auc_evento_posterior.py`, medido el
+  2026-11-13 despues de la correccion de coherencia temporal (#80); antes
+  daba 0.692, asi que la correccion no movio el modelo. Con 500 clientes el
+  AUC depende mucho de la muestra: un solo split de esta misma base da
+  0.623. Con 5,000 clientes es 0.777 +- 0.017 (medido el 2026-11-04, antes
+  de #80).
 - **La probabilidad es una probabilidad?** Si: esta calibrada. En la
   instancia, la media publicada es 15.8 % y la tasa real de impago 15.6 %;
   ningun cliente pasa de 90 %. Con 500 clientes el modelo distingue poco,
