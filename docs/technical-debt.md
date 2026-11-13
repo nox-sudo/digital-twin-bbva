@@ -310,6 +310,14 @@ prestamos (#68) no se habia medido:
 | AUC del oraculo | 0.852 | 0.842 |
 | Sin las 3 variables observadas | 0.637 | 0.733 |
 
+Re-medicion de 500 clientes el 2026-11-13, despues de la coherencia temporal
+entre clientes, cuentas y movimientos (#80), en una sesion base propia
+(imagen `gemelo-worker` construida el 2026-11-12 con `7043e3e`; desde
+entonces `develop` solo cambio documentacion): 80 positivos (16.0 %),
+AUC por pliegue 0.690 +- 0.052 (0.563 a 0.775), fuera de pliegue 0.687 (0.664
+a 0.702), oraculo 0.851, sin las 3 variables observadas 0.638. La correccion
+no movio el modelo. La de 5,000 clientes no se repitio.
+
 Calibracion de la probabilidad fuera de pliegue (`experimentos/calibracion_riesgo.py`;
 media de 5 repeticiones, entre parentesis minimo y maximo; las bandas, en la
 repeticion con los pliegues de `train_model.py`, que es la que se publica):
