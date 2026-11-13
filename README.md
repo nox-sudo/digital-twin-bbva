@@ -363,7 +363,7 @@ Catálogo de 12 KPIs en 5 categorías (ingresos, gastos, ahorro y liquidez, ries
 - [x] Pruebas de robustez con inyección deliberada de datos sucios: 5 brechas, 4 con cambios de código; 3 casos tienen prueba automatizada directa (detalle en [docs/pruebas-robustez.md](docs/pruebas-robustez.md))
 - [x] Capa Gold — catálogo de 12 KPIs en DuckDB
 - [x] Diccionario de datos formal
-- [x] Modelo predictivo de riesgo crediticio (XGBoost + SHAP), entrenado dentro del DAG, con probabilidad calibrada: media publicada 15.8 % en la instancia de la demo (detalle en [docs/technical-debt.md](docs/technical-debt.md))
+- [x] Modelo predictivo de riesgo crediticio (XGBoost + SHAP), entrenado dentro del DAG, con probabilidad calibrada: media publicada 15.8 % contra una tasa real de 15.6 % en la instancia de la demo (detalle en [docs/technical-debt.md](docs/technical-debt.md))
 - [x] Feature store ligero en Gold (`gold_features_cliente`), fuente única de features
 - [x] PII sintética (CURP, RFC, teléfono, domicilio) validada y protegida en Silver con hash y enmascarado
 - [x] Seguridad base: secretos por máquina fuera del repo, puertos locales, escaneo de secretos en CI
