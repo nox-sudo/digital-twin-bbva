@@ -11,8 +11,9 @@ propuesta y queda fuera de este trabajo.
 - Codigo revisado: `dashboard/app.py`, `dashboard/acceso.py`,
   `dashboard/comun.py`, `dashboard/vista_cliente.py`, las seis paginas de
   `dashboard/paginas/` y `.streamlit/config.toml`. Streamlit 1.66.0.
-- App levantada desde `develop` (b0dff70) sobre la instancia de la demo
-  (corte al 30 abr 2027, 500 clientes), en solo lectura.
+- App levantada desde `develop` (b0dff70) sobre la instancia anterior a
+  la de la demo (corte al 30 abr 2027, 500 clientes), en solo lectura. Ver
+  el punto 3 de "Decisiones pendientes".
 - Capturas con Playwright (`experimentos/capturas_ux.py`) en
   [antes/](antes/), a 1440 px (escritorio) y 1280 px (laptop), pantalla
   completa:
@@ -107,18 +108,13 @@ que M y L.
 2. **Ruta del modulo.** La fase 2 menciona `src/dashboard/ui.py`. El
    dashboard vive en `dashboard/` (no hay `src/dashboard/`), asi que
    propongo `dashboard/ui.py` junto a `comun.py`.
-3. **Cifras del guion.** Varias cifras de [guion-demo.md](../guion-demo.md)
-   no coinciden con la instancia actual. El guion ya las marca como "en
-   revision", y no son un problema de interfaz:
-
-   | Cifra | Guion | Instancia actual |
-   |---|---|---|
-   | Bandas | 255 / 159 / 86 | 234 / 192 / 74 |
-   | Probabilidad de CLI-000283 | 59.7 % | 59.1 % |
-   | Probabilidad media | 15.8 % | 16.1 % |
-   | Corridas por capa | 9 | 8 |
-
-   Quedan anotadas para la fase 5.
+3. **Instancia de las capturas.** Las capturas de [antes/](antes/) vienen
+   de la instancia anterior a la de la demo (bandas 234 / 192 / 74), no de
+   la instancia con la que esta alineado [guion-demo.md](../guion-demo.md)
+   (bandas 255 / 159 / 86). Las cifras que se ven en ellas difieren de las
+   del guion por eso; los problemas de usabilidad no cambian. El guion no
+   se modifica por cifras. Las capturas de "despues" y toda verificacion
+   se hacen sobre la instancia de la demo.
 
 ## Recomendacion para antes del 30 de noviembre
 
