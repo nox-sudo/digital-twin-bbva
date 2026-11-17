@@ -164,6 +164,87 @@ def resumen_gastos(
     return f"En los últimos {meses} meses, lo que más se llevó tu dinero fue {lista}."
 
 
+def comparacion_gasto(flujo: pd.DataFrame) -> dict | None:
+    """Lo que salio el ultimo mes contra un mes normal (promedio de los
+    meses anteriores, el mismo de resumen_mes)."""
+    if flujo.empty:
+        return None
+    flujo = flujo.sort_values("mes")
+    salidas = float(flujo.iloc[-1]["salidas"])
+    anteriores = flujo.iloc[:-1]["salidas"]
+    if anteriores.empty or float(anteriores.mean()) <= 0:
+        return {
+            "salidas": salidas,
+            "cambio": None,
+            "frase": "Lo que salió de tu cuenta.",
+        }
+    promedio = float(anteriores.mean())
+    cambio = (salidas - promedio) / promedio
+    if abs(cambio) < 0.01:
+        frase = "Igual que en un mes normal."
+    else:
+        frase = (
+            f"{abs(cambio) * 100:.0f} % {'más' if cambio > 0 else 'menos'} "
+            "que en un mes normal."
+        )
+    return {"salidas": salidas, "promedio": promedio, "cambio": cambio, "frase": frase}
+
+
+def mayor_aumento(cambios: pd.DataFrame, nombre_categoria, meses: int) -> dict:
+    """La categoria cuyo gasto mensual mas subio en los ultimos meses contra
+    los anteriores."""
+    if cambios.empty or float(cambios["cambio"].max()) <= 0:
+        return {
+            "categoria": None,
+            "titulo": "Nada subió",
+            "frase": f"Ningún gasto aumentó contra los {meses} meses anteriores.",
+        }
+    fila = cambios.iloc[0]
+    return {
+        "categoria": fila["categoria"],
+        "titulo": nombre_categoria(fila["categoria"]),
+        "frase": (
+            f"{pesos(fila['cambio'])} más al mes que en los {meses} meses "
+            f"anteriores (de {pesos(fila['anterior'])} a {pesos(fila['reciente'])})."
+        ),
+    }
+
+
+NIVEL_BANDA = {"bajo": "Bajo", "medio": "Medio", "alto": "Alto"}
+
+
+def siguiente_paso(
+    nombre_paso: str | None,
+    lectura: str | None,
+    probabilidad_deficit: float | None,
+    meses: int,
+) -> str:
+    """El siguiente paso del cliente, armado con reglas: el paso actual de la
+    escalera financiera (lo que toca hacer y cuanto) y el riesgo de quedarse
+    sin dinero que da el simulador con su flujo actual. Sin modelo de
+    lenguaje."""
+    partes = []
+    if nombre_paso and lectura:
+        # El nombre del paso es la meta ("Pagos de deuda bajo control"), no
+        # el estado actual: dicho solo, se leeria como algo ya logrado.
+        partes.append(
+            f"Tu meta ahora: {nombre_paso[0].lower()}{nombre_paso[1:]}. {lectura}"
+        )
+    if probabilidad_deficit is not None:
+        p = round(probabilidad_deficit * 100)
+        if p == 0:
+            partes.append(
+                f"Con tu flujo actual, en ningún escenario simulado te quedas sin "
+                f"dinero en los próximos {meses} meses."
+            )
+        else:
+            partes.append(
+                f"Con tu flujo actual, en {p} de cada 100 escenarios simulados te "
+                f"quedarías sin dinero algún mes de los próximos {meses}."
+            )
+    return " ".join(partes) or "Todavía no tenemos datos para sugerirte un paso."
+
+
 TONO_BANDA = {
     "bajo": "Vas bien: tu riesgo de atrasarte en tus pagos es bajo.",
     "medio": "Ojo: tu riesgo de atrasarte en tus pagos es medio.",

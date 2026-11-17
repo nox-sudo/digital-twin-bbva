@@ -100,6 +100,39 @@ if comun.gold_disponible():
             "se completan al correr de nuevo la predicción de riesgo del pipeline."
         )
 
+    # --- A quien atender primero ------------------------------------------
+    # Los 5 de mayor riesgo, para verlos sin bajar a la tabla. La tabla
+    # "Clientes a revisar" sigue abajo, completa y en el mismo lugar.
+    with ui.contenedor("atender"):
+        st.markdown("**:material/priority_high: Clientes a atender primero**")
+        st.caption(
+            "Los 5 con mayor probabilidad de impago. La lista completa está en "
+            "Clientes a revisar, al final de la página."
+        )
+        primeros = df.dropna(subset=["probabilidad_impago"]).nlargest(
+            5, "probabilidad_impago"
+        )
+        columnas_atender = st.columns(5)
+        for columna, fila_cliente in zip(columnas_atender, primeros.itertuples()):
+            columna.markdown(
+                f"<div style='font-weight:600;margin-bottom:6px'>"
+                f"{fila_cliente.cliente_id}</div>"
+                + ui.html_semaforo(
+                    fila_cliente.banda_riesgo,
+                    f"Riesgo {fila_cliente.banda_riesgo} · "
+                    f"{ui.formatear_porcentaje(fila_cliente.probabilidad_impago, 1)}",
+                ),
+                unsafe_allow_html=True,
+            )
+            if columna.button(
+                "Ver cliente",
+                key=f"atender-{fila_cliente.cliente_id}",
+                icon=":material/arrow_forward:",
+                use_container_width=True,
+            ):
+                st.session_state["cliente_id"] = fila_cliente.cliente_id
+                st.switch_page(st.session_state["pagina_cliente"])
+
     # --- Riesgo ----------------------------------------------------------
     st.subheader("Dónde está el riesgo")
     bandas_cfg = comun.config()["bandas_riesgo"]

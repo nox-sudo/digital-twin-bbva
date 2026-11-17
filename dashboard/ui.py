@@ -311,10 +311,14 @@ def _texto(valor) -> str:
     return html.escape(str(valor)).replace("$", "&#36;")
 
 
-def html_tarjeta(titulo: str, valor: str, detalle: str | None = None) -> str:
+def html_tarjeta(
+    titulo: str, valor: str, detalle: str | None = None, banda: str | None = None
+) -> str:
+    """Con banda, el valor va como semaforo (color y palabra)."""
+    cuerpo = html_semaforo(banda, valor) if banda else _texto(valor)
     partes = [
         f"<div class='gd-titulo'>{_texto(titulo)}</div>",
-        f"<div class='gd-valor'>{_texto(valor)}</div>",
+        f"<div class='gd-valor'>{cuerpo}</div>",
     ]
     if detalle:
         partes.append(f"<div class='gd-detalle'>{_texto(detalle)}</div>")
@@ -322,12 +326,17 @@ def html_tarjeta(titulo: str, valor: str, detalle: str | None = None) -> str:
 
 
 def tarjeta(
-    titulo: str, valor: str, detalle: str | None = None, *, contenedor=None
+    titulo: str,
+    valor: str,
+    detalle: str | None = None,
+    *,
+    banda: str | None = None,
+    contenedor=None,
 ) -> None:
     """Una cifra en tarjeta blanca: titulo, valor grande y una linea de
-    contexto opcional."""
+    contexto opcional. Con banda, el valor se dibuja como semaforo."""
     (contenedor or st).markdown(
-        html_tarjeta(titulo, valor, detalle), unsafe_allow_html=True
+        html_tarjeta(titulo, valor, detalle, banda), unsafe_allow_html=True
     )
 
 

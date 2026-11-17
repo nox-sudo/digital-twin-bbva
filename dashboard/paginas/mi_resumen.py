@@ -1,8 +1,12 @@
 """
-Mi resumen: la vista del cliente. Lo que entro y salio este mes, sus
-ingresos por quincena, a donde se va su dinero, su credito (escalera
-financiera), su riesgo explicado con sus propios valores SHAP y "¿me
-alcanza para...?" con el Monte Carlo del simulador.
+Mi resumen: la vista del cliente. Arriba, la respuesta a "¿como voy?": su
+saldo disponible, lo que gasto este mes, la categoria que mas crecio, su
+nivel de riesgo y su siguiente paso (reglas sobre la escalera financiera y
+el Monte Carlo del simulador, sin modelo de lenguaje). Debajo, el detalle:
+lo que entro y salio este mes, sus ingresos por quincena, a donde se va
+su dinero, su credito (escalera financiera), su riesgo explicado con sus
+propios valores SHAP y "¿me alcanza para...?" con el Monte Carlo del
+simulador.
 
 Un cliente solo ve la suya; el admin la abre como "Vista del cliente" y
 elige a quien. Las frases salen de dashboard/vista_cliente.py; todas las
@@ -11,18 +15,23 @@ cifras las calcula Python.
 
 import altair as alt
 import streamlit as st
+import yaml
 
 from asistente import herramientas as h
 from dashboard import acceso, comun, ui
 from dashboard import vista_cliente as vc
 from src.gold import escalera as esc
 from src.gold import explicacion as ex
+from src.simulacion import montecarlo as mc
 from src.simulacion.supuestos import cargar_simulacion
 
 usuario = acceso.requiere_rol("admin", "cliente")
 st.title("Mi resumen" if usuario.rol == "cliente" else "Vista del cliente")
 
 MESES_GASTO = 3
+# Periodos que compara la tarjeta "Lo que más creció": los ultimos 3 meses
+# contra los 3 anteriores.
+MESES_CAMBIO = 3
 # Montos del eje en miles ("$10k") para que no se corten en tarjetas
 # angostas; el cero como "$0" (el formato "$~s" lo mostraba como "$0k").
 EJE_PESOS = alt.Axis(
@@ -86,6 +95,48 @@ def explicacion(version: float, cliente_id: str):
         return str(e)
 
 
+@st.cache_data(show_spinner=False)
+def cambios(version: float, cliente_id: str):
+    return comun.datos.cambio_por_categoria(
+        comun.config()["gold_duckdb"], cliente_id, MESES_CAMBIO
+    )
+
+
+@st.cache_data
+def horizonte_modelo() -> int:
+    """Meses del horizonte de la etiqueta de impago, para decir el riesgo en
+    un plazo concreto."""
+    with open(comun.RAIZ / "config" / "etiquetas_impago.yaml", encoding="utf-8") as f:
+        return int(yaml.safe_load(f)["horizonte_meses"])
+
+
+@st.cache_data(show_spinner=False)
+def riesgo_flujo_actual(version: float, cliente_id: str) -> tuple[float, int] | None:
+    """Probabilidad de quedar en saldo negativo algun mes con el flujo
+    actual, sin compras ni hipoteca: el mismo calculo y los mismos supuestos
+    que "Riesgo sin hipoteca" en el Simulador de hipoteca."""
+    cfg = config_simulacion()
+    choque = cfg["choque_ingreso"]
+    supuestos = mc.Supuestos(
+        meses=int(cfg["simulacion"]["meses"]),
+        trayectorias=int(cfg["simulacion"]["trayectorias"]),
+        semilla=int(cfg["simulacion"]["semilla"]),
+        prob_choque_mensual=float(choque["probabilidad_mensual"]),
+        duracion_choque=tuple(int(x) for x in choque["duracion_meses"]),
+    )
+    gold = comun.config()["gold_duckdb"]
+    try:
+        historial = mc.historial_cliente(gold, cliente_id)
+        saldo = mc.saldo_inicial_cliente(gold, cliente_id)
+    except Exception:
+        return None
+    if not len(historial.meses):
+        return None
+    muestras = mc.muestrear(len(historial.meses), supuestos)
+    resultado = mc.resumir(mc.simular(historial, saldo, muestras), horizonte_modelo())
+    return resultado.probabilidad_deficit, supuestos.meses
+
+
 # La vista del admin ("Vista del cliente") muestra lo mismo que ve el cliente:
 # los nombres de KPI son siempre los del cliente.
 md = ui.md
@@ -108,6 +159,16 @@ def cifras(pares: list[tuple[str, str]]) -> None:
     )
 
 
+def titulo_quincenas(lectura: dict) -> str:
+    """Titulo de la grafica con la conclusion, no el nombre de la metrica."""
+    cambio = lectura.get("cambio") or 0.0
+    if cambio <= -vc.CAMBIO_RELEVANTE:
+        return "Tu ingreso por quincena bajó"
+    if cambio >= vc.CAMBIO_RELEVANTE:
+        return "Tu ingreso por quincena subió"
+    return "Tu ingreso por quincena se mantiene"
+
+
 def pendiente(que: str) -> None:
     st.caption(f"{que} estará disponible después de la próxima corrida del pipeline.")
 
@@ -121,20 +182,74 @@ if comun.gold_disponible():
         st.caption(f"Así ve {cliente_id} su resumen.")
     fila = df.set_index("cliente_id").loc[cliente_id]
 
+    flujo_cliente = comun.flujo(version, cliente_id)
+    mes = vc.resumen_mes(flujo_cliente, comun.nombre_mes)
+
+    # --- ¿Como voy? -------------------------------------------------------
+    ui.tarjeta_heroe(
+        ui.nombre_kpi("saldo_liquido_disponible", "cliente"),
+        ui.formatear_mxn(fila["saldo_liquido_disponible"]),
+        (
+            f"Saldo de tu cuenta al cierre de {comun.nombre_mes(mes['mes'])}"
+            if mes
+            else "Saldo de tu cuenta al último corte"
+        ),
+    )
+    st.write("")
+    t1, t2, t3 = st.columns(3)
+    gasto = vc.comparacion_gasto(flujo_cliente)
+    ui.tarjeta(
+        "Gastaste este mes",
+        ui.formatear_mxn(gasto["salidas"]) if gasto else "Sin movimientos",
+        gasto["frase"] if gasto else None,
+        contenedor=t1,
+    )
+    crecio = vc.mayor_aumento(
+        cambios(version, cliente_id), comun.nombre_categoria, MESES_CAMBIO
+    )
+    ui.tarjeta("Lo que más creció", crecio["titulo"], crecio["frase"], contenedor=t2)
+    banda = fila["banda_riesgo"]
+    ui.tarjeta(
+        ui.nombre_kpi("banda_riesgo", "cliente"),
+        vc.NIVEL_BANDA.get(banda, "Sin dato"),
+        vc.TONO_BANDA.get(banda, "Todavía no tenemos tu nivel de riesgo.")
+        .split(": ")[-1]
+        .capitalize(),
+        banda=banda if banda in vc.NIVEL_BANDA else None,
+        contenedor=t3,
+    )
+
+    # --- Siguiente paso ---------------------------------------------------
+    cuentas = creditos(version, cliente_id)
+    e = escalera(version, cliente_id) if cuentas is not None else None
+    riesgo_flujo = riesgo_flujo_actual(version, cliente_id)
+    with ui.contenedor("siguiente-paso"):
+        st.markdown("**:material/flag: Tu siguiente paso**")
+        st.markdown(
+            md(
+                vc.siguiente_paso(
+                    esc.NOMBRES[e.paso_actual] if e else None,
+                    e.lectura if e else None,
+                    riesgo_flujo[0] if riesgo_flujo else None,
+                    riesgo_flujo[1] if riesgo_flujo else 0,
+                )
+            )
+        )
+
+    st.subheader("El detalle")
     izquierda, derecha = st.columns(2, gap="large")
 
     # --- Este mes ---------------------------------------------------------
     with ui.contenedor("este-mes", izquierda):
         st.subheader("Este mes")
-        mes = vc.resumen_mes(comun.flujo(version, cliente_id), comun.nombre_mes)
         if mes is None:
             st.caption("Todavía no hay movimientos en tu cuenta.")
         else:
             cifras(
                 [
-                    ("Te entró", ui.formatear_mxn(mes["entradas"])),
+                    ("Entró", ui.formatear_mxn(mes["entradas"])),
                     ("Salió", ui.formatear_mxn(mes["salidas"])),
-                    ("Te quedó", ui.formatear_mxn(mes["neto"])),
+                    ("Diferencia", ui.formatear_mxn(mes["neto"])),
                 ]
             )
             st.markdown(md(mes["frase"]))
@@ -147,7 +262,8 @@ if comun.gold_disponible():
             pendiente("El detalle por quincena")
         else:
             minimo = esc.cargar_config()["ingreso_variable"]["proporcion_depositos_min"]
-            st.markdown(md(vc.resumen_quincenas(q, minimo, comun.nombre_mes)["frase"]))
+            lectura_q = vc.resumen_quincenas(q, minimo, comun.nombre_mes)
+            st.markdown(md(lectura_q["frase"]))
             recientes = q[q["mes"].isin(sorted(q["mes"].unique())[-6:])].assign(
                 etiqueta=lambda d: d["mes"].map(comun.nombre_mes),
                 cual=lambda d: d["quincena"].map(
@@ -159,7 +275,12 @@ if comun.gold_disponible():
                 alt.Chart(recientes)
                 .mark_bar(cornerRadiusEnd=4)
                 .encode(
-                    x=alt.X("etiqueta:N", title=None, sort=None),
+                    x=alt.X(
+                        "etiqueta:N",
+                        title=None,
+                        sort=None,
+                        axis=alt.Axis(labelAngle=0),
+                    ),
                     xOffset="cual:N",
                     y=alt.Y("monto:Q", title=None, axis=EJE_PESOS),
                     color=alt.Color(
@@ -173,7 +294,7 @@ if comun.gold_disponible():
                         alt.Tooltip("monto_texto:N", title="Ingreso"),
                     ],
                 )
-                .properties(height=200)
+                .properties(height=240, title=titulo_quincenas(lectura_q))
             )
             st.altair_chart(grafica, width="stretch")
 
@@ -211,11 +332,9 @@ if comun.gold_disponible():
     # --- Tu credito ------------------------------------------------------------
     with ui.contenedor("credito", derecha):
         st.subheader("Tu crédito")
-        cuentas = creditos(version, cliente_id)
-        if cuentas is None:
+        if e is None:
             pendiente("Tu crédito")
         else:
-            e = escalera(version, cliente_id)
             st.markdown(
                 f"**Paso {e.numero_paso} de {len(e.pasos)}: "
                 f"{esc.NOMBRES[e.paso_actual]}**"
@@ -264,31 +383,47 @@ if comun.gold_disponible():
                 for texto in riesgo["bajan"] or ["Nada en especial."]:
                     st.markdown(md(f"- {texto}"))
             st.caption(
-                f"{ui.nombre_kpi('probabilidad_impago', 'cliente')}: "
-                f"{ui.formatear_porcentaje(fila['probabilidad_impago'], 1)}. "
-                "Es una estimación para ordenar el riesgo, no una certeza. Cada factor "
-                "es lo que más mueve tu puntaje frente a un cliente promedio."
+                f"Tu riesgo estimado de atrasarte en algún pago en los próximos "
+                f"{horizonte_modelo()} meses: "
+                f"{ui.formatear_porcentaje(fila['probabilidad_impago'], 1)}. Es una "
+                "estimación, no una certeza. Estos son los datos que más pesan en tu "
+                "caso comparado con un cliente típico; los montos son promedios de "
+                f"los últimos {cfg['ventana_meses']} meses, salvo donde se dice otro "
+                "periodo."
             )
 
     # --- ¿Me alcanza para...? --------------------------------------------------
     with ui.contenedor("me-alcanza"):
         st.subheader("¿Me alcanza para...?")
+        # La forma de pago va fuera del formulario: al cambiarla aparecen o
+        # desaparecen el plazo y la tasa, que solo aplican a credito.
+        forma = st.radio(
+            "¿Cómo lo pagas?", ["De contado", "A crédito"], horizontal=True
+        )
+        plazo, tasa = 12, None
         with st.form("me_alcanza"):
-            c1, c2, c3, c4 = st.columns(4)
+            if forma == "A crédito":
+                c1, c2, c3 = st.columns(3)
+            else:
+                c1, c2, c3 = st.columns(3)[0], None, None
             precio = c1.number_input(
-                "¿Cuánto cuesta? (MXN)", min_value=0, value=15_000, step=1_000
+                "¿Cuánto cuesta? (MXN)",
+                min_value=0,
+                value=15_000,
+                step=1_000,
+                format="%d",
             )
-            forma = c2.radio("¿Cómo lo pagas?", ["De contado", "A crédito"])
-            plazo = c3.selectbox("Plazo (meses)", [6, 12, 18, 24, 36, 48], index=1)
-            tasa = c4.number_input(
-                "Tasa anual que te ofrecen (%)",
-                min_value=0.0,
-                max_value=150.0,
-                value=None,
-                step=1.0,
-                help="Solo para crédito. Sin tasa no calculamos la cuota.",
-            )
-            calcular = st.form_submit_button("Calcular")
+            if forma == "A crédito":
+                plazo = c2.selectbox("Plazo (meses)", [6, 12, 18, 24, 36, 48], index=1)
+                tasa = c3.number_input(
+                    "Tasa anual que te ofrecen (%)",
+                    min_value=0.0,
+                    max_value=150.0,
+                    value=None,
+                    step=1.0,
+                    help="Sin tasa no calculamos la cuota.",
+                )
+            calcular = st.form_submit_button("Calcular", type="primary")
         st.caption("Para una casa, usa el Simulador de hipoteca.")
         if calcular:
             argumentos = {"precio": float(precio)}
