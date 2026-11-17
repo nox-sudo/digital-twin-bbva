@@ -3,8 +3,10 @@ Asistente conversacional sobre el cliente seleccionado y, para el admin,
 sobre el portafolio.
 Corre con un modelo local de Ollama (config/asistente.yaml): el modelo elige
 herramientas y Python calcula las cifras con las mismas consultas que las
-demas vistas (asistente/herramientas.py). Cada respuesta muestra que
-herramientas uso y que devolvieron.
+demas vistas (asistente/herramientas.py). Debajo de cada respuesta va una
+linea en español con el origen de los datos, sin nombres de herramientas,
+argumentos ni resultados crudos: la traza completa queda en la evaluacion
+automatizada (experimentos/eval_asistente.py).
 
 El rol sale del usuario de la sesion (acceso.usuario_actual()), nunca del
 modelo ni de la URL. Con el se arma el Contexto y el modelo: el de un
@@ -26,39 +28,96 @@ from asistente.conversacion import (
 )
 from asistente.herramientas import Contexto
 from dashboard import acceso, comun, ui
+from src.simulacion.supuestos import cargar_simulacion
 
 st.title("Asistente")
 acceso.requiere_rol("admin", "cliente")
 
-EJEMPLOS = [
-    "¿Cuál es mi riesgo de impago?",
-    "¿En qué se me va el dinero?",
-    "¿Cuál fue mi flujo en los últimos 3 meses?",
-    "¿Cómo estoy comparado con los demás en capacidad de ahorro?",
-]
+# Preguntas de ejemplo por rol. Solo preguntas que aprobaron 9 de 9 corridas
+# (3 clientes por 3 repeticiones) en la evaluacion del 2026-11-05
+# (docs/evaluacion-asistente.md, "Cifras de todo el banco solo para el
+# admin"); entre parentesis, banco y caso de experimentos/eval_asistente*.yaml.
+# Las del cliente se evaluaron en primera persona con rol cliente; las del
+# admin, con rol admin. No hay preguntas del admin sobre un cliente en
+# tercera persona evaluadas, asi que el admin solo tiene las del portafolio.
+EJEMPLOS = {
+    "cliente": [
+        "¿En qué categoría gasto más?",  # v1 categoria_mayor_gasto
+        "¿Qué tan probable es que me atrase en mis pagos?",  # v3 mi_riesgo
+        "¿Qué me falta para el siguiente paso de mi escalera?",  # v2 siguiente_paso_escalera
+        "¿Ahorro más o menos que el resto de los clientes?",  # v3 ahorro_contra_los_demas
+    ],
+    "admin": [
+        "¿Cuántos clientes están en riesgo alto?",  # v1 clientes_riesgo_alto
+        "¿Qué porcentaje de los clientes gasta más de lo que gana?",  # v2 porcentaje_gasta_mas
+        "¿Cuál es el ingreso mediano de los clientes del banco?",  # v2 ingreso_mediano_clientes
+        # v3 probabilidad_media_portafolio
+        "¿Cuál es la probabilidad media de impago de todo el portafolio?",
+    ],
+}
 
+DESCRIPCION = {
+    "cliente": "Respondo sobre tus cuentas, movimientos, crédito y riesgo con tus datos.",
+    "admin": "Respondo sobre este cliente y sobre el portafolio con los datos del banco.",
+}
 
 TEXTO_ENTRADA = {
     "admin": "Pregunta sobre este cliente o el portafolio",
     "cliente": "Pregunta sobre tus finanzas",
 }
 
+PENSANDO = {
+    "cliente": "Revisando tus datos...",
+    "admin": "Revisando los datos...",
+}
+
+
+@st.cache_data
+def trayectorias() -> int:
+    """Escenarios de la simulacion (config/simulacion.yaml), los mismos que
+    usan simular_hipoteca y evaluar_compra."""
+    cfg = cargar_simulacion(comun.RAIZ / "config" / "simulacion.yaml")
+    return int(cfg["simulacion"]["trayectorias"])
+
+
+def fuentes(rol: str) -> dict[str, str]:
+    """Herramienta -> de donde salio la respuesta, en una frase. Para el
+    cliente en segunda persona; para el admin, en tercera."""
+    tu, tus = ("tu", "tus") if rol == "cliente" else ("su", "sus")
+    simulacion = f"Simulación de {trayectorias():,} escenarios con {tu} historial"
+    return {
+        "perfil_cliente": f"Con {tu} perfil y {tus} saldos al último corte",
+        "gasto_por_categoria": f"Calculado con {tus} movimientos por categoría",
+        "flujo_mensual": f"Calculado con lo que entró y salió de {tu} cuenta mes a mes",
+        "comparar_con_portafolio": "Comparado con los demás clientes del banco",
+        "simular_hipoteca": simulacion,
+        "evaluar_compra": simulacion,
+        "escalera_financiera": (
+            f"Según {tu} paso en la escalera financiera, con {tus} pagos de deuda "
+            f"y {tu} saldo"
+        ),
+        "resumen_portafolio": "Con las cifras de todo el portafolio al último corte",
+        "buscar_documentacion": "Según la documentación del proyecto",
+    }
+
+
+def mostrar_fuentes(pasos, rol: str) -> None:
+    """Una linea por fuente distinta, en el orden en que se consultaron. Una
+    herramienta que no este en el diccionario no se nombra."""
+    frases = fuentes(rol)
+    vistas = []
+    for paso in pasos:
+        frase = frases.get(paso.herramienta)
+        if frase and frase not in vistas:
+            vistas.append(frase)
+    for frase in vistas:
+        st.caption(frase + ".")
+
 
 @st.cache_resource(show_spinner=False)
 def modelo(cfg: Configuracion, rol: str) -> ModeloOllama:
     # rol es parte de la llave de la cache: un modelo por rol.
     return ModeloOllama(cfg, rol)
-
-
-def mostrar_pasos(pasos) -> None:
-    if not pasos:
-        return
-    with st.expander("Cómo se obtuvo", expanded=False):
-        for paso in pasos:
-            st.markdown(
-                f"`{paso.herramienta}` con {paso.argumentos or 'sin argumentos'}"
-            )
-            st.json(paso.resultado, expanded=False)
 
 
 if comun.gold_disponible():
@@ -69,12 +128,8 @@ if comun.gold_disponible():
     # El cliente y el rol salen de la sesion (el cliente, o el selector del
     # admin), nunca del modelo ni de la URL.
     rol = acceso.usuario_actual().rol
-    cliente_id = acceso.cliente_actual(clientes)
-    st.caption(
-        f"Modelo local {cfg.modelo} en Ollama. Las cifras salen de las mismas "
-        "consultas que las demás vistas; el modelo solo elige qué consultar y "
-        "redacta. Datos sintéticos."
-    )
+    cliente_id = acceso.cliente_actual(clientes, label_visibility="visible")
+    st.caption(DESCRIPCION[rol])
 
     conversaciones = st.session_state.setdefault("asistente_conversaciones", {})
     historial = conversaciones.setdefault(cliente_id, [])
@@ -84,24 +139,30 @@ if comun.gold_disponible():
             st.markdown(turno["pregunta"])
         with st.chat_message("assistant"):
             st.markdown(turno["respuesta"].texto)
-            mostrar_pasos(turno["respuesta"].pasos)
+            mostrar_fuentes(turno["respuesta"].pasos, rol)
 
-    if not historial:
-        st.markdown("Por ejemplo:")
-        columnas = st.columns(len(EJEMPLOS))
-        for columna, ejemplo in zip(columnas, EJEMPLOS):
-            if columna.button(ejemplo, use_container_width=True):
-                st.session_state["asistente_pregunta"] = ejemplo
-                st.rerun()
-
+    # La pregunta en curso se lee antes de dibujar los ejemplos: mientras el
+    # modelo responde, los botones ya no se muestran.
     pregunta = st.chat_input(TEXTO_ENTRADA[rol])
     pregunta = pregunta or st.session_state.pop("asistente_pregunta", None)
+
+    if not historial and not pregunta:
+        st.markdown("Puedes empezar con una de estas:")
+        ejemplos = EJEMPLOS[rol]
+        for inicio in range(0, len(ejemplos), 2):
+            columnas = st.columns(2)
+            fila = ejemplos[inicio:][:2]
+            for columna, ejemplo in zip(columnas, fila):
+                if columna.button(ejemplo, use_container_width=True):
+                    st.session_state["asistente_pregunta"] = ejemplo
+                    st.rerun()
+
     if pregunta:
         with st.chat_message("user"):
             st.markdown(pregunta)
         with st.chat_message("assistant"):
             try:
-                with st.spinner("Consultando..."):
+                with st.spinner(PENSANDO[rol]):
                     respuesta = responder(
                         pregunta,
                         [(t["pregunta"], t["respuesta"].texto) for t in historial],
@@ -121,7 +182,7 @@ if comun.gold_disponible():
                 )
                 st.stop()
             st.markdown(respuesta.texto)
-            mostrar_pasos(respuesta.pasos)
+            mostrar_fuentes(respuesta.pasos, rol)
         historial.append({"pregunta": pregunta, "respuesta": respuesta})
 
     if historial and st.button("Borrar conversación"):

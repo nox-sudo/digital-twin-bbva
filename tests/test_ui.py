@@ -251,3 +251,60 @@ def test_ninguna_pagina_muestra_nombres_internos(vistas, archivo, usuario):
     # etiquetas antes de buscar.
     texto = re.sub(r"<[^>]+>", " ", texto_visible(at))
     assert INTERNO.findall(texto) == [], archivo
+
+
+# --- Asistente sin traza tecnica ------------------------------------------------
+
+
+@pytest.mark.parametrize("usuario", [CLIENTE, ADMIN], ids=["cliente", "admin"])
+def test_el_asistente_no_muestra_nombres_de_herramientas(vistas, monkeypatch, usuario):
+    """Una respuesta que uso todas las herramientas: la pagina no muestra el
+    nombre de ninguna, ni sus argumentos ni su resultado; solo una linea de
+    fuente por herramienta, sin repetir."""
+    import streamlit as st
+
+    from asistente import conversacion
+    from asistente.herramientas import HERRAMIENTAS
+
+    st.cache_resource.clear()
+    pasos = [
+        conversacion.Paso(nombre, {"argumento_interno": 1}, {"resultado_interno": 2})
+        for nombre in [*HERRAMIENTAS, "flujo_mensual"]
+    ]
+
+    def responder(*args, **kwargs):
+        return conversacion.Respuesta(texto="Listo.", motivo="respuesta", pasos=pasos)
+
+    monkeypatch.setattr(conversacion, "ModeloOllama", lambda cfg, rol: object())
+    monkeypatch.setattr(conversacion, "responder", responder)
+    at = correr(PAGINAS / "asistente.py", usuario, cliente_id="CLI-1")
+    at.chat_input[0].set_value("¿Cómo voy?").run()
+    assert not at.exception, [e.value for e in at.exception]
+
+    visible = texto_visible(at) + "\n".join(str(b.label) for b in at.button)
+    for nombre in HERRAMIENTAS:
+        assert nombre not in visible, nombre
+    assert "argumento_interno" not in visible and "resultado_interno" not in visible
+    assert not at.expander and not at.json
+    assert "Ollama" not in visible and "llama" not in visible
+
+    fuentes = [c.value for c in at.caption][1:]  # la primera describe la pagina
+    assert len(fuentes) == len(set(fuentes)), "una frase por fuente, sin repetir"
+    persona = "tus movimientos" if usuario.rol == "cliente" else "sus movimientos"
+    assert any(persona in f for f in fuentes)
+
+
+@pytest.mark.parametrize(
+    "usuario, ejemplo",
+    [
+        (CLIENTE, "¿En qué categoría gasto más?"),
+        (ADMIN, "¿Cuántos clientes están en riesgo alto?"),
+    ],
+    ids=["cliente", "admin"],
+)
+def test_ejemplos_del_asistente_por_rol(vistas, usuario, ejemplo):
+    at = correr(PAGINAS / "asistente.py", usuario, cliente_id="CLI-1")
+    etiquetas = [b.label for b in at.button]
+    assert ejemplo in etiquetas
+    otro = "¿Cuántos clientes están en riesgo alto?"
+    assert (otro in etiquetas) is (usuario.rol == "admin")
