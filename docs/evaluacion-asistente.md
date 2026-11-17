@@ -1199,6 +1199,69 @@ historial ya ocupan parte; con 5 hay riesgo de que Ollama recorte en silencio.
 - Si las parafrasis importan para la demo, comparar contra embeddings locales
   (por ejemplo `nomic-embed-text` en Ollama) con este mismo banco.
 
+## Segunda persona para el cliente (2026-11-17)
+
+Con la instancia de la demo, "¿En que categoria gasto mas?" con rol cliente
+respondio "El cliente gasta mas en pago deuda...": el modelo repetia la
+tercera persona de las descripciones de las herramientas ("Salidas del
+cliente por categoria"). Cambio: solo el primer parrafo del prompt del rol
+cliente (`_alcance_del_rol` en `asistente/conversacion.py`) le pide hablar
+de tu a quien escribe y nunca decir "el cliente" ni "la cliente". No
+cambian `responder()`, `asistente/herramientas.py`, los esquemas, el filtro
+de alcance ni el prompt del admin.
+
+**Revision nueva en `experimentos/eval_asistente.py`:** `segunda_persona`,
+solo en rol cliente: la respuesta no contiene "el cliente" ni "la cliente"
+(sin importar mayusculas). Entra en `aprobado`, asi que una corrida nueva
+no se compara uno a uno con las anteriores: un caso que antes aprobaba
+puede fallar solo por esta revision. El banco completo no se ha corrido con
+el prompt nuevo.
+
+**Las 8 preguntas de ejemplo del dashboard**, sobre la instancia de la demo
+(CLI-000283, `llama3.1:8b`, temperatura 0), antes y despues del cambio:
+
+| Rol | Pregunta | Antes | Despues |
+|---|---|---|---|
+| cliente | ¿En qué categoría gasto más? | El cliente gasta más en "pago deuda", con un total de 259,961.25 pesos y una proporción de 26.2% de sus gastos totales. | Gastas más en pagos de deuda, con un total de $259,961.25 y una proporción del 26.2% de tus gastos totales. |
+| cliente | ¿Qué tan probable es que me atrase en mis pagos? | La probabilidad de que te atrases en tus pagos es del 59,74%. Esto se debe a que tienes una banda de riesgo alta, un gasto mensual total que supera tu... | Según tus datos, tienes una probabilidad de impago del 59,74%. Esto se debe a que tienes una banda de riesgo alta, un gasto mensual total de 60,432.75... |
+| cliente | ¿Qué me falta para el siguiente paso de mi escalera? | Para el siguiente paso de tu escalera, necesito saber cuánto dinero tienes disponible para invertir. La herramienta "escalera_financiera" no proporcio... | Para el siguiente paso de tu escalera, necesito saber cuánto dinero quieres ahorrar cada mes. |
+| cliente | ¿Ahorro más o menos que el resto de los clientes? | El cliente CLI-000283 ahorra menos que el resto de los clientes, ya que su capacidad de ahorro es de -$27,030, lo que está por debajo de la mediana de... | Comparando con el resto de los clientes, tu capacidad de ahorro es menor a la mediana del portafolio, que es de -$451. Solo el 0.6% de los clientes ti... |
+| admin | ¿Cuántos clientes están en riesgo alto? | Según el resumen del portafolio, hay 86 clientes en riesgo alto. | Según el resumen del portafolio, hay 86 clientes en riesgo alto. |
+| admin | ¿Qué porcentaje de los clientes gasta más de lo que gana? | Según el resumen del portafolio, el 15,79% de los clientes gasta más de lo que gana. | Según el resumen del portafolio, el 15,79% de los clientes gasta más de lo que gana. |
+| admin | ¿Cuál es el ingreso mediano de los clientes del banco? | El ingreso mediano de los clientes del banco es de $9,796.94. | El ingreso mediano de los clientes del banco es de $9,796.94. |
+| admin | ¿Cuál es la probabilidad media de impago de todo el portafolio? | La probabilidad media de impago del portafolio es del 15,79%. | La probabilidad media de impago del portafolio es del 15,79%. |
+
+Las cuatro del cliente pasan a segunda persona; las del admin quedan
+iguales, como se esperaba. Dos ejemplos fallaban con o sin el cambio y se
+reemplazaron en la pagina por preguntas que tambien aprobaron 9 de 9 el
+2026-11-05:
+
+- `porcentaje_gasta_mas` (admin) daba 15.79 %, que es la probabilidad media;
+  la cifra correcta en la instancia es 57 %.
+- `siguiente_paso_escalera` (cliente) pedia un dato en vez de responder con
+  la escalera.
+
+Candidatas probadas con el prompt nuevo:
+
+| Rol | Pregunta (banco y caso) | Respuesta con el prompt nuevo |
+|---|---|---|
+| cliente | ¿Cuál es mi saldo disponible? (v2 saldo_disponible) | Tu saldo disponible es de $15,215.70. |
+| cliente | ¿Qué productos tengo con el banco? (v1 productos) | Tienes una cuenta digital, una tarjeta de crédito y un préstamo personal con el banco. |
+| cliente | ¿Qué paso me toca en mi escalera financiera y qué me falta? (v4 paso_actual) | Tienes que trabajar en reducir tus pagos de deuda, que son $25,513 al mes, el 70 % de tu ingreso de los últimos 3 meses. Para el siguiente paso deberí... |
+| cliente | ¿En qué paso de la escalera financiera voy? (v1 paso_escalera) | Estás en el paso "Pagos de deuda" de la escalera financiera. Tus pagos de deuda son $25,513 al mes, lo que representa el 70% de tu ingreso de los últi... |
+| admin | ¿Cuántos clientes tiene el portafolio? (v2 clientes_en_portafolio) | El portafolio tiene 500 clientes. |
+| admin | ¿Cuántos clientes están en riesgo medio? (v3 clientes_riesgo_medio) | Según el resumen del portafolio, hay 159 clientes en riesgo medio. |
+| admin | ¿Cuántos clientes hay en riesgo bajo? (v4 clientes_riesgo_bajo) | Hay 255 clientes en riesgo bajo. |
+| admin | ¿Qué parte de los clientes está en riesgo alto? (v5 clientes_alto_riesgo_cuantos) | Según el resumen del portafolio, la parte de los clientes que está en riesgo alto es del 17,2% (proporcion_por_banda["alto"]), lo que corresponde a 86... |
+
+
+Se usan `paso_actual` (cliente) y `clientes_riesgo_medio` (admin).
+`clientes_alto_riesgo_cuantos` responde bien pero nombra una llave interna
+(`proporcion_por_banda`), asi que no se uso. Queda abierto: la respuesta
+sobre el riesgo del cliente atribuye causas a la probabilidad ("Esto se debe
+a..."), algo que el prompt ya pide no hacer; no cambia con la segunda
+persona.
+
 ## Limites de esta evaluacion
 
 - **Alcance:** un modelo, tres clientes y 24 preguntas en espanol. Cada

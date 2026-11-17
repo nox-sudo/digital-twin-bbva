@@ -22,6 +22,11 @@ def pesos(valor) -> str:
     return formato_mxn(valor, estilo="cliente")
 
 
+def periodo_anterior(n: int) -> str:
+    """'el mes anterior' o 'los 18 meses anteriores'."""
+    return "el mes anterior" if n == 1 else f"los {n} meses anteriores"
+
+
 def resumen_mes(flujo: pd.DataFrame, nombre_mes) -> dict | None:
     """Lo que entro y salio el ultimo mes con datos, y lo que queda en un mes
     normal (promedio de los meses anteriores)."""
@@ -36,20 +41,27 @@ def resumen_mes(flujo: pd.DataFrame, nombre_mes) -> dict | None:
         float(ultimo["salidas"]),
         float(ultimo["neto"]),
     )
+    # Cada cifra dice su periodo: este mes, y el promedio de los meses
+    # anteriores (todo el historial menos este mes), para que no se confunda
+    # con el promedio de 12 meses de la explicacion del riesgo.
     frase = (
-        f"En {nombre_mes(ultimo['mes'])} te entraron {pesos(entradas)} y salieron "
-        f"{pesos(salidas)}. "
+        f"Este mes ({nombre_mes(ultimo['mes'])}) te entraron {pesos(entradas)} y "
+        f"salieron {pesos(salidas)}: "
     )
     if neto >= 0:
-        frase += f"Te quedaron {pesos(neto)}."
+        frase += f"te quedaron {pesos(neto)}."
     else:
-        frase += f"Gastaste {pesos(-neto)} más de lo que te entró."
+        frase += f"gastaste {pesos(-neto)} más de lo que te entró."
     if promedio is not None:
+        periodo = periodo_anterior(len(anteriores))
         if promedio >= 0:
-            frase += f" En un mes normal te quedan {pesos(promedio)}."
+            frase += (
+                f" En promedio, en {periodo}, te quedaban {pesos(promedio)} al mes."
+            )
         else:
             frase += (
-                f" En un mes normal gastas {pesos(-promedio)} más de lo que te entra."
+                f" En promedio, en {periodo}, gastabas {pesos(-promedio)} más de lo "
+                "que te entraba al mes."
             )
     return {
         "mes": ultimo["mes"],
@@ -165,8 +177,8 @@ def resumen_gastos(
 
 
 def comparacion_gasto(flujo: pd.DataFrame) -> dict | None:
-    """Lo que salio el ultimo mes contra un mes normal (promedio de los
-    meses anteriores, el mismo de resumen_mes)."""
+    """Lo que salio el ultimo mes contra el promedio de los meses anteriores
+    (el mismo de resumen_mes), con el periodo dicho."""
     if flujo.empty:
         return None
     flujo = flujo.sort_values("mes")
@@ -180,12 +192,13 @@ def comparacion_gasto(flujo: pd.DataFrame) -> dict | None:
         }
     promedio = float(anteriores.mean())
     cambio = (salidas - promedio) / promedio
+    referencia = f"tu promedio de {periodo_anterior(len(anteriores))}"
     if abs(cambio) < 0.01:
-        frase = "Igual que en un mes normal."
+        frase = f"Igual que {referencia}."
     else:
         frase = (
             f"{abs(cambio) * 100:.0f} % {'más' if cambio > 0 else 'menos'} "
-            "que en un mes normal."
+            f"que {referencia}."
         )
     return {"salidas": salidas, "promedio": promedio, "cambio": cambio, "frase": frase}
 
@@ -245,6 +258,92 @@ def siguiente_paso(
     return " ".join(partes) or "Todavía no tenemos datos para sugerirte un paso."
 
 
+# Meses de autonomia por debajo de los cuales el siguiente paso habla
+# primero del deficit.
+AUTONOMIA_MINIMA = 3
+
+
+def autonomia_meses(saldo, capacidad_ahorro) -> float | None:
+    """Cuantos meses alcanza el saldo al ritmo del deficit promedio de la
+    ventana (capacidad de ahorro negativa). None si no hay deficit."""
+    if capacidad_ahorro is None or pd.isna(capacidad_ahorro) or capacidad_ahorro >= 0:
+        return None
+    if saldo is None or pd.isna(saldo) or saldo <= 0:
+        return 0.0
+    return float(saldo) / -float(capacidad_ahorro)
+
+
+def texto_autonomia(meses: float) -> str:
+    """'menos de 1 mes', '1 mes' o '4 meses' (meses completos)."""
+    if meses < 1:
+        return "menos de 1 mes"
+    completos = int(meses)
+    return "1 mes" if completos == 1 else f"{completos} meses"
+
+
+def frase_autonomia(meses: float | None, ventana: int) -> str | None:
+    if meses is None:
+        return None
+    return (
+        f"A tu ritmo de los últimos {ventana} meses, tu saldo alcanza para "
+        f"{texto_autonomia(meses)}."
+    )
+
+
+def siguiente_paso_priorizado(
+    banda: str | None,
+    probabilidad,
+    saldo,
+    capacidad_ahorro,
+    ventana: int,
+    nombre_paso: str | None,
+    lectura: str | None,
+    probabilidad_deficit: float | None,
+    meses_simulados: int,
+    factor_que_sube: str | None = None,
+) -> list[str]:
+    """Parrafos del siguiente paso, con reglas fijas (mismas entradas, mismo
+    texto). Si el riesgo es alto, o hay deficit promedio y el saldo alcanza
+    para menos de AUTONOMIA_MINIMA meses, primero va eso, con su cifra y su
+    periodo, y el paso de la escalera queda debajo. Si no, el texto de
+    siguiente_paso()."""
+    autonomia = autonomia_meses(saldo, capacidad_ahorro)
+    alto = banda == "alto"
+    deficit_urgente = autonomia is not None and autonomia < AUTONOMIA_MINIMA
+    if not (alto or deficit_urgente):
+        return [
+            siguiente_paso(nombre_paso, lectura, probabilidad_deficit, meses_simulados)
+        ]
+
+    riesgo = (
+        f"tu riesgo de atrasarte en tus pagos es alto ({float(probabilidad) * 100:.1f} %)"
+        if alto and probabilidad is not None and not pd.isna(probabilidad)
+        else "tu riesgo de atrasarte en tus pagos es alto"
+    )
+    if autonomia is not None:
+        primero = (
+            f"Lo primero: en promedio, en los últimos {ventana} meses, gastas "
+            f"{pesos(-capacidad_ahorro)} más de lo que te entra al mes. A ese ritmo, "
+            f"tu saldo de {pesos(saldo)} alcanza para {texto_autonomia(autonomia)}."
+        )
+        if alto:
+            primero += f" Además, {riesgo}."
+    else:
+        primero = f"Lo primero: {riesgo}."
+        if factor_que_sube:
+            primero += f" Lo que más lo sube: {factor_que_sube[0].lower()}{factor_que_sube[1:]}."
+    parrafos = [primero]
+    if nombre_paso and lectura:
+        parrafos.append(
+            f"Tu paso en la escalera: {nombre_paso[0].lower()}{nombre_paso[1:]}. "
+            f"{lectura}"
+        )
+    simulacion = siguiente_paso(None, None, probabilidad_deficit, meses_simulados)
+    if probabilidad_deficit is not None:
+        parrafos.append(simulacion)
+    return parrafos
+
+
 TONO_BANDA = {
     "bajo": "Vas bien: tu riesgo de atrasarte en tus pagos es bajo.",
     "medio": "Ojo: tu riesgo de atrasarte en tus pagos es medio.",
@@ -252,17 +351,39 @@ TONO_BANDA = {
 }
 
 
-def resumen_riesgo(banda: str, explicacion: Explicacion | None, n: int) -> dict:
+# KPIs de flujo de Gold calculados sobre la ventana de config/features.yaml
+# (12 meses): su frase en la explicacion del riesgo dice ese periodo, para
+# que no se confunda con las cifras de este mes.
+VARIABLES_VENTANA = {
+    "ingreso_mensual_promedio",
+    "estabilidad_ingreso",
+    "gasto_mensual_total",
+    "capacidad_ahorro",
+    "frecuencia_transacciones",
+    "actividad_p2p",
+}
+
+
+def _con_periodo(factor, ventana: int | None) -> str:
+    if ventana and factor.variable in VARIABLES_VENTANA:
+        return f"{factor.frase} (promedio de los últimos {ventana} meses)"
+    return factor.frase
+
+
+def resumen_riesgo(
+    banda: str, explicacion: Explicacion | None, n: int, ventana: int | None = None
+) -> dict:
     """La banda en palabras y lo que mas mueve el score del cliente, con sus
-    propios valores SHAP: lo que lo sube y lo que lo baja."""
+    propios valores SHAP: lo que lo sube y lo que lo baja. Con ventana, las
+    frases de los KPIs de flujo dicen su periodo."""
     frase = TONO_BANDA.get(banda, "Todavía no tenemos tu nivel de riesgo.")
     if explicacion is None:
         return {"frase": frase, "suben": [], "bajan": []}
     principales = explicacion.principales(n)
     return {
         "frase": frase,
-        "suben": [f.frase for f in principales if f.sube],
-        "bajan": [f.frase for f in principales if not f.sube],
+        "suben": [_con_periodo(f, ventana) for f in principales if f.sube],
+        "bajan": [_con_periodo(f, ventana) for f in principales if not f.sube],
     }
 
 

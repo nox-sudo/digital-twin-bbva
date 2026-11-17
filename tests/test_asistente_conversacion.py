@@ -381,6 +381,26 @@ def test_prompt_del_admin_conserva_el_portafolio(gold, tmp_path):
     assert "No das cifras de todo el banco" not in sistema
 
 
+def test_prompt_del_cliente_le_habla_de_tu(gold, tmp_path):
+    sistema = c.prompt_sistema(contexto(gold, tmp_path, "CLI-2"), "2027-02")
+    assert "Hablale de tu, en segunda persona" in sistema
+    assert "Nunca digas 'el cliente', 'la cliente'" in sistema
+    assert "sobre el cliente CLI-2" not in sistema
+    assert "duena de la cuenta CLI-2" in sistema
+
+
+def test_el_prompt_del_admin_no_cambia_con_la_segunda_persona(gold, tmp_path):
+    sistema = c.prompt_sistema(
+        contexto(gold, tmp_path, "CLI-2", rol="admin"), "2027-02"
+    )
+    assert sistema.startswith(
+        "Eres el asistente del Gemelo Digital Financiero. Respondes en espanol, "
+        "en pocas frases, sobre el cliente CLI-2 y sobre el portafolio de "
+        "clientes. El ultimo mes con datos es 2027-02.\n\nReglas:\n"
+    )
+    assert "Hablale de tu" not in sistema
+
+
 def test_la_llamada_en_texto_reconoce_todas_las_herramientas():
     # La deteccion no filtra por rol: el permiso se decide en ejecutar().
     assert c.llamada_en_texto(JSON_RESUMEN)["name"] == "resumen_portafolio"

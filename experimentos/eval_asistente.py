@@ -262,6 +262,10 @@ def periodo_de(resultado: dict) -> dict | None:
     return None
 
 
+# "el cliente" o "la cliente" como palabras, sin importar mayusculas.
+TERCERA_PERSONA = re.compile(r"\b(?:el|la)\s+cliente\b", re.IGNORECASE)
+
+
 def calificar(
     caso: dict,
     texto: str,
@@ -271,6 +275,7 @@ def calificar(
     preguntas: list[str],
     cliente_id: str,
     ingreso_otro: float | None = None,
+    rol: str = "cliente",
 ) -> dict:
     """Revisiones de un caso. Cada una es True/False; las que no aplican al
     caso no aparecen. resultados son los de las herramientas del ultimo turno:
@@ -362,6 +367,10 @@ def calificar(
             for _, v in montos_en_texto(texto)
         )
     revision["sin_dolares"] = not any(p.search(texto) for p in OTRA_MONEDA)
+    if rol == "cliente":
+        # Al cliente se le habla de tu: la respuesta no lo nombra en tercera
+        # persona (con llama3.1:8b salia "El cliente gasta mas en...").
+        revision["segunda_persona"] = not TERCERA_PERSONA.search(texto)
     return {"revision": revision, "montos": montos}
 
 
@@ -487,6 +496,7 @@ def correr_caso(
         preguntas,
         cliente_id,
         ingreso_otro,
+        rol,
     )
     return Corrida(
         caso=caso["id"],

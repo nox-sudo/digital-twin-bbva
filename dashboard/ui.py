@@ -285,6 +285,8 @@ CSS = f"""
 .gd-heroe .gd-valor {{ font-size: 2.4rem; font-weight: 700; line-height: 1.15;
   margin: 4px 0; overflow-wrap: anywhere; }}
 .gd-heroe .gd-detalle {{ color: {TURQUESA_CLARO}; font-size: 1rem; }}
+.gd-heroe .gd-nota {{ color: #ffffff; font-size: 1rem; font-weight: 600;
+  margin-top: 8px; }}
 .gd-semaforo {{
   display: inline-flex; align-items: center; gap: 8px;
   border-radius: 999px; padding: 4px 12px; font-weight: 600; font-size: 0.95rem;
@@ -341,15 +343,23 @@ def tarjeta(
 
 
 def tarjeta_heroe(
-    titulo: str, valor: str, detalle: str | None = None, *, contenedor=None
+    titulo: str,
+    valor: str,
+    detalle: str | None = None,
+    nota: str | None = None,
+    *,
+    contenedor=None,
 ) -> None:
-    """La cifra principal de la vista, en la tarjeta marina de arriba."""
+    """La cifra principal de la vista, en la tarjeta marina de arriba, con
+    una linea de contexto y una nota opcional debajo."""
     partes = [
         f"<div class='gd-titulo'>{_texto(titulo)}</div>",
         f"<div class='gd-valor'>{_texto(valor)}</div>",
     ]
     if detalle:
         partes.append(f"<div class='gd-detalle'>{_texto(detalle)}</div>")
+    if nota:
+        partes.append(f"<div class='gd-nota'>{_texto(nota)}</div>")
     (contenedor or st).markdown(
         "<div class='gd-heroe'>" + "".join(partes) + "</div>",
         unsafe_allow_html=True,

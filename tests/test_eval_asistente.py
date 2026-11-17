@@ -525,3 +525,28 @@ def test_las_fuentes_esperadas_existen():
     for caso in banco["casos"]:
         for archivo in caso.get("fuente_esperada", []):
             assert archivo in archivos, (caso["id"], archivo)
+
+
+@pytest.mark.parametrize(
+    "texto, esperado",
+    [
+        ("Gastas más en pago de deuda: $259,961 en el año.", True),
+        ("El cliente gasta más en pago de deuda.", False),
+        ("la cliente ahorra menos que el resto.", False),
+        ("EL CLIENTE CLI-000001 tiene riesgo alto.", False),
+        ("Ahorras menos que el resto de los clientes.", True),
+        ("Comparado con otros clientes, gastas más.", True),
+    ],
+)
+def test_segunda_persona_en_rol_cliente(texto, esperado):
+    revision = calificar({"pregunta": "¿En qué gasto más?"}, texto)
+    assert revision["segunda_persona"] is esperado
+
+
+def test_segunda_persona_no_aplica_al_admin():
+    revision = calificar(
+        {"pregunta": "¿Cuántos clientes hay?"},
+        "El cliente CLI-000001 gasta más.",
+        rol="admin",
+    )
+    assert "segunda_persona" not in revision

@@ -234,6 +234,47 @@ Mientras tanto, la escalera no cuenta en el pago comprometido un prestamo
 cuyo plazo termino antes del mes de corte, aunque Gold le muestre saldo
 (`prestamo_vigente` en `src/gold/escalera.py`).
 
+### Suscripciones y otras categorias de cargo fijo sin escala propia
+
+**Que pasa:** el generador (`generate_synthetic_sources.py`) calcula el
+gasto del mes como `ingreso_base * tasa_gasto * ruido(0.85 a 1.15)` (por
+1.15 en diciembre), lo reparte en 8 a 25 compras con montos aleatorios
+(`_montos_que_suman`) y sortea la categoria de cada compra con la
+preferencia del cliente, `pesos_categoria ~ Dirichlet(0.7)`. Ninguna
+categoria tiene un precio o un tope propio. Con el escenario de deriva, el
+gasto total se multiplica ademas por 1.08^k (`efectos` en
+`src/common/escenario_deriva.py`; 1.71 en el septimo mes). "Suscripciones"
+son compras con comercio Amazon Prime, Disney+, HBO Max o Gimnasio, pero su
+monto hereda la escala del gasto total: un cliente con ingreso alto y
+preferencia alta por esa categoria paga miles de pesos al mes en
+streaming.
+
+**Evidencia** (instancia de la demo, corte abr 2027, medido el 2026-11-17
+sobre `gold_movimientos_mensuales`):
+
+| Medida | Valor |
+|---|---|
+| Suscripciones por cliente, promedio mensual feb a abr 2027: mediana | $576 |
+| p90 / p99 / maximo | $4,292 / $12,005 / $21,112 |
+| Clientes sin suscripciones en esos meses | 96 de 500 |
+| Monto por compra de suscripciones: mediana / maximo | $543 / $14,413 |
+| CLI-000283: promedio feb a abr 2027 | $17,674 al mes (22 % de sus compras; solo 2 clientes tienen mas) |
+| CLI-000283: meses, de oct 2025 a abr 2027 | de $4,165 a $23,427, con 1 a 6 compras al mes; $10,975 en oct 2025, antes de la deriva |
+
+El "+$10,567 al mes" que muestra Mi resumen para CLI-000283 ("Lo que mas
+crecio") compara feb a abr 2027 contra nov 2026 a ene 2027: es sobre todo
+ruido del sorteo de pocas compras grandes, mas el 1.71 de la deriva sobre el
+gasto total. Las cifras no son creibles como suscripciones (una compra de
+$14,413 en un servicio de streaming).
+
+**Posible fix:** dar a las categorias de cargo fijo (suscripciones,
+servicios) un monto mensual por cliente con su propio rango, y repartir el
+resto del gasto entre las categorias variables; o calibrar la proporcion de
+cada rubro con la ENIGH de INEGI (con fuente y fecha, como pide
+`docs/arquitectura.md` para las cifras externas). Cualquiera de los dos
+cambia la instancia y todas las cifras publicadas: se reconstruye con
+`demo.sh` y se vuelve a medir el guion. Pendiente, no antes de la demo.
+
 ## Resueltos
 
 ### Tasa del simulador de hipoteca sin fuente
