@@ -371,6 +371,30 @@ def semaforo(banda: str, texto: str | None = None, *, contenedor=None) -> None:
     (contenedor or st).markdown(html_semaforo(banda, texto), unsafe_allow_html=True)
 
 
+ROL_LEGIBLE = {"admin": "Administrador", "cliente": "Cliente"}
+
+
+def sesion(usuario, al_salir) -> None:
+    """Quien esta dentro y como salir, arriba de cada vista y en la barra
+    lateral (en el celular la barra empieza cerrada, por eso tambien
+    arriba). al_salir se llama al pulsar "Cerrar sesión"."""
+    rol = ROL_LEGIBLE.get(usuario.rol, usuario.rol)
+    quien = rol if usuario.rol == "admin" else f"{rol} · {usuario.usuario}"
+    st.caption(f":material/account_circle: Sesión: {quien}")
+    with st.sidebar.container(key="gd-tarjeta-sesion"):
+        st.markdown(f"**:material/account_circle: {rol}**")
+        if usuario.rol != "admin":
+            st.caption(usuario.usuario)
+        if st.button(
+            "Cerrar sesión",
+            icon=":material/logout:",
+            use_container_width=True,
+            key="cerrar_sesion",
+        ):
+            al_salir()
+            st.rerun()
+
+
 def contenedor(nombre: str, en=None):
     """Un st.container con aspecto de tarjeta, para agrupar graficas o
     formularios. El nombre debe ser unico en la pagina; en es la columna o
