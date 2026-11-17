@@ -1,11 +1,32 @@
-# Tema del dashboard (dashboard/app.py). Superficie clara y un solo color
-# de acento; los colores de las graficas viven en dashboard/comun.py.
+# Tema del dashboard (dashboard/app.py). La paleta completa, con el contraste
+# de cada color, esta documentada en dashboard/ui.py; los colores de las
+# graficas viven en dashboard/comun.py.
 [theme]
 base = "light"
-primaryColor = "#1c5cab"
-backgroundColor = "#fcfcfb"
-secondaryBackgroundColor = "#f0efec"
-textColor = "#1f1f1d"
+# Azul marino: botones, seleccion y enlaces. 13:1 con texto blanco encima.
+primaryColor = "#13315c"
+# Fondo claro frio; las tarjetas blancas (dashboard/ui.py) resaltan sobre el.
+backgroundColor = "#f8fafc"
+# Barra lateral y campos de entrada.
+secondaryBackgroundColor = "#eef2f7"
+# Casi negro. Streamlit dibuja st.caption con este color al 60 %: 4.6:1 sobre
+# el fondo y 4.5:1 sobre la barra lateral (AA pide 4.5:1).
+textColor = "#0f172a"
+# Source Sans, la sans-serif que trae Streamlit: no depende de descargar una
+# fuente durante la demo.
+font = "sans-serif"
+baseRadius = "0.75rem"
+# Cifras de las tarjetas de KPI: caben "$12,345.67 MXN" en cuatro columnas.
+metricValueFontSize = "1.6rem"
+borderColor = "#dde3eb"
+showWidgetBorder = false
+
+[client]
+# Un error no previsto muestra un mensaje generico, nunca el traceback; el
+# detalle queda en la consola del servidor.
+showErrorDetails = "none"
+# Sin el boton Deploy ni las opciones de desarrollador en el menu.
+toolbarMode = "viewer"
 
 [browser]
 gatherUsageStats = false

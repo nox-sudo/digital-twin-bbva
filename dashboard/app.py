@@ -23,6 +23,7 @@ Con el asistente (necesita Ollama, ver docs/ejecucion-local.md):
     uv run --group dashboard --group asistente streamlit run dashboard/app.py
 """
 
+import logging
 import sys
 from pathlib import Path
 
@@ -30,9 +31,10 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from dashboard import acceso  # noqa: E402
+from dashboard import acceso, ui  # noqa: E402
 
 st.set_page_config(page_title="Gemelo Digital Financiero", layout="wide")
+ui.estilos()
 
 PAGINAS = Path(__file__).resolve().parent / "paginas"
 
@@ -55,4 +57,15 @@ if st.sidebar.button("Cerrar sesión"):
 st.sidebar.caption(
     "Gemelo Digital Financiero · Path Data Engineering BBVA × Tecmilenio"
 )
-navegacion.run()
+try:
+    navegacion.run()
+except Exception as e:
+    # Un error que ninguna vista previo: mensaje en lenguaje humano y, solo
+    # para el admin, la causa. st.stop() y st.rerun() no pasan por aqui
+    # (no heredan de Exception). El traceback queda en la consola.
+    ui.estado_error(
+        "No pudimos cargar esta vista. Recarga la página; si sigue pasando, "
+        "avisa al equipo.",
+        detalle=f"{type(e).__name__}: {e}",
+    )
+    logging.getLogger(__name__).exception("Error en la vista")
