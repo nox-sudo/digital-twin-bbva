@@ -319,7 +319,10 @@ def meta_escalera(paso: str, m: dict, cfg: dict) -> dict:
         return {
             "accion": f"Baja el uso de tu tarjeta al {tope * 100:.0f} % de su límite.",
             "hoy": f"Hoy usas el {m['uso_tarjeta'] * 100:.0f} % de su límite",
-            "falta": f"Te faltan {(m['uso_tarjeta'] - tope) * 100:.0f} puntos",
+            "falta": (
+                f"Te faltan {(m['uso_tarjeta'] - tope) * 100:.0f} puntos para bajar "
+                f"al {tope * 100:.0f} %"
+            ),
         }
     if paso in ("fondo_minimo", "fondo_meta"):
         meta = u["fondo_emergencia"][

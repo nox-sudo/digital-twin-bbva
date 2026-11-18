@@ -429,7 +429,8 @@ def test_meta_de_la_escalera_con_los_umbrales_de_la_escalera():
     assert meta["falta"] == "Te faltan $14,514 por bajar"
     tarjeta = vc.meta_escalera("uso_tarjeta", METRICAS_283, esc.cargar_config())
     assert tarjeta["accion"] == "Baja el uso de tu tarjeta al 30 % de su límite."
-    assert "38 %" in tarjeta["hoy"] and "8 puntos" in tarjeta["falta"]
+    assert "38 %" in tarjeta["hoy"]
+    assert tarjeta["falta"] == "Te faltan 8 puntos para bajar al 30 %"
 
 
 def test_siguiente_paso_compacto_urgente():
