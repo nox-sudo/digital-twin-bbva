@@ -1262,6 +1262,35 @@ sobre el riesgo del cliente atribuye causas a la probabilidad ("Esto se debe
 a..."), algo que el prompt ya pide no hacer; no cambia con la segunda
 persona.
 
+## Porcentaje que gasta mas de lo que gana (2026-11-17)
+
+Caso `porcentaje_gasta_mas` (banco v2), con rol admin, sobre la instancia de
+la demo (`llama3.1:8b`, temperatura 0), 3 corridas:
+
+| | Herramienta | Respuesta (las 3 corridas iguales) |
+|---|---|---|
+| Antes | `resumen_portafolio`, sin argumentos | "Segun el resumen del portafolio, el 15,79% de los clientes gasta mas de lo que gana." |
+| Despues | `resumen_portafolio`, sin argumentos | "Segun el resumen del portafolio, el 56.6% de los clientes gasta mas de lo que gana." |
+
+El resultado de la herramienta traia las dos cifras
+(`proporcion_ahorro_negativo` 0.566 y `probabilidad_media` 0.1579); el
+modelo tomaba la segunda. El arreglo agrega a `resumen_portafolio` una
+`lectura` que rotula cada cifra (causa y alternativas probadas en
+[technical-debt.md](technical-debt.md)). Con el arreglo, las otras cuatro
+preguntas de ejemplo del admin responden lo mismo que antes: 86 en riesgo
+alto, 159 en riesgo medio, ingreso mediano $9,796.94 y probabilidad media
+15.8 %.
+
+**Por que la evaluacion no lo detecto:** el caso aprobaba 9 de 9 el
+2026-11-05 porque `conteos_y_porcentajes_sin_inventar` solo revisa que el
+porcentaje este en algun resultado. Revision nueva `porcentaje_correcto`:
+con `porcentaje_de` y `no_porcentaje_de` en el caso, la respuesta debe dar la
+proporcion de la primera llave (salvo redondeo de 0.6 puntos) y no la de la
+segunda. El caso `porcentaje_gasta_mas` del banco v2 la usa
+(`porcentaje_de: proporcion_ahorro_negativo`, `no_porcentaje_de:
+probabilidad_media`). El banco completo no se ha vuelto a correr: una
+corrida nueva no se compara uno a uno con las anteriores en este caso.
+
 ## Limites de esta evaluacion
 
 - **Alcance:** un modelo, tres clientes y 24 preguntas en espanol. Cada

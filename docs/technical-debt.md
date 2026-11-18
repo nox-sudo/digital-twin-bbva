@@ -277,6 +277,35 @@ cambia la instancia y todas las cifras publicadas: se reconstruye con
 
 ## Resueltos
 
+### El asistente daba la probabilidad media como "gastan mas de lo que ganan"
+
+**Que pasaba:** en la instancia de la demo, a "¿Que porcentaje de los
+clientes gasta mas de lo que gana?" con rol admin, `llama3.1:8b` respondia
+"el 15,79% de los clientes gasta mas de lo que gana" en 3 de 3 corridas
+(2026-11-17). La cifra correcta es 56.6 % (57 % redondeado, como en
+Portafolio).
+
+**Causa:** de lectura, no de herramienta. El modelo elegia bien
+`resumen_portafolio` (sin argumentos) y el resultado traia las dos cifras:
+`"proporcion_ahorro_negativo": 0.566` y `"probabilidad_media": 0.1579`. El
+nombre de la llave no dice "gasta mas de lo que gana" y el modelo tomaba la
+otra. La evaluacion del 2026-11-05 dio 9 de 9 en este caso
+(`porcentaje_gasta_mas`, banco v2) porque solo revisaba que el porcentaje
+existiera en el resultado, y 15.79 % existe.
+
+**Arreglo:** `resumen_portafolio` devuelve ademas una `lectura` que dice que
+es cada cifra ("Gastan mas de lo que ganan (capacidad de ahorro negativa):
+56.6 % de los clientes. ... Probabilidad media de impago: 15.8 %."), con los
+mismos valores y sin calculos nuevos; es el patron de las demas
+herramientas. Una regla en el prompt del admin se probo antes y fue peor: en
+3 de 3 corridas el modelo dejo de llamar a la herramienta y pidio "el valor
+de la variable proporcion_ahorro_negativo". Despues del arreglo: 56.6 % en 3
+de 3, y las otras preguntas de ejemplo del admin sin cambio (86 en riesgo
+alto, 159 en riesgo medio, $9,796.94, 15.8 %). Nueva revision
+`porcentaje_correcto` en `experimentos/eval_asistente.py`: la respuesta da
+la proporcion de la llave esperada y no la de otra que tambien esta en el
+resultado. Detalle en [evaluacion-asistente.md](evaluacion-asistente.md).
+
 ### Tasa del simulador de hipoteca sin fuente
 
 Registrado el 2026-11-11: `config/simulacion.yaml` fijaba la tasa en 11 % con el

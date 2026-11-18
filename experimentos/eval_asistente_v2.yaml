@@ -146,6 +146,10 @@ casos:
     categoria: portafolio
     pregunta: "¿Qué porcentaje de los clientes gasta más de lo que gana?"
     herramientas: [resumen_portafolio]
+    # La cifra es proporcion_ahorro_negativo, no probabilidad_media (las dos
+    # estan en el resultado; el modelo daba la segunda).
+    porcentaje_de: proporcion_ahorro_negativo
+    no_porcentaje_de: probabilidad_media
 
   # --- Seguimiento ----------------------------------------------------------------------------
   - id: seguimiento_salud_mismo_mes
