@@ -260,6 +260,22 @@ CSS = f"""
   box-shadow: {SOMBRA};
   padding: 16px 18px;
 }}
+/* Separacion vertical entre bloques de tarjetas, para que no se toquen. */
+[class*="st-key-gd-tarjeta"] {{ margin-bottom: 8px; }}
+/* Tarjetas que comparten fila (dos columnas) con la misma altura. */
+/* En Streamlit 1.66: stColumn > stVerticalBlock > stLayoutWrapper > tarjeta.
+   La columna ya mide lo que la mas alta de la fila; el envoltorio crece
+   hasta ese alto y la tarjeta lo llena. */
+[data-testid="stColumn"] [data-testid="stLayoutWrapper"]:has(> [class*="st-key-gd-tarjeta"]) {{
+  flex: 1 1 auto;
+}}
+[data-testid="stColumn"] [class*="st-key-gd-tarjeta"] {{ height: 100%; }}
+/* Notas (st.caption) mas grandes y con mas contraste: TEXTO_2 sobre el
+   fondo es 7.2:1 (antes, el texto al 60 %: 4.6:1). */
+[data-testid="stCaptionContainer"],
+[data-testid="stCaptionContainer"] p {{
+  color: {TEXTO_2}; font-size: 0.95rem; opacity: 1;
+}}
 [data-testid="stMetricValue"] {{ font-weight: 600; }}
 [data-testid="stMetricValue"] > div {{ white-space: normal; overflow-wrap: anywhere; }}
 .gd-tarjeta {{
@@ -274,6 +290,12 @@ CSS = f"""
 .gd-tarjeta .gd-valor {{ color: {TEXTO}; font-size: 1.6rem; font-weight: 600;
   line-height: 1.2; overflow-wrap: anywhere; }}
 .gd-tarjeta .gd-detalle {{ color: {TEXTO_2}; font-size: 0.9rem; margin-top: 6px; }}
+.gd-fila {{
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin: 16px 0 24px;
+}}
 .gd-heroe {{
   background: {MARINO};
   border-radius: {RADIO};
@@ -325,6 +347,19 @@ def html_tarjeta(
     if detalle:
         partes.append(f"<div class='gd-detalle'>{_texto(detalle)}</div>")
     return "<div class='gd-tarjeta'>" + "".join(partes) + "</div>"
+
+
+def fila_tarjetas(tarjetas: list[dict]) -> None:
+    """Tarjetas en una fila con la misma altura: una cuadricula de CSS en vez
+    de st.columns, cuyas columnas crecen cada una a su contenido. En pantalla
+    angosta bajan una por renglon. Cada tarjeta es un dict con los
+    argumentos de html_tarjeta (titulo, valor, detalle, banda)."""
+    st.markdown(
+        "<div class='gd-fila'>"
+        + "".join(html_tarjeta(**t) for t in tarjetas)
+        + "</div>",
+        unsafe_allow_html=True,
+    )
 
 
 def tarjeta(

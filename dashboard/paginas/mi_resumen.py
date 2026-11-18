@@ -185,6 +185,19 @@ if comun.gold_disponible():
     flujo_cliente = comun.flujo(version, cliente_id)
     mes = vc.resumen_mes(flujo_cliente, comun.nombre_mes)
 
+    # --- Saludo -----------------------------------------------------------
+    # Sin nombre: los nombres solo existen en las fuentes crudas y se guardan
+    # como hash desde Silver (config/politica_pii.yaml); Gold y el dashboard
+    # no tienen PII. En una app real el nombre vendria del servicio de
+    # identidad de la sesion, no de la capa analitica. El admin lo ve igual:
+    # "Vista del cliente" muestra lo mismo que ve el cliente.
+    cierre = f" al cierre de {comun.nombre_mes(mes['mes'])}" if mes else ""
+    st.markdown(
+        f"<div style='font-size:1.25rem;margin:-8px 0 12px'>Hola. Así van tus "
+        f"finanzas{cierre}.</div>",
+        unsafe_allow_html=True,
+    )
+
     # --- ¿Como voy? -------------------------------------------------------
     # Autonomia: saldo entre el deficit promedio de la ventana de 12 meses
     # (capacidad de ahorro negativa), la misma cifra del KPI y de la
@@ -203,32 +216,42 @@ if comun.gold_disponible():
         ),
         vc.frase_autonomia(autonomia, ventana),
     )
-    st.write("")
-    t1, t2, t3 = st.columns(3)
     gasto = vc.comparacion_gasto(flujo_cliente)
-    ui.tarjeta(
-        (
-            f"Gastaste este mes ({comun.nombre_mes(mes['mes'])})"
-            if mes
-            else "Gastaste este mes"
-        ),
-        ui.formatear_mxn(gasto["salidas"]) if gasto else "Sin movimientos",
-        gasto["frase"] if gasto else None,
-        contenedor=t1,
-    )
     crecio = vc.mayor_aumento(
         cambios(version, cliente_id), comun.nombre_categoria, MESES_CAMBIO
     )
-    ui.tarjeta("Lo que más creció", crecio["titulo"], crecio["frase"], contenedor=t2)
     banda = fila["banda_riesgo"]
-    ui.tarjeta(
-        ui.nombre_kpi("banda_riesgo", "cliente"),
-        vc.NIVEL_BANDA.get(banda, "Sin dato"),
-        vc.TONO_BANDA.get(banda, "Todavía no tenemos tu nivel de riesgo.")
-        .split(": ")[-1]
-        .capitalize(),
-        banda=banda if banda in vc.NIVEL_BANDA else None,
-        contenedor=t3,
+    # Las tres tarjetas en una cuadricula: misma altura y separacion fija
+    # con la tarjeta de saldo y con "Tu siguiente paso".
+    ui.fila_tarjetas(
+        [
+            {
+                "titulo": (
+                    f"Gastaste este mes ({comun.nombre_mes(mes['mes'])})"
+                    if mes
+                    else "Gastaste este mes"
+                ),
+                "valor": (
+                    ui.formatear_mxn(gasto["salidas"]) if gasto else "Sin movimientos"
+                ),
+                "detalle": gasto["frase"] if gasto else None,
+            },
+            {
+                "titulo": "Lo que más creció",
+                "valor": crecio["titulo"],
+                "detalle": crecio["frase"],
+            },
+            {
+                "titulo": ui.nombre_kpi("banda_riesgo", "cliente"),
+                "valor": vc.NIVEL_BANDA.get(banda, "Sin dato"),
+                "detalle": vc.TONO_BANDA.get(
+                    banda, "Todavía no tenemos tu nivel de riesgo."
+                )
+                .split(": ")[-1]
+                .capitalize(),
+                "banda": banda if banda in vc.NIVEL_BANDA else None,
+            },
+        ]
     )
 
     # --- Siguiente paso ---------------------------------------------------
@@ -308,7 +331,9 @@ if comun.gold_disponible():
                     y=alt.Y("monto:Q", title=None, axis=EJE_PESOS),
                     color=alt.Color(
                         "cual:N",
-                        scale=alt.Scale(range=[comun.AZUL, comun.NARANJA]),
+                        # Dos tonos de la paleta azul: las quincenas son la
+                        # misma serie partida en dos, no dos cosas distintas.
+                        scale=alt.Scale(range=[ui.MARINO, comun.AZUL]),
                         legend=alt.Legend(title=None, orient="top"),
                     ),
                     tooltip=[
@@ -335,20 +360,37 @@ if comun.gold_disponible():
                 nombre=lambda d: d["categoria"].map(comun.nombre_categoria),
                 total_texto=lambda d: d["total"].map(ui.formatear_mxn),
                 proporcion_texto=lambda d: d["proporcion"].map(ui.formatear_porcentaje),
+                etiqueta=lambda d: d.apply(
+                    lambda f: f"{ui.formatear_mxn(f['total'], centavos=False)} · "
+                    f"{ui.formatear_porcentaje(f['proporcion'])}",
+                    axis=1,
+                ),
+            )
+            # Valor escrito al final de cada barra; el eje llega mas alla de
+            # la barra mas larga para que la etiqueta no se corte.
+            base = alt.Chart(top).encode(
+                y=alt.Y(
+                    "nombre:N", sort="-x", title=None, axis=alt.Axis(labelLimit=140)
+                ),
+                x=alt.X(
+                    "total:Q",
+                    title=None,
+                    axis=EJE_PESOS,
+                    scale=alt.Scale(domain=[0, float(top["total"].max()) * 2.1]),
+                ),
+                tooltip=[
+                    alt.Tooltip("nombre:N", title="Categoría"),
+                    alt.Tooltip("total_texto:N", title="Total"),
+                    alt.Tooltip("proporcion_texto:N", title="Del total"),
+                ],
             )
             st.altair_chart(
-                alt.Chart(top)
-                .mark_bar(color=comun.AZUL, cornerRadiusEnd=4)
-                .encode(
-                    y=alt.Y("nombre:N", sort="-x", title=None),
-                    x=alt.X("total:Q", title=None, axis=EJE_PESOS),
-                    tooltip=[
-                        alt.Tooltip("nombre:N", title="Categoría"),
-                        alt.Tooltip("total_texto:N", title="Total"),
-                        alt.Tooltip("proporcion_texto:N", title="Del total"),
-                    ],
-                )
-                .properties(height=alt.Step(26)),
+                (
+                    base.mark_bar(color=comun.AZUL, cornerRadiusEnd=4)
+                    + base.mark_text(
+                        align="left", dx=6, color=ui.TEXTO_2, fontSize=12
+                    ).encode(text="etiqueta:N")
+                ).properties(height=alt.Step(30)),
                 width="stretch",
             )
 
@@ -382,7 +424,7 @@ if comun.gold_disponible():
             )
             st.caption("Pago mínimo de tus tarjetas y cuota de tus préstamos, con IVA.")
             if e.supuestos:
-                st.caption(" ".join(e.supuestos))
+                st.caption(vc.lenguaje_cliente(" ".join(e.supuestos)))
 
     # --- Tu riesgo, explicado --------------------------------------------------
     with ui.contenedor("riesgo"):

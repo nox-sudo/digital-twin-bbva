@@ -17,6 +17,20 @@ import pandas as pd
 from src.common.formato import formato_mxn
 from src.gold.explicacion import Explicacion
 
+# Palabras internas que pueden llegar al texto del cliente desde los
+# modulos de calculo (src/gold/escalera.py): se cambian por lenguaje comun
+# solo al mostrarlas.
+LENGUAJE_CLIENTE = {
+    "las tasas del catálogo": "tasas de referencia",
+    "tasas del catálogo": "tasas de referencia",
+}
+
+
+def lenguaje_cliente(texto: str) -> str:
+    for interno, comun in LENGUAJE_CLIENTE.items():
+        texto = texto.replace(interno, comun)
+    return texto
+
 
 def pesos(valor) -> str:
     return formato_mxn(valor, estilo="cliente")
@@ -245,10 +259,10 @@ def siguiente_paso(
         )
     if probabilidad_deficit is not None:
         p = round(probabilidad_deficit * 100)
-        if p == 0:
+        if certeza(probabilidad_deficit):
             partes.append(
-                f"Con tu flujo actual, en ningún escenario simulado te quedas sin "
-                f"dinero en los próximos {meses} meses."
+                f"Con tu flujo actual, {certeza(probabilidad_deficit)} que te quedes "
+                f"sin dinero algún mes de los próximos {meses}."
             )
         else:
             partes.append(
@@ -387,16 +401,46 @@ def resumen_riesgo(
     }
 
 
+def certeza(probabilidad: float) -> str | None:
+    """Los extremos de la simulacion en palabras: 100 de cada 100 escenarios
+    es "prácticamente seguro" y 0 de cada 100, "muy poco probable". Con 5,000
+    escenarios, un conteo absoluto suena a certeza total, que el modelo no
+    tiene. None en los demas casos (se dice el conteo). El numero exacto
+    sigue en la vista del admin y en la documentacion."""
+    p = round(float(probabilidad) * 100)
+    if p >= 100:
+        return "es prácticamente seguro"
+    if p <= 0:
+        return "es muy poco probable"
+    return None
+
+
+def frase_riesgo_compra(con: float, sin: float, meses: int) -> str:
+    """Riesgo de quedarse sin dinero con y sin la compra, con los extremos
+    en palabras (certeza())."""
+    evento = f"te quedes sin dinero algún mes de los próximos {meses}"
+    c, s = certeza(con), certeza(sin)
+    if c and c == s:
+        return f"Con o sin la compra, {c} que {evento}."
+    if c:
+        parte_con = f"Con la compra, {c} que {evento}"
+    else:
+        parte_con = (
+            f"Con la compra, en {round(con * 100)} de cada 100 escenarios simulados "
+            f"te quedarías sin dinero algún mes de los próximos {meses}"
+        )
+    parte_sin = f"sin ella, {s}" if s else f"sin ella, en {round(sin * 100)}"
+    return f"{parte_con}; {parte_sin}."
+
+
 def resumen_compra(resultado: dict) -> str:
     """La respuesta de "¿me alcanza?" a partir de evaluar_compra."""
     if "error" in resultado:
         return resultado["error"]
-    meses_sim = resultado["meses_simulados"]
-    sin = resultado["probabilidad_deficit_sin_compra"] * 100
-    con = resultado["probabilidad_deficit_con_compra"] * 100
-    riesgo = (
-        f"Con la compra, en {con:.0f} de cada 100 escenarios simulados te quedarías "
-        f"sin dinero algún mes de los próximos {meses_sim}; sin ella, en {sin:.0f}."
+    riesgo = frase_riesgo_compra(
+        resultado["probabilidad_deficit_con_compra"],
+        resultado["probabilidad_deficit_sin_compra"],
+        resultado["meses_simulados"],
     )
     precio, saldo = resultado["precio"], resultado["saldo_disponible"]
     if resultado["forma_pago"] == "contado":

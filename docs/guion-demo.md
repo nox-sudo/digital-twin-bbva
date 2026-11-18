@@ -154,7 +154,9 @@ grafica mes a mes muestra los 19 meses de historial.
 El mismo **CLI-000283**, ahora como lo ve el cliente al entrar con su
 usuario: solo sus datos, sin selector de cliente, en frases cortas y en pesos.
 
-Arriba, la respuesta a "¿cómo voy?":
+Arriba, un saludo ("Hola. Así van tus finanzas al cierre de abr 2027."; sin
+nombre, porque Gold y el dashboard no tienen PII) y la respuesta a "¿cómo
+voy?":
 
 - Tienes disponible $15,215.70 MXN (saldo al cierre de abr 2027). "A tu
   ritmo de los últimos 12 meses, tu saldo alcanza para menos de 1 mes":
@@ -169,7 +171,10 @@ Arriba, la respuesta a "¿cómo voy?":
   gastas $27,030 más de lo que te entra al mes. A ese ritmo, tu saldo de
   $15,216 alcanza para menos de 1 mes. Además, tu riesgo de atrasarte en tus
   pagos es alto (59.7 %)." Debajo, "Tu paso en la escalera" y el Monte
-  Carlo (100 de cada 100 escenarios). Reglas fijas, sin modelo de lenguaje.
+  Carlo: al cliente, 100 de cada 100 escenarios se le dice "es prácticamente
+  seguro que te quedes sin dinero algún mes de los próximos 36" (0 de cada
+  100 sería "muy poco probable"); el conteo exacto queda en el Simulador del
+  admin. Reglas fijas, sin modelo de lenguaje.
 
 Debajo, "El detalle", en el orden de siempre. Cada cifra de déficit dice su
 periodo:
@@ -184,7 +189,7 @@ periodo:
 - Su crédito: paso 1 de 6 de la escalera (pagos de deuda bajo control).
   Paga $25,513 al mes de deudas, el 70 % de su ingreso de los últimos 3
   meses ($36,665 al mes); para el siguiente paso deberían quedar en $10,999
-  o menos. Usa 38 % de su tarjeta.
+  o menos. "Límite de tu tarjeta que usas": 38 %.
 - Su riesgo, alto, explicado con sus propios valores SHAP ("Tu riesgo
   estimado de atrasarte en algún pago en los próximos 6 meses: 59.7 %"). Lo
   sube: gasta $27,030 más de lo que le entra al mes (promedio de los
@@ -194,7 +199,8 @@ periodo:
   formulario; el plazo y la tasa solo aparecen con "A crédito". De contado
   el saldo alcanza ($15,216),
   pero con o sin la compra se queda sin dinero algún mes en 100 de cada 100
-  escenarios. A crédito a 12 meses con 45 % anual: $1,631 al mes con IVA
+  escenarios; el cliente lo lee como "Con o sin la compra, es prácticamente
+  seguro que te quedes sin dinero algún mes de los próximos 36". A crédito a 12 meses con 45 % anual: $1,631 al mes con IVA
   sobre intereses. Pendiente: volver a calcular las dos en pantalla con el
 formulario nuevo (el cálculo no cambió).
 

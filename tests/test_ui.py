@@ -372,7 +372,9 @@ def test_siguiente_paso_con_reglas():
     )
     assert texto.startswith("Tu meta ahora: tarjeta bajo control. Bajarlo al 30 %")
     assert "en 42 de cada 100 escenarios" in texto and "36" in texto
-    assert "ningún escenario" in vc.siguiente_paso(None, None, 0.0, 36)
+    assert "es muy poco probable que te quedes" in vc.siguiente_paso(
+        None, None, 0.0, 36
+    )
     assert vc.siguiente_paso(None, None, None, 0).startswith("Todavía no")
 
 
@@ -432,7 +434,7 @@ def test_siguiente_paso_con_riesgo_alto_y_deficit():
     assert parrafos[1].startswith(
         "Tu paso en la escalera: pagos de deuda bajo control."
     )
-    assert "100 de cada 100" in parrafos[2]
+    assert "es prácticamente seguro que te quedes sin dinero" in parrafos[2]
     assert vc.siguiente_paso_priorizado(*argumentos) == parrafos, "reproducible"
 
 
@@ -495,3 +497,65 @@ def test_mi_resumen_prioriza_segun_el_cliente(vistas, cliente, prioridad):
     assert ("Tu paso en la escalera:" in texto) is prioridad
     # Autonomia en la tarjeta heroe solo con deficit (CLI-2: -$3,000 al mes).
     assert ("tu saldo alcanza para" in texto) is prioridad
+
+
+# --- Pulido de Mi resumen ---------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "p, esperado",
+    [
+        (1.0, "es prácticamente seguro"),
+        (0.996, "es prácticamente seguro"),
+        (0.0, "es muy poco probable"),
+        (0.004, "es muy poco probable"),
+        (0.42, None),
+        (0.01, None),
+    ],
+)
+def test_certeza_en_los_extremos(p, esperado):
+    from dashboard import vista_cliente as vc
+
+    assert vc.certeza(p) == esperado
+
+
+def test_riesgo_de_compra_en_palabras():
+    from dashboard import vista_cliente as vc
+
+    assert vc.frase_riesgo_compra(1.0, 1.0, 36) == (
+        "Con o sin la compra, es prácticamente seguro que te quedes sin dinero "
+        "algún mes de los próximos 36."
+    )
+    assert vc.frase_riesgo_compra(0.5, 0.0, 36) == (
+        "Con la compra, en 50 de cada 100 escenarios simulados te quedarías sin "
+        "dinero algún mes de los próximos 36; sin ella, es muy poco probable."
+    )
+    assert vc.frase_riesgo_compra(0.5, 0.3, 12).endswith("sin ella, en 30.")
+
+
+def test_sin_palabras_internas_para_el_cliente():
+    from dashboard import vista_cliente as vc
+
+    texto = vc.lenguaje_cliente(
+        "Pago de deuda estimado con las tasas del catálogo (tarjeta 45 %)."
+    )
+    assert "catálogo" not in texto and "tasas de referencia" in texto
+
+
+def test_mi_resumen_saluda_y_rotula_el_uso_de_la_tarjeta(vistas):
+    at = correr(PAGINAS / "mi_resumen.py", Usuario("CLI-2", "cliente"))
+    assert not at.exception, [e.value for e in at.exception]
+    html = "\n".join(str(m.value) for m in at.markdown)
+    assert "Hola. Así van tus finanzas al cierre de" in html
+    assert "Límite de tu tarjeta que usas" in html
+    assert "gd-fila" in html, "las tres tarjetas van en una cuadricula"
+
+
+def test_el_simulador_dice_el_conteo_exacto_solo_al_admin(vistas):
+    textos_por_rol = {}
+    for usuario in (ADMIN, Usuario("CLI-2", "cliente")):
+        at = correr(PAGINAS / "simulador.py", usuario, cliente_id="CLI-2")
+        assert not at.exception, [e.value for e in at.exception]
+        textos_por_rol[usuario.rol] = "\n".join(str(m.value) for m in at.markdown)
+    assert "de cada 100**" in textos_por_rol["admin"]
+    assert "de cada 100**" not in textos_por_rol["cliente"]

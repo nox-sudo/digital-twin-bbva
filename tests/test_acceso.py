@@ -247,9 +247,15 @@ def test_vistas_de_cliente_piden_sesion(vistas, pagina):
     assert not at.metric
 
 
-def metricas(at) -> list[str]:
-    """Cifras y textos con datos del cliente (st.metric y st.markdown)."""
-    return [m.value for m in at.metric] + [str(m.value) for m in at.markdown]
+def metricas(at, pagina: str = "") -> list[str]:
+    """Cifras y textos con datos del cliente (st.metric y st.markdown). En el
+    simulador, la frase de arriba cambia por rol a proposito (el admin ve el
+    conteo exacto de escenarios; el cliente, los extremos en palabras), asi
+    que ahi se comparan solo las cifras."""
+    cifras = [m.value for m in at.metric]
+    if pagina == "simulador.py":
+        return cifras
+    return cifras + [str(m.value) for m in at.markdown]
 
 
 def selector_de_cliente(at) -> list:
@@ -264,7 +270,7 @@ def test_un_cliente_no_ve_datos_de_otro(vistas, pagina):
         at = correr(PAGINAS / pagina, ADMIN, cliente_id=cliente)
         at.run()
         assert not at.exception, [e.value for e in at.exception]
-        admin[cliente] = metricas(at)
+        admin[cliente] = metricas(at, pagina)
     assert admin["CLI-1"] != admin["CLI-2"]
 
     # CLI-1 con la sesion y la URL pidiendo a CLI-2.
@@ -273,7 +279,7 @@ def test_un_cliente_no_ve_datos_de_otro(vistas, pagina):
     at.run()
     assert not at.exception, [e.value for e in at.exception]
     assert not selector_de_cliente(at), "un cliente no debe poder elegir cliente"
-    assert metricas(at) == admin["CLI-1"]
+    assert metricas(at, pagina) == admin["CLI-1"]
     assert "CLI-2" not in textos(at)
 
 
