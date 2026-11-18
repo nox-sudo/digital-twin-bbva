@@ -606,3 +606,16 @@ def test_escalera_visual_con_el_paso_actual(vistas):
     # El estado tambien va escrito, no solo en el color.
     assert "estás aquí" in escalera
     assert "Para el siguiente paso:" in html
+
+
+def test_medidor_de_riesgo_junto_al_nivel(vistas):
+    at = correr(PAGINAS / "mi_resumen.py", Usuario("CLI-2", "cliente"))
+    assert not at.exception, [e.value for e in at.exception]
+    html = "\n".join(str(m.value) for m in at.markdown)
+    medidor = re.search(r"<div class='gd-medidor'.*?</div></div>", html).group(0)
+    # CLI-2 (fixtures): probabilidad 0.62, banda alta; cortes en 10 % y 30 %.
+    assert "width:62.0%" in medidor
+    assert "left:10.0%" in medidor and "left:30.0%" in medidor
+    assert "62.0 % de probabilidad en 6 meses" in medidor
+    # La probabilidad vive solo en el medidor (su leyenda y su aria-label).
+    assert "62.0 %" not in html.replace(medidor, "")

@@ -254,6 +254,20 @@ if comun.gold_disponible():
                 .split(": ")[-1]
                 .capitalize(),
                 "banda": banda if banda in vc.NIVEL_BANDA else None,
+                # Medidor junto a la palabra: la probabilidad y los cortes de
+                # las bandas (config/dashboard.yaml). Es el unico lugar de la
+                # probabilidad en Mi resumen.
+                "extra_html": (
+                    ui.html_medidor(
+                        fila["probabilidad_impago"],
+                        banda,
+                        [b["desde"] for b in cfg["bandas_riesgo"] if b["desde"] > 0],
+                        f"{ui.formatear_porcentaje(fila['probabilidad_impago'], 1)} de "
+                        f"probabilidad en {horizonte_modelo()} meses",
+                    )
+                    if banda in vc.NIVEL_BANDA
+                    else None
+                ),
             },
         ]
     )
@@ -467,11 +481,10 @@ if comun.gold_disponible():
                 for texto in riesgo["bajan"] or ["Nada en especial."]:
                     st.markdown(md(f"- {texto}"))
             st.caption(
-                f"Tu riesgo estimado de atrasarte en algún pago en los próximos "
-                f"{horizonte_modelo()} meses: "
-                f"{ui.formatear_porcentaje(fila['probabilidad_impago'], 1)}. Es una "
-                "estimación, no una certeza. Estos son los datos que más pesan en tu "
-                "caso comparado con un cliente típico."
+                "La probabilidad de la tarjeta de riesgo es una estimación de "
+                f"atrasarte en algún pago en los próximos {horizonte_modelo()} meses, "
+                "no una certeza. Estos son los datos que más pesan en tu caso "
+                "comparado con un cliente típico."
             )
 
     # --- ¿Me alcanza para...? --------------------------------------------------
