@@ -173,14 +173,24 @@ def resumen_quincenas(
 
 
 def resumen_gastos(
-    salidas: pd.DataFrame, nombre_categoria, meses: int, n: int = 3
+    salidas: pd.DataFrame,
+    nombre_categoria,
+    meses: int,
+    n: int = 3,
+    con_cifras: bool = True,
 ) -> str:
-    """Las n categorias que mas se llevaron el dinero en los ultimos meses."""
+    """Las n categorias que mas se llevaron el dinero en los ultimos meses.
+    Sin cifras cuando la grafica de al lado ya escribe el monto de cada
+    barra."""
     if salidas.empty or salidas["total"].sum() <= 0:
         return f"No registramos gastos en los últimos {meses} meses."
     partes = [
-        f"{nombre_categoria(f.categoria).lower()} ({pesos(f.total)}, "
-        f"{f.proporcion * 100:.0f} %)"
+        (
+            f"{nombre_categoria(f.categoria).lower()} ({pesos(f.total)}, "
+            f"{f.proporcion * 100:.0f} %)"
+            if con_cifras
+            else nombre_categoria(f.categoria).lower()
+        )
         for f in salidas.head(n).itertuples()
     ]
     if len(partes) > 1:
@@ -415,14 +425,34 @@ VARIABLES_VENTANA = {
 }
 
 
-def _con_periodo(factor, ventana: int | None) -> str:
+# Factores cuya cifra ya se muestra en otra parte de Mi resumen: aqui se
+# dicen sin el monto, para que cada cifra viva en un solo lugar.
+FRASE_SIN_CIFRA = {
+    ("capacidad_ahorro", True): "Gastas más de lo que te entra cada mes",
+    ("capacidad_ahorro", False): "Te queda dinero cada mes",
+    ("saldo_liquido_disponible", True): "Tu saldo disponible es bajo",
+    ("saldo_liquido_disponible", False): "Tu saldo disponible",
+    ("uso_linea_credito", True): "Usas buena parte del límite de tu tarjeta",
+    ("uso_linea_credito", False): "Usas poco del límite de tu tarjeta",
+}
+
+
+def _con_periodo(factor, ventana: int | None, sin_cifra: bool = False) -> str:
+    """Frase del factor SHAP. Con sin_cifra, los factores de FRASE_SIN_CIFRA
+    van sin monto; los KPIs de flujo dicen su periodo."""
+    if sin_cifra and factor.variable in {v for v, _ in FRASE_SIN_CIFRA}:
+        return FRASE_SIN_CIFRA[(factor.variable, factor.sube)]
     if ventana and factor.variable in VARIABLES_VENTANA:
         return f"{factor.frase} (promedio de los últimos {ventana} meses)"
     return factor.frase
 
 
 def resumen_riesgo(
-    banda: str, explicacion: Explicacion | None, n: int, ventana: int | None = None
+    banda: str,
+    explicacion: Explicacion | None,
+    n: int,
+    ventana: int | None = None,
+    sin_cifra: bool = False,
 ) -> dict:
     """La banda en palabras y lo que mas mueve el score del cliente, con sus
     propios valores SHAP: lo que lo sube y lo que lo baja. Con ventana, las
@@ -433,8 +463,10 @@ def resumen_riesgo(
     principales = explicacion.principales(n)
     return {
         "frase": frase,
-        "suben": [_con_periodo(f, ventana) for f in principales if f.sube],
-        "bajan": [_con_periodo(f, ventana) for f in principales if not f.sube],
+        "suben": [_con_periodo(f, ventana, sin_cifra) for f in principales if f.sube],
+        "bajan": [
+            _con_periodo(f, ventana, sin_cifra) for f in principales if not f.sube
+        ],
     }
 
 

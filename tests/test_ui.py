@@ -554,3 +554,23 @@ def test_el_simulador_dice_el_conteo_exacto_solo_al_admin(vistas):
         textos_por_rol[usuario.rol] = "\n".join(str(m.value) for m in at.markdown)
     assert "de cada 100**" in textos_por_rol["admin"]
     assert "de cada 100**" not in textos_por_rol["cliente"]
+
+
+def test_cada_cifra_vive_en_un_solo_lugar(vistas):
+    """Mi resumen de CLI-2 (fixtures): ninguna cifra en pesos aparece en mas de
+    una tarjeta. El deficit de 12 meses va en un chip, lo que salio en
+    "Gastaste este mes" y los pagos de deuda en "Tu credito"."""
+    at = correr(PAGINAS / "mi_resumen.py", Usuario("CLI-2", "cliente"))
+    assert not at.exception, [e.value for e in at.exception]
+    # Por elemento (cada tarjeta, frase o nota), los montos sin centavos ni
+    # "MXN", para comparar "$3,000" con "$3,000.00 MXN". Dos categorias con el
+    # mismo monto en una misma frase no son el mismo dato repetido.
+    por_elemento = []
+    for e in [*at.markdown, *at.caption]:
+        t = re.sub(r"<[^>]+>", " ", str(e.value)).replace("&#36;", "$")
+        t = t.replace("\\$", "$")
+        montos = re.findall(r"-?\$[\d,]+(?:\.\d+)?", t)
+        por_elemento.append({m.split(".")[0].rstrip(",") for m in montos})
+    vistos = [m for montos in por_elemento for m in montos]
+    repetidos = {m for m in vistos if vistos.count(m) > 1}
+    assert repetidos == set(), repetidos

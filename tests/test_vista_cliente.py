@@ -294,11 +294,12 @@ def test_los_factores_son_los_shap_del_cliente(vista):
     )
     n = ex.cargar_config()["factores_mostrados"]
     mostrados = [t[2:] for t in textos(at) if t.startswith("- ")]
-    # Las frases son las del modelo; las de KPIs de flujo llevan su periodo.
+    # Las frases son las del modelo; las de KPIs de flujo llevan su periodo y
+    # las que repetirian una cifra de otra tarjeta van sin monto.
     ventana = vista["ventana_meses"]
     assert [m.replace("\\$", "$") for m in mostrados] == [
-        vc._con_periodo(f, ventana) for f in e.principales(n) if f.sube
-    ] + [vc._con_periodo(f, ventana) for f in e.principales(n) if not f.sube]
+        vc._con_periodo(f, ventana, True) for f in e.principales(n) if f.sube
+    ] + [vc._con_periodo(f, ventana, True) for f in e.principales(n) if not f.sube]
 
 
 def test_sin_tablas_nuevas_ni_modelo(vista):
@@ -338,3 +339,18 @@ def test_la_vista_pide_sesion(vista):
     at.run()
     assert "No tienes acceso" in at.error[0].value
     assert not at.metric and not at.markdown
+
+
+def test_resumen_gastos_sin_cifras():
+    salidas = pd.DataFrame(
+        {
+            "categoria": ["comida", "ropa"],
+            "total": [600.0, 400.0],
+            "proporcion": [0.6, 0.4],
+        }
+    )
+    frase = vc.resumen_gastos(salidas, str.capitalize, 3, con_cifras=False)
+    assert (
+        frase
+        == "En los últimos 3 meses, lo que más se llevó tu dinero fue comida y ropa."
+    )

@@ -260,8 +260,14 @@ if comun.gold_disponible():
     riesgo_flujo = riesgo_flujo_actual(version, cliente_id)
     exp = explicacion(version, cliente_id)
     n_factores = ex.cargar_config()["factores_mostrados"]
+    # Sin cifra en los factores cuya cifra ya esta en otra tarjeta (deficit,
+    # saldo, uso de la tarjeta): cada cifra vive en un solo lugar.
     riesgo = vc.resumen_riesgo(
-        banda, exp if isinstance(exp, ex.Explicacion) else None, n_factores, ventana
+        banda,
+        exp if isinstance(exp, ex.Explicacion) else None,
+        n_factores,
+        ventana,
+        sin_cifra=True,
     )
     meta = (
         vc.meta_escalera(e.paso_actual, e.metricas, esc.cargar_config()) if e else None
@@ -289,14 +295,18 @@ if comun.gold_disponible():
         if mes is None:
             st.caption("Todavía no hay movimientos en tu cuenta.")
         else:
+            # Lo que salio ya esta en "Gastaste este mes": aqui solo lo que
+            # entro y la diferencia.
             cifras(
                 [
                     ("Entró", ui.formatear_mxn(mes["entradas"])),
-                    ("Salió", ui.formatear_mxn(mes["salidas"])),
                     ("Diferencia", ui.formatear_mxn(mes["neto"])),
                 ]
             )
-            st.markdown(md(mes["frase"]))
+            st.caption(
+                "Diferencia: lo que entró menos lo que salió este mes. Lo que salió "
+                "está arriba, en «Gastaste este mes»."
+            )
 
     # --- Ingresos por quincena -------------------------------------------
     with ui.contenedor("quincenas", derecha):
@@ -352,7 +362,14 @@ if comun.gold_disponible():
         salidas = comun.datos.salidas_por_categoria(
             cfg["gold_duckdb"], cliente_id, MESES_GASTO
         )
-        st.markdown(md(vc.resumen_gastos(salidas, comun.nombre_categoria, MESES_GASTO)))
+        # Los montos van en las barras; la frase solo nombra las categorias.
+        st.markdown(
+            md(
+                vc.resumen_gastos(
+                    salidas, comun.nombre_categoria, MESES_GASTO, con_cifras=False
+                )
+            )
+        )
         if not salidas.empty:
             top = salidas.head(5).assign(
                 nombre=lambda d: d["categoria"].map(comun.nombre_categoria),
@@ -402,7 +419,7 @@ if comun.gold_disponible():
                 f"**Paso {e.numero_paso} de {len(e.pasos)}: "
                 f"{esc.NOMBRES[e.paso_actual]}**"
             )
-            st.markdown(md(e.lectura))
+            # La meta del paso esta en "Tu siguiente paso"; aqui, las cifras.
             m = e.metricas
             cifras(
                 [
@@ -427,7 +444,7 @@ if comun.gold_disponible():
     # --- Tu riesgo, explicado --------------------------------------------------
     with ui.contenedor("riesgo"):
         st.subheader("Tu riesgo, explicado")
-        st.markdown(f"**{riesgo['frase']}**")
+        # El nivel (alto, medio, bajo) esta en la tarjeta de arriba.
         if isinstance(exp, str):
             st.caption(f"Por qué: {exp}")
         else:

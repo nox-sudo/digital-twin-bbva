@@ -176,25 +176,22 @@ voy?":
   para menos de 3 meses; si no, es la meta de la escalera. Reglas fijas, sin
   modelo de lenguaje.
 
-Debajo, "El detalle", en el orden de siempre. Cada cifra de déficit dice su
-periodo:
+Debajo, "El detalle", en el orden de siempre. Cada cifra vive en un solo
+lugar (tabla en [ux/mi-resumen/fuente-unica.md](ux/mi-resumen/fuente-unica.md)):
 
-- Este mes (abr 2027): le entraron $32,876 y salieron $106,852; la
-  diferencia, -$73,976. En promedio, en los 18 meses anteriores, gastaba
-  $16,658 más de lo que le entraba al mes.
+- Este mes (abr 2027): entró $32,876.34 MXN y la diferencia fue -$73,976.00
+  MXN; lo que salió está arriba, en "Gastaste este mes".
 - Quincenas: le llegan unos $16,438 cada quincena; en may 2026 le llegaban
   unos $34,368 (su ingreso bajó 52 %, el escenario de deriva).
 - A dónde se va su dinero (3 meses): pago de deuda 24 %, otros 18 %,
   suscripciones 17 %.
 - Su crédito: paso 1 de 6 de la escalera (pagos de deuda bajo control).
-  Paga $25,513 al mes de deudas, el 70 % de su ingreso de los últimos 3
-  meses ($36,665 al mes); para el siguiente paso deberían quedar en $10,999
-  o menos. "Límite de tu tarjeta que usas": 38 %.
-- Su riesgo, alto, explicado con sus propios valores SHAP ("Tu riesgo
-  estimado de atrasarte en algún pago en los próximos 6 meses: 59.7 %"). Lo
-  sube: gasta $27,030 más de lo que le entra al mes (promedio de los
-  últimos 12 meses) y debe 4.6 veces su ingreso de un mes. Lo baja: lleva
-  1.9 años como cliente.
+  Paga $25,512.94 MXN al mes de deudas y usa 38 % del límite de su tarjeta;
+  la meta ($10,999 o menos) está en "Tu siguiente paso".
+- Su riesgo explicado con sus propios valores SHAP ("Tu riesgo estimado de
+  atrasarte en algún pago en los próximos 6 meses: 59.7 %"). Lo sube: gasta
+  más de lo que le entra cada mes (la cifra está en el chip) y debe 4.6
+  veces su ingreso de un mes. Lo baja: lleva 1.9 años como cliente.
 - ¿Me alcanza para algo de $15,000? La forma de pago se elige arriba del
   formulario; el plazo y la tasa solo aparecen con "A crédito". De contado
   el saldo alcanza ($15,216),
