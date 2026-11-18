@@ -314,6 +314,21 @@ CSS = f"""
 .gd-chips {{ display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }}
 .gd-chip {{ background: {FONDO_2}; color: {TEXTO}; border-radius: 999px;
   padding: 4px 12px; font-size: 0.9rem; }}
+.gd-escalera {{ display: flex; flex-direction: column; gap: 6px;
+  margin: 8px 0 12px !important; list-style: none; padding: 0 !important; }}
+.gd-escalera li {{ margin: 0 !important; padding: 6px 14px 6px 8px !important;
+  box-sizing: border-box; overflow: visible; }}
+.gd-escalon {{ display: flex; align-items: center; gap: 10px; border-radius: 10px;
+  padding: 6px 10px; font-size: 0.95rem; background: {FONDO_2}; color: {TEXTO_2}; }}
+.gd-escalon .gd-num {{ flex: 0 0 26px; height: 26px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-weight: 700; background: #ffffff; color: {TEXTO_2}; }}
+.gd-escalon .gd-nombre {{ flex: 1; }}
+.gd-escalon .gd-estado {{ flex: 0 0 auto; font-size: 0.85rem; white-space: nowrap; }}
+.gd-escalon .gd-nombre {{ min-width: 0; }}
+.gd-escalon.hecho {{ background: #ccfbf1; color: #134e4a; }}
+.gd-escalon.actual {{ background: {MARINO}; color: #ffffff; font-weight: 600; }}
+.gd-escalon.actual .gd-num {{ color: {MARINO}; }}
 .gd-semaforo {{
   display: inline-flex; align-items: center; gap: 8px;
   border-radius: 999px; padding: 4px 12px; font-weight: 600; font-size: 0.95rem;
@@ -459,6 +474,31 @@ def bloque_accion(titular: str, accion: str | None, chips: list[str]) -> None:
             + "</div>"
         )
     st.markdown("".join(partes), unsafe_allow_html=True)
+
+
+def escalera_visual(pasos: list[tuple[str, str]], actual: int) -> None:
+    """Los pasos de la escalera financiera, uno por renglon: los anteriores al actual
+    como hechos, el actual resaltado y los siguientes pendientes. Cada paso
+    dice su estado tambien en texto ("hecho", "estás aquí"), no solo con el
+    color. pasos es [(clave, nombre)]; actual, el indice del paso actual."""
+    items = []
+    for i, (_, nombre) in enumerate(pasos):
+        estado, etiqueta = (
+            ("hecho", "hecho")
+            if i < actual
+            else ("actual", "estás aquí") if i == actual else ("", "pendiente")
+        )
+        items.append(
+            f"<li class='gd-escalon {estado}'><span class='gd-num'>{i + 1}</span>"
+            f"<span class='gd-nombre'>{_texto(nombre)}</span>"
+            f"<span class='gd-estado'>{_texto(etiqueta)}</span></li>"
+        )
+    st.markdown(
+        f"<ol class='gd-escalera' aria-label='Paso {actual + 1} de {len(pasos)}'>"
+        + "".join(items)
+        + "</ol>",
+        unsafe_allow_html=True,
+    )
 
 
 def contenedor(nombre: str, en=None):

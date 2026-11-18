@@ -192,9 +192,11 @@ lugar (tabla en [ux/mi-resumen/fuente-unica.md](ux/mi-resumen/fuente-unica.md)):
 - A dónde se va su dinero (12 meses, la misma ventana que la vista Cliente
   del admin): pago de deuda 26 %, suscripciones 15 %, servicios 13 %; el
   monto de cada categoría va en su barra.
-- Su crédito: paso 1 de 6 de la escalera (pagos de deuda bajo control).
-  Paga $25,512.94 MXN al mes de deudas y usa 38 % del límite de su tarjeta;
-  la meta ($10,999 o menos) está en "Tu siguiente paso".
+- Su crédito: la escalera como lista de 6 pasos, con el actual resaltado
+  ("Pagos de deuda bajo control · estás aquí") y los demás "pendiente". Debajo,
+  "Para el siguiente paso: Te faltan $14,514 por bajar." Paga $25,512.94 MXN
+  al mes de deudas y usa 38 % del límite de su tarjeta; la meta ($10,999 o
+  menos) está en "Tu siguiente paso".
 - Su riesgo explicado con sus propios valores SHAP ("Tu riesgo estimado de
   atrasarte en algún pago en los próximos 6 meses: 59.7 %"). Lo sube: gasta
   más de lo que le entra cada mes (la cifra está en el chip) y debe 4.6

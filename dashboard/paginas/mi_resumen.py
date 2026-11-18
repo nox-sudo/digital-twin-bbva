@@ -420,11 +420,15 @@ if comun.gold_disponible():
         if e is None:
             pendiente("Tu crédito")
         else:
-            st.markdown(
-                f"**Paso {e.numero_paso} de {len(e.pasos)}: "
-                f"{esc.NOMBRES[e.paso_actual]}**"
-            )
-            # La meta del paso esta en "Tu siguiente paso"; aqui, las cifras.
+            # Escalera visual: los 6 pasos, el actual resaltado y lo que falta
+            # para el siguiente. La meta del paso (la accion) esta en "Tu
+            # siguiente paso"; aqui, donde va y cuanto le falta.
+            st.markdown(f"Paso {e.numero_paso} de {len(e.pasos)}")
+            ui.escalera_visual([(p.paso, p.nombre) for p in e.pasos], e.numero_paso - 1)
+            if meta:
+                st.markdown(
+                    md(f"Para el siguiente paso: {meta['falta'] or meta['hoy']}.")
+                )
             m = e.metricas
             cifras(
                 [

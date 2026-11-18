@@ -590,3 +590,19 @@ def test_comparacion_de_gasto_con_la_ventana_de_12_meses():
     assert r["promedio"] == 100.0
     assert r["frase"] == "10 % más que tu promedio de los 12 meses anteriores."
     assert vc.comparacion_gasto(flujo)["promedio"] == pytest.approx(1500 / 18)
+
+
+def test_escalera_visual_con_el_paso_actual(vistas):
+    at = correr(PAGINAS / "mi_resumen.py", Usuario("CLI-2", "cliente"))
+    assert not at.exception, [e.value for e in at.exception]
+    html = "\n".join(str(m.value) for m in at.markdown)
+    escalera = re.search(r"<ol class='gd-escalera'[^>]*>(.*?)</ol>", html).group(1)
+    pasos = re.findall(r"<li class='gd-escalon ?([a-z]*)'>", escalera)
+    assert len(pasos) == 6
+    assert pasos.count("actual") == 1
+    actual = pasos.index("actual")
+    assert all(p == "hecho" for p in pasos[:actual])
+    assert all(p == "" for p in pasos[actual + 1 :])  # noqa: E203
+    # El estado tambien va escrito, no solo en el color.
+    assert "estás aquí" in escalera
+    assert "Para el siguiente paso:" in html
