@@ -178,6 +178,17 @@ voy?":
   para menos de 3 meses; si no, es la meta de la escalera. Reglas fijas, sin
   modelo de lenguaje.
 
+Justo debajo de "Tu siguiente paso", antes del detalle, va lo interactivo:
+
+- ¿Me alcanza para algo de $15,000? La forma de pago se elige arriba del
+  formulario; el plazo y la tasa solo aparecen con "A crédito". De contado:
+  "Sí te alcanza: tienes $15,216 y cuesta $15,000. Con o sin la compra, es
+  prácticamente seguro que te quedes sin dinero algún mes de los próximos
+  36." A crédito a 12 meses con 45 % anual: "Pagarías $1,631 al mes durante
+  12 meses, ya con el IVA de 16 % sobre los intereses." (verificado el
+  2026-11-18 con la misma función que usa la página; el Monte Carlo da 100
+  de cada 100 con y sin la compra).
+
 Lo que lee el cliente usa una sola ventana, 12 meses; las otras van solo
 donde son indispensables y con su periodo escrito: "Lo que más creció" (3
 meses contra los 3 anteriores), el horizonte del modelo de riesgo (6 meses),
@@ -203,15 +214,6 @@ lugar (tabla en [ux/mi-resumen/fuente-unica.md](ux/mi-resumen/fuente-unica.md)):
   el medidor de la tarjeta de riesgo. Lo sube: gasta
   más de lo que le entra cada mes (la cifra está en el chip) y debe 4.6
   veces su ingreso de un mes. Lo baja: lleva 1.9 años como cliente.
-- ¿Me alcanza para algo de $15,000? La forma de pago se elige arriba del
-  formulario; el plazo y la tasa solo aparecen con "A crédito". De contado
-  el saldo alcanza ($15,216),
-  pero con o sin la compra se queda sin dinero algún mes en 100 de cada 100
-  escenarios; el cliente lo lee como "Con o sin la compra, es prácticamente
-  seguro que te quedes sin dinero algún mes de los próximos 36". A crédito a 12 meses con 45 % anual: $1,631 al mes con IVA
-  sobre intereses. Pendiente: volver a calcular las dos en pantalla con el
-formulario nuevo (el cálculo no cambió).
-
 La explicación reproduce el score publicado: usa el modelo que lo produjo
 (el del pliegue de la validación cruzada). Contraste: **CLI-000379** (riesgo
 bajo, 5 %): lo baja sobre todo que le quedan $11,313 al mes, su ingreso
