@@ -200,14 +200,18 @@ def resumen_gastos(
     return f"En los últimos {meses} meses, lo que más se llevó tu dinero fue {lista}."
 
 
-def comparacion_gasto(flujo: pd.DataFrame) -> dict | None:
+def comparacion_gasto(flujo: pd.DataFrame, ventana: int | None = None) -> dict | None:
     """Lo que salio el ultimo mes contra el promedio de los meses anteriores
     (el mismo de resumen_mes), con el periodo dicho."""
     if flujo.empty:
         return None
     flujo = flujo.sort_values("mes")
     salidas = float(flujo.iloc[-1]["salidas"])
+    # Con ventana, el promedio es el de los `ventana` meses anteriores (la
+    # ventana principal de Mi resumen), no todo el historial.
     anteriores = flujo.iloc[:-1]["salidas"]
+    if ventana:
+        anteriores = anteriores.iloc[-ventana:]
     if anteriores.empty or float(anteriores.mean()) <= 0:
         return {
             "salidas": salidas,

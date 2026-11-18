@@ -161,8 +161,8 @@ voy?":
 - Tienes disponible $15,215.70 MXN (saldo al cierre de abr 2027). "A tu
   ritmo de los últimos 12 meses, tu saldo alcanza para menos de 1 mes":
   saldo entre la capacidad de ahorro negativa de 12 meses (-$27,030).
-- Tres tarjetas: gastó $106,852.34 MXN este mes (abr 2027), 35 % más que su
-  promedio de los 18 meses anteriores; lo que más creció, suscripciones
+- Tres tarjetas: gastó $106,852.34 MXN este mes (abr 2027), 34 % más que su
+  promedio de los 12 meses anteriores; lo que más creció, suscripciones
   ($10,567 más al mes que en los 3 meses anteriores, de $7,107 a $17,674;
   ver [technical-debt.md](technical-debt.md), la cifra no es creíble como
   suscripciones); nivel de riesgo Alto.
@@ -176,15 +176,22 @@ voy?":
   para menos de 3 meses; si no, es la meta de la escalera. Reglas fijas, sin
   modelo de lenguaje.
 
+Lo que lee el cliente usa una sola ventana, 12 meses; las otras van solo
+donde son indispensables y con su periodo escrito: "Lo que más creció" (3
+meses contra los 3 anteriores), el horizonte del modelo de riesgo (6 meses),
+el Monte Carlo (36 meses) y la regla de ingreso de la escalera (3 meses).
+
 Debajo, "El detalle", en el orden de siempre. Cada cifra vive en un solo
 lugar (tabla en [ux/mi-resumen/fuente-unica.md](ux/mi-resumen/fuente-unica.md)):
 
 - Este mes (abr 2027): entró $32,876.34 MXN y la diferencia fue -$73,976.00
   MXN; lo que salió está arriba, en "Gastaste este mes".
 - Quincenas: le llegan unos $16,438 cada quincena; en may 2026 le llegaban
-  unos $34,368 (su ingreso bajó 52 %, el escenario de deriva).
-- A dónde se va su dinero (3 meses): pago de deuda 24 %, otros 18 %,
-  suscripciones 17 %.
+  unos $34,368 (su ingreso bajó 52 %, el escenario de deriva). La gráfica
+  muestra los 12 meses, de may 2026 a abr 2027.
+- A dónde se va su dinero (12 meses, la misma ventana que la vista Cliente
+  del admin): pago de deuda 26 %, suscripciones 15 %, servicios 13 %; el
+  monto de cada categoría va en su barra.
 - Su crédito: paso 1 de 6 de la escalera (pagos de deuda bajo control).
   Paga $25,512.94 MXN al mes de deudas y usa 38 % del límite de su tarjeta;
   la meta ($10,999 o menos) está en "Tu siguiente paso".
