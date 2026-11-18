@@ -1291,6 +1291,9 @@ segunda. El caso `porcentaje_gasta_mas` del banco v2 la usa
 probabilidad_media`). El banco completo no se ha vuelto a correr: una
 corrida nueva no se compara uno a uno con las anteriores en este caso.
 
+Con el arreglo, la pregunta vuelve a ser un boton de ejemplo del admin en
+el lugar de `clientes_riesgo_medio`, que la habia sustituido.
+
 ## Limites de esta evaluacion
 
 - **Alcance:** un modelo, tres clientes y 24 preguntas en espanol. Cada
