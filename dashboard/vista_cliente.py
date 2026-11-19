@@ -621,7 +621,7 @@ def veredicto_hipoteca(
         elif motivo == NO_ALCANZA_MINIMO:
             sugerencia = (
                 f"Ni la vivienda más barata, de {pesos(precio_minimo)}, te alcanza "
-                "sin que subas mucho las veces que te quedarías sin dinero."
+                "hoy: con su mensualidad te quedarías sin dinero mucho más seguido."
             )
         else:
             # La frase de riesgo de abajo ya dice que, aun sin hipoteca, se
