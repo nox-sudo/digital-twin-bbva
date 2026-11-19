@@ -16,6 +16,11 @@ import pandas as pd
 
 from src.common.formato import formato_mxn
 from src.gold.explicacion import Explicacion
+from src.simulacion.montecarlo import (
+    AHORRO_NEGATIVO,
+    NO_ALCANZA_MINIMO,
+    SUPERA_TOPE,
+)
 
 # Palabras internas que pueden llegar al texto del cliente desde los
 # modulos de calculo (src/gold/escalera.py): se cambian por lenguaje comun
@@ -547,6 +552,110 @@ def frase_riesgo_compra(con: float, sin: float, meses: int) -> str:
         )
     parte_sin = f"sin ella, {s}" if s else f"sin ella, en {round(sin * 100)}"
     return f"{parte_con}; {parte_sin}."
+
+
+# --- Simulador de hipoteca ---------------------------------------------------
+
+# Paso del precio de la vivienda en el simulador (dashboard/paginas/simulador.py).
+PASO_PRECIO = 50_000
+
+
+def plazo_juntar(meses: float) -> str:
+    """'1 mes', 'unos 8 meses' o 'unos 31 meses (2 años y medio)'."""
+    n = math.ceil(meses)
+    if n <= 1:
+        return "1 mes"
+    if n < 12:
+        return f"unos {n} meses"
+    medios = round(n / 6)
+    anios, medio = divmod(medios, 2)
+    texto = "1 año" if anios == 1 else f"{anios} años"
+    if medio:
+        texto += " y medio"
+    return f"unos {n} meses ({texto})"
+
+
+def veredicto_hipoteca(
+    precio: float,
+    cuota: float,
+    ingreso_medio: float | None,
+    capacidad: float | None,
+    motivo: str | None,
+    precio_minimo: float,
+    ahorro_medio: float,
+) -> dict:
+    """Respuesta de arriba del simulador para el cliente: si la casa le
+    alcanza, cuanto pagaria y que cambiar si no. "Alcanza" es el mismo
+    criterio que la capacidad hipotecaria: que la hipoteca no suba demasiado
+    los escenarios en que se queda sin dinero. probar es un precio redondo
+    que si le alcanza, para el boton de la pagina (None si no hay)."""
+    alcanza = motivo == SUPERA_TOPE or (capacidad is not None and precio <= capacidad)
+    detalle = None
+    if ingreso_medio:
+        detalle = f"El {cuota / ingreso_medio * 100:.0f} % de lo que ganas al mes"
+    probar = None
+    if capacidad is not None:
+        titulo = "Esta casa te alcanza" if alcanza else "Esta casa no te alcanza"
+        if alcanza:
+            sugerencia = (
+                f"Con este enganche y plazo te alcanzaría una casa de hasta "
+                f"{pesos(capacidad)}."
+            )
+        else:
+            probar = max(PASO_PRECIO, math.floor(capacidad / PASO_PRECIO) * PASO_PRECIO)
+            sugerencia = (
+                f"Con este enganche y plazo te alcanza una casa de hasta "
+                f"{pesos(capacidad)}. También ayuda dar más enganche o un plazo más "
+                "largo."
+            )
+    elif motivo == SUPERA_TOPE:
+        titulo = "Esta casa te alcanza"
+        sugerencia = "Con lo que te queda cada mes, el precio no es lo que te limita."
+    else:
+        titulo = "Hoy no te alcanza una hipoteca"
+        if motivo == AHORRO_NEGATIVO:
+            sugerencia = (
+                f"Hoy gastas más de lo que te entra (te faltan {pesos(-ahorro_medio)} "
+                "al mes), y cualquier mensualidad agranda ese faltante."
+            )
+        elif motivo == NO_ALCANZA_MINIMO:
+            sugerencia = (
+                f"Ni la vivienda más barata, de {pesos(precio_minimo)}, te alcanza "
+                "sin que subas mucho las veces que te quedarías sin dinero."
+            )
+        else:
+            # La frase de riesgo de abajo ya dice que, aun sin hipoteca, se
+            # quedaria sin dinero: aqui solo lo que conviene hacer.
+            sugerencia = (
+                "Antes de pedir una hipoteca, conviene que cada mes te sobre dinero."
+            )
+    return {
+        "alcanza": alcanza,
+        "titulo": titulo,
+        "valor": f"{pesos(cuota)} al mes",
+        "detalle": detalle,
+        "sugerencia": sugerencia,
+        "probar": probar,
+    }
+
+
+def frase_enganche(
+    pago_inicial: float, meses: float | None, ahorro_medio: float
+) -> str:
+    """Lo que necesita antes de firmar y cuanto tarda en juntarlo."""
+    frase = f"Antes de firmar necesitas {pesos(pago_inicial)} de enganche y gastos."
+    if meses == 0:
+        return frase + " Tu saldo de hoy ya los cubre."
+    if meses is None:
+        return (
+            frase
+            + " Hoy no te sobra dinero al mes, así que ahorrando no los juntarías."
+        )
+    return (
+        frase
+        + f" Ahorrando {pesos(ahorro_medio)} al mes, como hasta ahora, los juntas "
+        f"en {plazo_juntar(meses)}. La simulación de abajo supone que ya los tienes."
+    )
 
 
 def resumen_compra(resultado: dict) -> str:

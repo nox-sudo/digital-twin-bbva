@@ -667,3 +667,119 @@ def test_medidor_de_riesgo_junto_al_nivel(vistas):
     assert "62.0 % de probabilidad en 6 meses" in medidor
     # La probabilidad vive solo en el medidor (su leyenda y su aria-label).
     assert "62.0 %" not in html.replace(medidor, "")
+
+
+# --- Simulador de hipoteca para el cliente --------------------------------------
+
+
+def test_plazo_para_juntar_en_palabras():
+    from dashboard import vista_cliente as vc
+
+    assert vc.plazo_juntar(0.4) == "1 mes"
+    assert vc.plazo_juntar(7.2) == "unos 8 meses"
+    assert vc.plazo_juntar(12) == "unos 12 meses (1 año)"
+    assert vc.plazo_juntar(31) == "unos 31 meses (2 años y medio)"
+    assert vc.plazo_juntar(36) == "unos 36 meses (3 años)"
+
+
+def veredicto(**cambios):
+    from dashboard import vista_cliente as vc
+
+    base = dict(
+        precio=900_000,
+        cuota=8_471.25,
+        ingreso_medio=20_000,
+        capacidad=407_269,
+        motivo=None,
+        precio_minimo=214_047,
+        ahorro_medio=3_500,
+    )
+    return vc.veredicto_hipoteca(**{**base, **cambios})
+
+
+def test_veredicto_casa_que_no_alcanza_propone_un_precio_redondo():
+    v = veredicto()
+    assert v["titulo"] == "Esta casa no te alcanza" and not v["alcanza"]
+    assert v["valor"] == "$8,471 al mes"
+    assert v["detalle"] == "El 42 % de lo que ganas al mes"
+    assert "hasta $407,269" in v["sugerencia"]
+    assert v["probar"] == 400_000
+
+
+def test_veredicto_casa_que_alcanza_no_ofrece_boton():
+    v = veredicto(precio=350_000)
+    assert v["titulo"] == "Esta casa te alcanza" and v["alcanza"]
+    assert v["probar"] is None
+
+
+@pytest.mark.parametrize(
+    "motivo, titulo, frase",
+    [
+        ("supera_tope", "Esta casa te alcanza", "el precio no es lo que te limita"),
+        (
+            "ahorro_negativo",
+            "Hoy no te alcanza una hipoteca",
+            "te faltan $1,200 al mes",
+        ),
+        ("no_alcanza_minimo", "Hoy no te alcanza una hipoteca", "de $214,047"),
+        ("riesgo_saturado", "Hoy no te alcanza una hipoteca", "te sobre dinero"),
+    ],
+)
+def test_veredicto_sin_capacidad_dice_por_que(motivo, titulo, frase):
+    v = veredicto(capacidad=None, motivo=motivo, ahorro_medio=-1_200)
+    assert v["titulo"] == titulo
+    assert frase in v["sugerencia"]
+    assert v["probar"] is None
+
+
+def test_veredicto_sin_ingreso_no_inventa_proporcion():
+    assert veredicto(ingreso_medio=0)["detalle"] is None
+
+
+def test_frase_del_enganche_en_segunda_persona():
+    from dashboard import vista_cliente as vc
+
+    assert vc.frase_enganche(135_000, 0, 3_500).endswith(
+        "Tu saldo de hoy ya los cubre."
+    )
+    assert "no los juntarías" in vc.frase_enganche(135_000, None, -500)
+    frase = vc.frase_enganche(135_000, 30.4, 3_500)
+    assert frase.startswith("Antes de firmar necesitas $135,000 de enganche y gastos.")
+    assert "Ahorrando $3,500 al mes" in frase and "unos 31 meses" in frase
+
+
+def test_simulador_responde_al_cliente_en_segunda_persona(vistas):
+    at = correr(PAGINAS / "simulador.py", CLIENTE)
+    assert not at.exception, [e.value for e in at.exception]
+    # Lo de "Cómo se calcula" queda fuera: ahi va la nota del CAT para quien
+    # la busque.
+    dentro = {id(e.proto) for x in at.expander for e in [*x.markdown, *x.caption]}
+    visible = "\n".join(
+        str(e.value)
+        for e in [*at.markdown, *at.caption, *at.info]
+        if id(e.proto) not in dentro
+    )
+    assert "te alcanza" in visible
+    assert "Antes de firmar necesitas" in visible
+    for palabra in ("percentil", "trayectorias", "LIVA", "CAT", "CLI-1", "su saldo"):
+        assert palabra not in visible, palabra
+
+
+def test_simulador_probar_con_el_precio_que_alcanza(vistas):
+    at = correr(PAGINAS / "simulador.py", CLIENTE)
+    botones = [b for b in at.button if b.label.startswith("Probar con")]
+    assert botones, "con un precio que no alcanza se ofrece uno que si"
+    botones[0].click().run()
+    assert not at.exception, [e.value for e in at.exception]
+    precio = at.number_input(key="sim_precio").value
+    assert precio % 50_000 == 0
+    assert "Esta casa te alcanza" in "\n".join(str(m.value) for m in at.markdown)
+
+
+def test_simulador_del_admin_conserva_la_lectura_de_analista(vistas):
+    at = correr(PAGINAS / "simulador.py", ADMIN, cliente_id="CLI-1")
+    assert not at.exception, [e.value for e in at.exception]
+    texto = textos(at)
+    assert "escenarios simulados el saldo de CLI-1" in texto
+    assert "percentil 10" in texto and "LIVA" in texto
+    assert "Esta casa" not in texto

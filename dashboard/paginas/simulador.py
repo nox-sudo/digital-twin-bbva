@@ -100,7 +100,11 @@ if comun.gold_disponible():
     columna_cliente, columna_precio = st.columns([1, 1])
     cliente_id = acceso.cliente_actual(clientes, columna_cliente, "visible")
     precio = columna_precio.number_input(
-        "Precio de la vivienda (MXN)", min_value=100_000, value=900_000, step=50_000
+        "Precio de la vivienda (MXN)",
+        min_value=100_000,
+        value=900_000,
+        step=vc.PASO_PRECIO,
+        key="sim_precio",
     )
 
     c1, c2, c3, c4 = st.columns(4)
@@ -127,7 +131,7 @@ if comun.gold_disponible():
     # Referencia de mercado junto a la tasa: informativa, no es el CAT de esta
     # simulacion (config/mercado_mx.yaml, con fuente y fecha).
     ref = cargar_mercado()["hipoteca_bbva_fija"]
-    st.caption(
+    nota_tasa = (
         f"Tasa del simulador: {tasa_pct:.2f} % anual fija, sin IVA sobre intereses "
         "(crédito a la vivienda exento, LIVA art. 15, fr. X, inc. d). "
         f"{ref['etiqueta']}: {ref['cat_promedio_sin_iva'] * 100:.1f} %, con tasa de "
@@ -135,12 +139,54 @@ if comun.gold_disponible():
         f"años y aforo de {ref['aforo_calculo'] * 100:.0f} %. No es el CAT de este "
         "cliente."
     )
+    # El cliente ve la tasa en una linea; la referencia legal y el CAT bajan a
+    # "Cómo se calcula".
+    if usuario.rol == "admin":
+        st.caption(nota_tasa)
+    else:
+        st.caption(
+            f"Tasa fija de {tasa_pct:.2f} % al año. Si un banco te ofrece otra, "
+            "cámbiala arriba."
+        )
 
     r = correr(version, cliente_id, float(precio), enganche, plazo, tasa, float(renta))
     hipoteca: mc.Hipoteca = r["hipoteca"]
     sin: mc.Resultado = r["sin"]
     con: mc.Resultado = r["con"]
     meses = r["supuestos"].meses
+
+    # --- Respuesta para el cliente ----------------------------------------
+    # Primero si le alcanza y que cambiar; luego el riesgo y el enganche. El
+    # admin conserva la lectura de analista de abajo.
+    if usuario.rol != "admin":
+        veredicto = vc.veredicto_hipoteca(
+            float(precio),
+            hipoteca.cuota_mensual,
+            r["ingreso_medio"],
+            r["capacidad"].monto,
+            r["capacidad"].motivo,
+            precio_minimo_vivienda(),
+            r["ahorro_medio"],
+        )
+        ui.tarjeta_heroe(veredicto["titulo"], veredicto["valor"], veredicto["detalle"])
+        st.markdown(ui.md(veredicto["sugerencia"]))
+        if veredicto["probar"]:
+
+            def probar_precio(valor: float) -> None:
+                st.session_state["sim_precio"] = int(valor)
+
+            st.button(
+                ui.md(f"Probar con {vc.pesos(veredicto['probar'])}"),
+                on_click=probar_precio,
+                args=(veredicto["probar"],),
+            )
+        st.info(
+            ui.md(
+                vc.frase_enganche(
+                    hipoteca.pago_inicial, r["meses_enganche"], r["ahorro_medio"]
+                )
+            )
+        )
 
     # --- Lectura en una frase, para la demo -------------------------------
     # El admin ve el conteo exacto; el cliente, los extremos (0 o 100 de cada
@@ -214,33 +260,34 @@ if comun.gold_disponible():
         ),
         contenedor=m4,
     )
-    if not capacidad.aplica:
+    if not capacidad.aplica and usuario.rol == "admin":
         st.caption("Capacidad hipotecaria: no aplica. " + ui.md(capacidad.detalle))
 
-    # --- Enganche ------------------------------------------------------------
-    meses_enganche = r["meses_enganche"]
-    # En st.info y similares, Streamlit interpreta "$...$" como formula; se
-    # escapa el signo de pesos.
-    pago_inicial = ui.md(ui.formatear_mxn(hipoteca.pago_inicial))
-    ahorro = ui.md(ui.formatear_mxn(r["ahorro_medio"]))
-    if meses_enganche == 0:
-        st.success(
-            f"Enganche y gastos ({pago_inicial}): los cubre con su saldo actual."
-        )
-    elif meses_enganche is None:
-        st.warning(
-            f"Enganche y gastos ({pago_inicial}): con su flujo actual no ahorra, "
-            "así que no los reuniría."
-        )
-    else:
-        st.info(
-            f"Enganche y gastos ({pago_inicial}): con su ahorro promedio de "
-            f"{ahorro} al mes los reuniría en "
-            f"{meses_enganche:.0f} meses. La simulación supone que ya los tiene."
-        )
+    # --- Enganche (el cliente lo ve arriba, en segunda persona) ---------------
+    if usuario.rol == "admin":
+        meses_enganche = r["meses_enganche"]
+        # En st.info y similares, Streamlit interpreta "$...$" como formula; se
+        # escapa el signo de pesos.
+        pago_inicial = ui.md(ui.formatear_mxn(hipoteca.pago_inicial))
+        ahorro = ui.md(ui.formatear_mxn(r["ahorro_medio"]))
+        if meses_enganche == 0:
+            st.success(
+                f"Enganche y gastos ({pago_inicial}): los cubre con su saldo actual."
+            )
+        elif meses_enganche is None:
+            st.warning(
+                f"Enganche y gastos ({pago_inicial}): con su flujo actual no ahorra, "
+                "así que no los reuniría."
+            )
+        else:
+            st.info(
+                f"Enganche y gastos ({pago_inicial}): con su ahorro promedio de "
+                f"{ahorro} al mes los reuniría en "
+                f"{meses_enganche:.0f} meses. La simulación supone que ya los tiene."
+            )
 
     # --- Bandas de saldo -------------------------------------------------------
-    st.subheader("Saldo proyectado")
+    st.subheader("Saldo proyectado" if usuario.rol == "admin" else "Tu saldo mes a mes")
     bandas = pd.concat(
         [
             sin.bandas.assign(escenario="sin hipoteca"),
@@ -282,16 +329,41 @@ if comun.gold_disponible():
     st.altair_chart(
         (area + linea + cero).properties(height=320), use_container_width=True
     )
-    st.caption(
-        "Línea: mediana de las trayectorias. Banda: del escenario malo (percentil 10) al "
-        f"bueno (percentil 90), sobre {r['supuestos'].trayectorias:,} trayectorias. "
-        "Debajo de la línea punteada, el saldo no alcanza."
-    )
+    if usuario.rol == "admin":
+        st.caption(
+            "Línea: mediana de las trayectorias. Banda: del escenario malo "
+            f"(percentil 10) al bueno (percentil 90), sobre "
+            f"{r['supuestos'].trayectorias:,} trayectorias. Debajo de la línea "
+            "punteada, el saldo no alcanza."
+        )
+    else:
+        st.caption(
+            "La línea es lo más probable; la banda va de una racha mala a una buena. "
+            "Debajo de la línea punteada te quedarías sin dinero."
+        )
 
     saldo_md = ui.md(ui.formatear_mxn(r["saldo"]))
     with st.expander("Cómo se calcula y qué supone"):
         choque = config_simulacion()["choque_ingreso"]
-        st.markdown(f"""
+        if usuario.rol != "admin":
+            st.markdown(f"""
+- Simulamos {r['supuestos'].trayectorias:,} versiones de tus próximos {meses} meses,
+  armadas con meses reales de tu historial: lo que te entró y lo que salió,
+  incluidas las deudas que ya pagas.
+- En cada mes hay {choque['probabilidad_mensual']:.0%} de probabilidad de que
+  pierdas tu ingreso durante {choque['duracion_meses'][0]} a
+  {choque['duracion_meses'][1]} meses, porque tu historial de un año no trae ese
+  riesgo.
+- Empezamos con lo que tienes en tu cuenta digital ({saldo_md}). No contamos CETES
+  ni otras inversiones.
+- Decimos que una casa te alcanza si la hipoteca no sube más de
+  {r['incremento'] * 100:.0f} de cada 100 las veces que te quedarías sin dinero.
+- Tasa, plazo, enganche y gastos de escrituración son supuestos que puedes mover,
+  no la oferta de un banco.
+""")
+            st.caption(ui.md(nota_tasa.replace("de este cliente", "de tu crédito")))
+        else:
+            st.markdown(f"""
 - Cada trayectoria arma los próximos {meses} meses eligiendo al azar meses del
   historial del cliente (ingresos y salidas reales, incluidas las deudas que ya paga).
 - Además, cada mes hay {choque['probabilidad_mensual']:.0%} de probabilidad de perder el
