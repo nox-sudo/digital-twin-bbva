@@ -75,7 +75,7 @@ KPIS = {
     ),
     "uso_linea_credito": Kpi(
         "Uso de tarjeta",
-        "Usas de tu tarjeta",
+        "Límite de tu tarjeta que usas",
         "Parte del límite de la tarjeta de crédito que está usada.",
     ),
     "pago_comprometido": Kpi(

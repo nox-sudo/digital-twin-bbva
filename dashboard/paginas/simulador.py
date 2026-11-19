@@ -11,12 +11,13 @@ import streamlit as st
 import yaml
 
 from dashboard import acceso, comun, ui
+from dashboard import vista_cliente as vc
 from src.common.mercado import cargar_mercado, precio_minimo_vivienda
 from src.simulacion import montecarlo as mc
 from src.simulacion.supuestos import cargar_simulacion
 
 st.title("Simulador de hipoteca")
-acceso.requiere_rol("admin", "cliente")
+usuario = acceso.requiere_rol("admin", "cliente")
 
 
 @st.cache_data
@@ -142,19 +143,31 @@ if comun.gold_disponible():
     meses = r["supuestos"].meses
 
     # --- Lectura en una frase, para la demo -------------------------------
-    st.markdown(
-        f"Con esta hipoteca, en **{con.probabilidad_deficit * 100:.0f} de cada 100** "
-        f"escenarios simulados el saldo de {cliente_id} queda negativo en algún mes "
-        f"de los próximos {meses}. Sin hipoteca: "
-        f"**{sin.probabilidad_deficit * 100:.0f} de cada 100**."
-    )
-    st.caption(
-        f"En los próximos {horizonte_modelo()} meses, el horizonte del modelo de "
-        f"riesgo: {con.probabilidad_deficit_horizonte * 100:.0f} de cada 100 con "
-        f"hipoteca y {sin.probabilidad_deficit_horizonte * 100:.0f} sin ella. El "
-        "modelo estima la probabilidad de impago en ese plazo; el simulador, la de "
-        "quedar en saldo negativo, así que las dos cifras no tienen por qué coincidir."
-    )
+    # El admin ve el conteo exacto; el cliente, los extremos (0 o 100 de cada
+    # 100) en palabras (vista_cliente.certeza).
+    if usuario.rol == "admin":
+        st.markdown(
+            f"Con esta hipoteca, en **{con.probabilidad_deficit * 100:.0f} de cada 100** "
+            f"escenarios simulados el saldo de {cliente_id} queda negativo en algún mes "
+            f"de los próximos {meses}. Sin hipoteca: "
+            f"**{sin.probabilidad_deficit * 100:.0f} de cada 100**."
+        )
+    else:
+        st.markdown(
+            vc.frase_riesgo_compra(
+                con.probabilidad_deficit, sin.probabilidad_deficit, meses
+            ).replace("la compra", "la hipoteca")
+        )
+    # La comparacion con el horizonte del modelo es para el admin: explica por
+    # que las dos cifras de riesgo no coinciden.
+    if usuario.rol == "admin":
+        st.caption(
+            f"En los próximos {horizonte_modelo()} meses, el horizonte del modelo de "
+            f"riesgo: {con.probabilidad_deficit_horizonte * 100:.0f} de cada 100 con "
+            f"hipoteca y {sin.probabilidad_deficit_horizonte * 100:.0f} sin ella. El "
+            "modelo estima la probabilidad de impago en ese plazo; el simulador, la de "
+            "quedar en saldo negativo, así que las dos cifras no tienen por qué coincidir."
+        )
 
     m1, m2, m3, m4 = st.columns(4)
     proporcion = (

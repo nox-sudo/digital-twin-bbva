@@ -260,6 +260,22 @@ CSS = f"""
   box-shadow: {SOMBRA};
   padding: 16px 18px;
 }}
+/* Separacion vertical entre bloques de tarjetas, para que no se toquen. */
+[class*="st-key-gd-tarjeta"] {{ margin-bottom: 8px; }}
+/* Tarjetas que comparten fila (dos columnas) con la misma altura. */
+/* En Streamlit 1.66: stColumn > stVerticalBlock > stLayoutWrapper > tarjeta.
+   La columna ya mide lo que la mas alta de la fila; el envoltorio crece
+   hasta ese alto y la tarjeta lo llena. */
+[data-testid="stColumn"] [data-testid="stLayoutWrapper"]:has(> [class*="st-key-gd-tarjeta"]) {{
+  flex: 1 1 auto;
+}}
+[data-testid="stColumn"] [class*="st-key-gd-tarjeta"] {{ height: 100%; }}
+/* Notas (st.caption) mas grandes y con mas contraste: TEXTO_2 sobre el
+   fondo es 7.2:1 (antes, el texto al 60 %: 4.6:1). */
+[data-testid="stCaptionContainer"],
+[data-testid="stCaptionContainer"] p {{
+  color: {TEXTO_2}; font-size: 0.95rem; opacity: 1;
+}}
 [data-testid="stMetricValue"] {{ font-weight: 600; }}
 [data-testid="stMetricValue"] > div {{ white-space: normal; overflow-wrap: anywhere; }}
 .gd-tarjeta {{
@@ -274,6 +290,12 @@ CSS = f"""
 .gd-tarjeta .gd-valor {{ color: {TEXTO}; font-size: 1.6rem; font-weight: 600;
   line-height: 1.2; overflow-wrap: anywhere; }}
 .gd-tarjeta .gd-detalle {{ color: {TEXTO_2}; font-size: 0.9rem; margin-top: 6px; }}
+.gd-fila {{
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin: 16px 0 24px;
+}}
 .gd-heroe {{
   background: {MARINO};
   border-radius: {RADIO};
@@ -287,6 +309,35 @@ CSS = f"""
 .gd-heroe .gd-detalle {{ color: {TURQUESA_CLARO}; font-size: 1rem; }}
 .gd-heroe .gd-nota {{ color: #ffffff; font-size: 1rem; font-weight: 600;
   margin-top: 8px; }}
+.gd-titular {{ font-size: 1.2rem; font-weight: 600; color: {TEXTO};
+  margin: 2px 0 6px; }}
+.gd-chips {{ display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }}
+.gd-chip {{ background: {FONDO_2}; color: {TEXTO}; border-radius: 999px;
+  padding: 4px 12px; font-size: 0.9rem; }}
+.gd-escalera {{ display: flex; flex-direction: column; gap: 6px;
+  margin: 8px 0 12px !important; list-style: none; padding: 0 !important; }}
+.gd-escalera li {{ margin: 0 !important; padding: 6px 14px 6px 8px !important;
+  box-sizing: border-box; overflow: visible; }}
+.gd-escalon {{ display: flex; align-items: center; gap: 10px; border-radius: 10px;
+  padding: 6px 10px; font-size: 0.95rem; background: {FONDO_2}; color: {TEXTO_2}; }}
+.gd-escalon .gd-num {{ flex: 0 0 26px; height: 26px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-weight: 700; background: #ffffff; color: {TEXTO_2}; }}
+.gd-escalon .gd-nombre {{ flex: 1; }}
+.gd-escalon .gd-estado {{ flex: 0 0 auto; font-size: 0.85rem; white-space: nowrap; }}
+.gd-escalon .gd-nombre {{ min-width: 0; }}
+.gd-escalon.hecho {{ background: #ccfbf1; color: #134e4a; }}
+.gd-escalon.actual {{ background: {MARINO}; color: #ffffff; font-weight: 600; }}
+.gd-escalon.actual .gd-num {{ color: {MARINO}; }}
+.gd-medidor {{ margin: 8px 0 2px; }}
+.gd-medidor-barra {{ position: relative; height: 10px; border-radius: 999px;
+  background: {FONDO_2}; overflow: hidden; }}
+.gd-medidor-relleno {{ position: absolute; left: 0; top: 0; bottom: 0;
+  border-radius: 999px; }}
+.gd-corte {{ position: absolute; top: 0; bottom: 0; width: 2px;
+  background: #ffffff; }}
+.gd-medidor-leyenda {{ font-size: 0.9rem; color: {TEXTO}; margin-top: 4px;
+  font-weight: 600; }}
 .gd-semaforo {{
   display: inline-flex; align-items: center; gap: 8px;
   border-radius: 999px; padding: 4px 12px; font-weight: 600; font-size: 0.95rem;
@@ -313,18 +364,58 @@ def _texto(valor) -> str:
     return html.escape(str(valor)).replace("$", "&#36;")
 
 
-def html_tarjeta(
-    titulo: str, valor: str, detalle: str | None = None, banda: str | None = None
+def html_medidor(
+    probabilidad: float, banda: str, cortes: list[float], leyenda: str
 ) -> str:
-    """Con banda, el valor va como semaforo (color y palabra)."""
+    """Barra de 0 a 100 % con la probabilidad rellena del color de la banda y
+    una marca en cada corte de banda (10 % y 30 %). El porcentaje va escrito
+    al lado: la barra no es la unica señal."""
+    p = max(0.0, min(1.0, float(probabilidad)))
+    color = SEMAFORO.get(banda, SEMAFORO["sin score"])["punto"]
+    marcas = "".join(
+        f"<span class='gd-corte' style='left:{c * 100:.1f}%'></span>" for c in cortes
+    )
+    return (
+        "<div class='gd-medidor' role='img' "
+        f"aria-label='{_texto(leyenda)}'>"
+        f"<div class='gd-medidor-barra'><span class='gd-medidor-relleno' "
+        f"style='width:{p * 100:.1f}%;background:{color}'></span>{marcas}</div>"
+        f"<div class='gd-medidor-leyenda'>{_texto(leyenda)}</div></div>"
+    )
+
+
+def html_tarjeta(
+    titulo: str,
+    valor: str,
+    detalle: str | None = None,
+    banda: str | None = None,
+    extra_html: str | None = None,
+) -> str:
+    """Con banda, el valor va como semaforo (color y palabra). extra_html va
+    entre el valor y el detalle (por ejemplo, un medidor)."""
     cuerpo = html_semaforo(banda, valor) if banda else _texto(valor)
     partes = [
         f"<div class='gd-titulo'>{_texto(titulo)}</div>",
         f"<div class='gd-valor'>{cuerpo}</div>",
     ]
+    if extra_html:
+        partes.append(extra_html)
     if detalle:
         partes.append(f"<div class='gd-detalle'>{_texto(detalle)}</div>")
     return "<div class='gd-tarjeta'>" + "".join(partes) + "</div>"
+
+
+def fila_tarjetas(tarjetas: list[dict]) -> None:
+    """Tarjetas en una fila con la misma altura: una cuadricula de CSS en vez
+    de st.columns, cuyas columnas crecen cada una a su contenido. En pantalla
+    angosta bajan una por renglon. Cada tarjeta es un dict con los
+    argumentos de html_tarjeta (titulo, valor, detalle, banda)."""
+    st.markdown(
+        "<div class='gd-fila'>"
+        + "".join(html_tarjeta(**t) for t in tarjetas)
+        + "</div>",
+        unsafe_allow_html=True,
+    )
 
 
 def tarjeta(
@@ -403,6 +494,47 @@ def sesion(usuario, al_salir) -> None:
         ):
             al_salir()
             st.rerun()
+
+
+def bloque_accion(titular: str, accion: str | None, chips: list[str]) -> None:
+    """Un titular de una frase, una accion y hasta dos chips (etiquetas
+    cortas con una cifra). Sin parrafos largos ni negritas en todo el
+    bloque."""
+    partes = [f"<div class='gd-titular'>{_texto(titular)}</div>"]
+    if accion:
+        partes.append(f"<div>{_texto(accion)}</div>")
+    if chips:
+        partes.append(
+            "<div class='gd-chips'>"
+            + "".join(f"<span class='gd-chip'>{_texto(c)}</span>" for c in chips[:2])
+            + "</div>"
+        )
+    st.markdown("".join(partes), unsafe_allow_html=True)
+
+
+def escalera_visual(pasos: list[tuple[str, str]], actual: int) -> None:
+    """Los pasos de la escalera financiera, uno por renglon: los anteriores al actual
+    como hechos, el actual resaltado y los siguientes pendientes. Cada paso
+    dice su estado tambien en texto ("hecho", "estás aquí"), no solo con el
+    color. pasos es [(clave, nombre)]; actual, el indice del paso actual."""
+    items = []
+    for i, (_, nombre) in enumerate(pasos):
+        estado, etiqueta = (
+            ("hecho", "hecho")
+            if i < actual
+            else ("actual", "estás aquí") if i == actual else ("", "pendiente")
+        )
+        items.append(
+            f"<li class='gd-escalon {estado}'><span class='gd-num'>{i + 1}</span>"
+            f"<span class='gd-nombre'>{_texto(nombre)}</span>"
+            f"<span class='gd-estado'>{_texto(etiqueta)}</span></li>"
+        )
+    st.markdown(
+        f"<ol class='gd-escalera' aria-label='Paso {actual + 1} de {len(pasos)}'>"
+        + "".join(items)
+        + "</ol>",
+        unsafe_allow_html=True,
+    )
 
 
 def contenedor(nombre: str, en=None):

@@ -154,47 +154,61 @@ grafica mes a mes muestra los 19 meses de historial.
 El mismo **CLI-000283**, ahora como lo ve el cliente al entrar con su
 usuario: solo sus datos, sin selector de cliente, en frases cortas y en pesos.
 
-Arriba, la respuesta a "¿cómo voy?":
+Arriba, un saludo ("Hola. Así van tus finanzas al cierre de abr 2027."; sin
+nombre, porque Gold y el dashboard no tienen PII) y la respuesta a "¿cómo
+voy?":
 
 - Tienes disponible $15,215.70 MXN (saldo al cierre de abr 2027). "A tu
   ritmo de los últimos 12 meses, tu saldo alcanza para menos de 1 mes":
   saldo entre la capacidad de ahorro negativa de 12 meses (-$27,030).
-- Tres tarjetas: gastó $106,852.34 MXN este mes (abr 2027), 35 % más que su
-  promedio de los 18 meses anteriores; lo que más creció, suscripciones
+- Tres tarjetas: gastó $106,852.34 MXN este mes (abr 2027), 34 % más que su
+  promedio de los 12 meses anteriores; lo que más creció, suscripciones
   ($10,567 más al mes que en los 3 meses anteriores, de $7,107 a $17,674;
   ver [technical-debt.md](technical-debt.md), la cifra no es creíble como
-  suscripciones); nivel de riesgo Alto.
-- Tu siguiente paso: con riesgo alto, o con déficit y saldo para menos de 3
-  meses, primero va eso: "Lo primero: en promedio, en los últimos 12 meses,
-  gastas $27,030 más de lo que te entra al mes. A ese ritmo, tu saldo de
-  $15,216 alcanza para menos de 1 mes. Además, tu riesgo de atrasarte en tus
-  pagos es alto (59.7 %)." Debajo, "Tu paso en la escalera" y el Monte
-  Carlo (100 de cada 100 escenarios). Reglas fijas, sin modelo de lenguaje.
+  suscripciones); nivel de riesgo Alto, con un medidor: barra en 59.7 %,
+  marcas en los cortes de banda (10 % y 30 %) y "59.7 % de probabilidad en
+  6 meses" escrito debajo.
+- Tu siguiente paso, en tres piezas: un titular ("Lo urgente: cada mes sale
+  más dinero del que te entra."), una acción ("Baja tus pagos de deuda a
+  $10,999 al mes o menos.", la meta del paso actual de la escalera) y dos
+  chips: "Gastas $27,030 más de lo que te entra al mes (promedio de 12
+  meses)" y "Quedarte sin dinero en 36 meses: prácticamente seguro" (el
+  Monte Carlo da 100 de cada 100; el conteo exacto queda en el Simulador
+  del admin). El titular es urgente si el riesgo es alto o el saldo alcanza
+  para menos de 3 meses; si no, es la meta de la escalera. Reglas fijas, sin
+  modelo de lenguaje.
 
-Debajo, "El detalle", en el orden de siempre. Cada cifra de déficit dice su
-periodo:
+Lo que lee el cliente usa una sola ventana, 12 meses; las otras van solo
+donde son indispensables y con su periodo escrito: "Lo que más creció" (3
+meses contra los 3 anteriores), el horizonte del modelo de riesgo (6 meses),
+el Monte Carlo (36 meses) y la regla de ingreso de la escalera (3 meses).
 
-- Este mes (abr 2027): le entraron $32,876 y salieron $106,852; la
-  diferencia, -$73,976. En promedio, en los 18 meses anteriores, gastaba
-  $16,658 más de lo que le entraba al mes.
+Debajo, "El detalle", en el orden de siempre. Cada cifra vive en un solo
+lugar (tabla en [ux/mi-resumen/fuente-unica.md](ux/mi-resumen/fuente-unica.md)):
+
+- Este mes (abr 2027): entró $32,876.34 MXN y la diferencia fue -$73,976.00
+  MXN; lo que salió está arriba, en "Gastaste este mes".
 - Quincenas: le llegan unos $16,438 cada quincena; en may 2026 le llegaban
-  unos $34,368 (su ingreso bajó 52 %, el escenario de deriva).
-- A dónde se va su dinero (3 meses): pago de deuda 24 %, otros 18 %,
-  suscripciones 17 %.
-- Su crédito: paso 1 de 6 de la escalera (pagos de deuda bajo control).
-  Paga $25,513 al mes de deudas, el 70 % de su ingreso de los últimos 3
-  meses ($36,665 al mes); para el siguiente paso deberían quedar en $10,999
-  o menos. Usa 38 % de su tarjeta.
-- Su riesgo, alto, explicado con sus propios valores SHAP ("Tu riesgo
-  estimado de atrasarte en algún pago en los próximos 6 meses: 59.7 %"). Lo
-  sube: gasta $27,030 más de lo que le entra al mes (promedio de los
-  últimos 12 meses) y debe 4.6 veces su ingreso de un mes. Lo baja: lleva
-  1.9 años como cliente.
+  unos $34,368 (su ingreso bajó 52 %, el escenario de deriva). La gráfica
+  muestra los 12 meses, de may 2026 a abr 2027.
+- A dónde se va su dinero (12 meses, la misma ventana que la vista Cliente
+  del admin): pago de deuda 26 %, suscripciones 15 %, servicios 13 %; el
+  monto de cada categoría va en su barra.
+- Su crédito: la escalera como lista de 6 pasos, con el actual resaltado
+  ("Pagos de deuda bajo control · estás aquí") y los demás "pendiente". Debajo,
+  "Para el siguiente paso: Te faltan $14,514 por bajar." Paga $25,512.94 MXN
+  al mes de deudas y usa 38 % del límite de su tarjeta; la meta ($10,999 o
+  menos) está en "Tu siguiente paso".
+- Su riesgo explicado con sus propios valores SHAP; la probabilidad está en
+  el medidor de la tarjeta de riesgo. Lo sube: gasta
+  más de lo que le entra cada mes (la cifra está en el chip) y debe 4.6
+  veces su ingreso de un mes. Lo baja: lleva 1.9 años como cliente.
 - ¿Me alcanza para algo de $15,000? La forma de pago se elige arriba del
   formulario; el plazo y la tasa solo aparecen con "A crédito". De contado
   el saldo alcanza ($15,216),
   pero con o sin la compra se queda sin dinero algún mes en 100 de cada 100
-  escenarios. A crédito a 12 meses con 45 % anual: $1,631 al mes con IVA
+  escenarios; el cliente lo lee como "Con o sin la compra, es prácticamente
+  seguro que te quedes sin dinero algún mes de los próximos 36". A crédito a 12 meses con 45 % anual: $1,631 al mes con IVA
   sobre intereses. Pendiente: volver a calcular las dos en pantalla con el
 formulario nuevo (el cálculo no cambió).
 

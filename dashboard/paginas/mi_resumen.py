@@ -28,7 +28,11 @@ from src.simulacion.supuestos import cargar_simulacion
 usuario = acceso.requiere_rol("admin", "cliente")
 st.title("Mi resumen" if usuario.rol == "cliente" else "Vista del cliente")
 
-MESES_GASTO = 3
+# Ventana principal de lo que lee el cliente: la de las features
+# (config/features.yaml, 12 meses). Otras ventanas solo donde son
+# indispensables y con su periodo escrito: "Lo que más creció" (3 meses
+# contra los 3 anteriores), el horizonte del modelo de riesgo (6 meses) y el
+# Monte Carlo (36 meses).
 # Periodos que compara la tarjeta "Lo que más creció": los ultimos 3 meses
 # contra los 3 anteriores.
 MESES_CAMBIO = 3
@@ -185,6 +189,19 @@ if comun.gold_disponible():
     flujo_cliente = comun.flujo(version, cliente_id)
     mes = vc.resumen_mes(flujo_cliente, comun.nombre_mes)
 
+    # --- Saludo -----------------------------------------------------------
+    # Sin nombre: los nombres solo existen en las fuentes crudas y se guardan
+    # como hash desde Silver (config/politica_pii.yaml); Gold y el dashboard
+    # no tienen PII. En una app real el nombre vendria del servicio de
+    # identidad de la sesion, no de la capa analitica. El admin lo ve igual:
+    # "Vista del cliente" muestra lo mismo que ve el cliente.
+    cierre = f" al cierre de {comun.nombre_mes(mes['mes'])}" if mes else ""
+    st.markdown(
+        f"<div style='font-size:1.25rem;margin:-8px 0 12px'>Hola. Así van tus "
+        f"finanzas{cierre}.</div>",
+        unsafe_allow_html=True,
+    )
+
     # --- ¿Como voy? -------------------------------------------------------
     # Autonomia: saldo entre el deficit promedio de la ventana de 12 meses
     # (capacidad de ahorro negativa), la misma cifra del KPI y de la
@@ -203,32 +220,56 @@ if comun.gold_disponible():
         ),
         vc.frase_autonomia(autonomia, ventana),
     )
-    st.write("")
-    t1, t2, t3 = st.columns(3)
-    gasto = vc.comparacion_gasto(flujo_cliente)
-    ui.tarjeta(
-        (
-            f"Gastaste este mes ({comun.nombre_mes(mes['mes'])})"
-            if mes
-            else "Gastaste este mes"
-        ),
-        ui.formatear_mxn(gasto["salidas"]) if gasto else "Sin movimientos",
-        gasto["frase"] if gasto else None,
-        contenedor=t1,
-    )
+    gasto = vc.comparacion_gasto(flujo_cliente, ventana)
     crecio = vc.mayor_aumento(
         cambios(version, cliente_id), comun.nombre_categoria, MESES_CAMBIO
     )
-    ui.tarjeta("Lo que más creció", crecio["titulo"], crecio["frase"], contenedor=t2)
     banda = fila["banda_riesgo"]
-    ui.tarjeta(
-        ui.nombre_kpi("banda_riesgo", "cliente"),
-        vc.NIVEL_BANDA.get(banda, "Sin dato"),
-        vc.TONO_BANDA.get(banda, "Todavía no tenemos tu nivel de riesgo.")
-        .split(": ")[-1]
-        .capitalize(),
-        banda=banda if banda in vc.NIVEL_BANDA else None,
-        contenedor=t3,
+    # Las tres tarjetas en una cuadricula: misma altura y separacion fija
+    # con la tarjeta de saldo y con "Tu siguiente paso".
+    ui.fila_tarjetas(
+        [
+            {
+                "titulo": (
+                    f"Gastaste este mes ({comun.nombre_mes(mes['mes'])})"
+                    if mes
+                    else "Gastaste este mes"
+                ),
+                "valor": (
+                    ui.formatear_mxn(gasto["salidas"]) if gasto else "Sin movimientos"
+                ),
+                "detalle": gasto["frase"] if gasto else None,
+            },
+            {
+                "titulo": "Lo que más creció",
+                "valor": crecio["titulo"],
+                "detalle": crecio["frase"],
+            },
+            {
+                "titulo": ui.nombre_kpi("banda_riesgo", "cliente"),
+                "valor": vc.NIVEL_BANDA.get(banda, "Sin dato"),
+                "detalle": vc.TONO_BANDA.get(
+                    banda, "Todavía no tenemos tu nivel de riesgo."
+                )
+                .split(": ")[-1]
+                .capitalize(),
+                "banda": banda if banda in vc.NIVEL_BANDA else None,
+                # Medidor junto a la palabra: la probabilidad y los cortes de
+                # las bandas (config/dashboard.yaml). Es el unico lugar de la
+                # probabilidad en Mi resumen.
+                "extra_html": (
+                    ui.html_medidor(
+                        fila["probabilidad_impago"],
+                        banda,
+                        [b["desde"] for b in cfg["bandas_riesgo"] if b["desde"] > 0],
+                        f"{ui.formatear_porcentaje(fila['probabilidad_impago'], 1)} de "
+                        f"probabilidad en {horizonte_modelo()} meses",
+                    )
+                    if banda in vc.NIVEL_BANDA
+                    else None
+                ),
+            },
+        ]
     )
 
     # --- Siguiente paso ---------------------------------------------------
@@ -237,27 +278,31 @@ if comun.gold_disponible():
     riesgo_flujo = riesgo_flujo_actual(version, cliente_id)
     exp = explicacion(version, cliente_id)
     n_factores = ex.cargar_config()["factores_mostrados"]
+    # Sin cifra en los factores cuya cifra ya esta en otra tarjeta (deficit,
+    # saldo, uso de la tarjeta): cada cifra vive en un solo lugar.
     riesgo = vc.resumen_riesgo(
-        banda, exp if isinstance(exp, ex.Explicacion) else None, n_factores, ventana
+        banda,
+        exp if isinstance(exp, ex.Explicacion) else None,
+        n_factores,
+        ventana,
+        sin_cifra=True,
+    )
+    meta = (
+        vc.meta_escalera(e.paso_actual, e.metricas, esc.cargar_config()) if e else None
+    )
+    paso = vc.siguiente_paso_compacto(
+        banda,
+        fila["saldo_liquido_disponible"],
+        fila["capacidad_ahorro"],
+        ventana,
+        esc.NOMBRES[e.paso_actual] if e else None,
+        meta["accion"] if meta else None,
+        riesgo_flujo[0] if riesgo_flujo else None,
+        riesgo_flujo[1] if riesgo_flujo else 0,
     )
     with ui.contenedor("siguiente-paso"):
-        st.markdown("**:material/flag: Tu siguiente paso**")
-        parrafos = vc.siguiente_paso_priorizado(
-            banda,
-            fila["probabilidad_impago"],
-            fila["saldo_liquido_disponible"],
-            fila["capacidad_ahorro"],
-            ventana,
-            esc.NOMBRES[e.paso_actual] if e else None,
-            e.lectura if e else None,
-            riesgo_flujo[0] if riesgo_flujo else None,
-            riesgo_flujo[1] if riesgo_flujo else 0,
-            riesgo["suben"][0] if riesgo["suben"] else None,
-        )
-        # Con prioridad, el primer parrafo (lo urgente) va en negritas.
-        for i, parrafo in enumerate(parrafos):
-            texto = md(parrafo)
-            st.markdown(f"**{texto}**" if i == 0 and len(parrafos) > 1 else texto)
+        st.caption(":material/flag: Tu siguiente paso")
+        ui.bloque_accion(paso["titular"], paso["accion"], paso["chips"])
 
     st.subheader("El detalle")
     izquierda, derecha = st.columns(2, gap="large")
@@ -268,14 +313,18 @@ if comun.gold_disponible():
         if mes is None:
             st.caption("Todavía no hay movimientos en tu cuenta.")
         else:
+            # Lo que salio ya esta en "Gastaste este mes": aqui solo lo que
+            # entro y la diferencia.
             cifras(
                 [
                     ("Entró", ui.formatear_mxn(mes["entradas"])),
-                    ("Salió", ui.formatear_mxn(mes["salidas"])),
                     ("Diferencia", ui.formatear_mxn(mes["neto"])),
                 ]
             )
-            st.markdown(md(mes["frase"]))
+            st.caption(
+                "Diferencia: lo que entró menos lo que salió este mes. Lo que salió "
+                "está arriba, en «Gastaste este mes»."
+            )
 
     # --- Ingresos por quincena -------------------------------------------
     with ui.contenedor("quincenas", derecha):
@@ -287,7 +336,8 @@ if comun.gold_disponible():
             minimo = esc.cargar_config()["ingreso_variable"]["proporcion_depositos_min"]
             lectura_q = vc.resumen_quincenas(q, minimo, comun.nombre_mes)
             st.markdown(md(lectura_q["frase"]))
-            recientes = q[q["mes"].isin(sorted(q["mes"].unique())[-6:])].assign(
+            # Los 12 meses de la ventana, la misma de la frase de arriba.
+            recientes = q[q["mes"].isin(sorted(q["mes"].unique())[-ventana:])].assign(
                 etiqueta=lambda d: d["mes"].map(comun.nombre_mes),
                 cual=lambda d: d["quincena"].map(
                     {1: "1.ª quincena", 2: "2.ª quincena"}
@@ -308,7 +358,9 @@ if comun.gold_disponible():
                     y=alt.Y("monto:Q", title=None, axis=EJE_PESOS),
                     color=alt.Color(
                         "cual:N",
-                        scale=alt.Scale(range=[comun.AZUL, comun.NARANJA]),
+                        # Dos tonos de la paleta azul: las quincenas son la
+                        # misma serie partida en dos, no dos cosas distintas.
+                        scale=alt.Scale(range=[ui.MARINO, comun.AZUL]),
                         legend=alt.Legend(title=None, orient="top"),
                     ),
                     tooltip=[
@@ -327,28 +379,52 @@ if comun.gold_disponible():
     with ui.contenedor("gastos", izquierda):
         st.subheader("A dónde se va tu dinero")
         salidas = comun.datos.salidas_por_categoria(
-            cfg["gold_duckdb"], cliente_id, MESES_GASTO
+            cfg["gold_duckdb"], cliente_id, ventana
         )
-        st.markdown(md(vc.resumen_gastos(salidas, comun.nombre_categoria, MESES_GASTO)))
+        # Los montos van en las barras; la frase solo nombra las categorias.
+        st.markdown(
+            md(
+                vc.resumen_gastos(
+                    salidas, comun.nombre_categoria, ventana, con_cifras=False
+                )
+            )
+        )
         if not salidas.empty:
             top = salidas.head(5).assign(
                 nombre=lambda d: d["categoria"].map(comun.nombre_categoria),
                 total_texto=lambda d: d["total"].map(ui.formatear_mxn),
                 proporcion_texto=lambda d: d["proporcion"].map(ui.formatear_porcentaje),
+                etiqueta=lambda d: d.apply(
+                    lambda f: f"{ui.formatear_mxn(f['total'], centavos=False)} · "
+                    f"{ui.formatear_porcentaje(f['proporcion'])}",
+                    axis=1,
+                ),
+            )
+            # Valor escrito al final de cada barra; el eje llega mas alla de
+            # la barra mas larga para que la etiqueta no se corte.
+            base = alt.Chart(top).encode(
+                y=alt.Y(
+                    "nombre:N", sort="-x", title=None, axis=alt.Axis(labelLimit=140)
+                ),
+                x=alt.X(
+                    "total:Q",
+                    title=None,
+                    axis=EJE_PESOS,
+                    scale=alt.Scale(domain=[0, float(top["total"].max()) * 2.1]),
+                ),
+                tooltip=[
+                    alt.Tooltip("nombre:N", title="Categoría"),
+                    alt.Tooltip("total_texto:N", title="Total"),
+                    alt.Tooltip("proporcion_texto:N", title="Del total"),
+                ],
             )
             st.altair_chart(
-                alt.Chart(top)
-                .mark_bar(color=comun.AZUL, cornerRadiusEnd=4)
-                .encode(
-                    y=alt.Y("nombre:N", sort="-x", title=None),
-                    x=alt.X("total:Q", title=None, axis=EJE_PESOS),
-                    tooltip=[
-                        alt.Tooltip("nombre:N", title="Categoría"),
-                        alt.Tooltip("total_texto:N", title="Total"),
-                        alt.Tooltip("proporcion_texto:N", title="Del total"),
-                    ],
-                )
-                .properties(height=alt.Step(26)),
+                (
+                    base.mark_bar(color=comun.AZUL, cornerRadiusEnd=4)
+                    + base.mark_text(
+                        align="left", dx=6, color=ui.TEXTO_2, fontSize=12
+                    ).encode(text="etiqueta:N")
+                ).properties(height=alt.Step(30)),
                 width="stretch",
             )
 
@@ -358,11 +434,15 @@ if comun.gold_disponible():
         if e is None:
             pendiente("Tu crédito")
         else:
-            st.markdown(
-                f"**Paso {e.numero_paso} de {len(e.pasos)}: "
-                f"{esc.NOMBRES[e.paso_actual]}**"
-            )
-            st.markdown(md(e.lectura))
+            # Escalera visual: los 6 pasos, el actual resaltado y lo que falta
+            # para el siguiente. La meta del paso (la accion) esta en "Tu
+            # siguiente paso"; aqui, donde va y cuanto le falta.
+            st.markdown(f"Paso {e.numero_paso} de {len(e.pasos)}")
+            ui.escalera_visual([(p.paso, p.nombre) for p in e.pasos], e.numero_paso - 1)
+            if meta:
+                st.markdown(
+                    md(f"Para el siguiente paso: {meta['falta'] or meta['hoy']}.")
+                )
             m = e.metricas
             cifras(
                 [
@@ -382,12 +462,12 @@ if comun.gold_disponible():
             )
             st.caption("Pago mínimo de tus tarjetas y cuota de tus préstamos, con IVA.")
             if e.supuestos:
-                st.caption(" ".join(e.supuestos))
+                st.caption(vc.lenguaje_cliente(" ".join(e.supuestos)))
 
     # --- Tu riesgo, explicado --------------------------------------------------
     with ui.contenedor("riesgo"):
         st.subheader("Tu riesgo, explicado")
-        st.markdown(f"**{riesgo['frase']}**")
+        # El nivel (alto, medio, bajo) esta en la tarjeta de arriba.
         if isinstance(exp, str):
             st.caption(f"Por qué: {exp}")
         else:
@@ -401,11 +481,10 @@ if comun.gold_disponible():
                 for texto in riesgo["bajan"] or ["Nada en especial."]:
                     st.markdown(md(f"- {texto}"))
             st.caption(
-                f"Tu riesgo estimado de atrasarte en algún pago en los próximos "
-                f"{horizonte_modelo()} meses: "
-                f"{ui.formatear_porcentaje(fila['probabilidad_impago'], 1)}. Es una "
-                "estimación, no una certeza. Estos son los datos que más pesan en tu "
-                "caso comparado con un cliente típico."
+                "La probabilidad de la tarjeta de riesgo es una estimación de "
+                f"atrasarte en algún pago en los próximos {horizonte_modelo()} meses, "
+                "no una certeza. Estos son los datos que más pesan en tu caso "
+                "comparado con un cliente típico."
             )
 
     # --- ¿Me alcanza para...? --------------------------------------------------

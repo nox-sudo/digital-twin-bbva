@@ -17,6 +17,20 @@ import pandas as pd
 from src.common.formato import formato_mxn
 from src.gold.explicacion import Explicacion
 
+# Palabras internas que pueden llegar al texto del cliente desde los
+# modulos de calculo (src/gold/escalera.py): se cambian por lenguaje comun
+# solo al mostrarlas.
+LENGUAJE_CLIENTE = {
+    "las tasas del catálogo": "tasas de referencia",
+    "tasas del catálogo": "tasas de referencia",
+}
+
+
+def lenguaje_cliente(texto: str) -> str:
+    for interno, comun in LENGUAJE_CLIENTE.items():
+        texto = texto.replace(interno, comun)
+    return texto
+
 
 def pesos(valor) -> str:
     return formato_mxn(valor, estilo="cliente")
@@ -159,14 +173,24 @@ def resumen_quincenas(
 
 
 def resumen_gastos(
-    salidas: pd.DataFrame, nombre_categoria, meses: int, n: int = 3
+    salidas: pd.DataFrame,
+    nombre_categoria,
+    meses: int,
+    n: int = 3,
+    con_cifras: bool = True,
 ) -> str:
-    """Las n categorias que mas se llevaron el dinero en los ultimos meses."""
+    """Las n categorias que mas se llevaron el dinero en los ultimos meses.
+    Sin cifras cuando la grafica de al lado ya escribe el monto de cada
+    barra."""
     if salidas.empty or salidas["total"].sum() <= 0:
         return f"No registramos gastos en los últimos {meses} meses."
     partes = [
-        f"{nombre_categoria(f.categoria).lower()} ({pesos(f.total)}, "
-        f"{f.proporcion * 100:.0f} %)"
+        (
+            f"{nombre_categoria(f.categoria).lower()} ({pesos(f.total)}, "
+            f"{f.proporcion * 100:.0f} %)"
+            if con_cifras
+            else nombre_categoria(f.categoria).lower()
+        )
         for f in salidas.head(n).itertuples()
     ]
     if len(partes) > 1:
@@ -176,14 +200,18 @@ def resumen_gastos(
     return f"En los últimos {meses} meses, lo que más se llevó tu dinero fue {lista}."
 
 
-def comparacion_gasto(flujo: pd.DataFrame) -> dict | None:
+def comparacion_gasto(flujo: pd.DataFrame, ventana: int | None = None) -> dict | None:
     """Lo que salio el ultimo mes contra el promedio de los meses anteriores
     (el mismo de resumen_mes), con el periodo dicho."""
     if flujo.empty:
         return None
     flujo = flujo.sort_values("mes")
     salidas = float(flujo.iloc[-1]["salidas"])
+    # Con ventana, el promedio es el de los `ventana` meses anteriores (la
+    # ventana principal de Mi resumen), no todo el historial.
     anteriores = flujo.iloc[:-1]["salidas"]
+    if ventana:
+        anteriores = anteriores.iloc[-ventana:]
     if anteriores.empty or float(anteriores.mean()) <= 0:
         return {
             "salidas": salidas,
@@ -226,38 +254,6 @@ def mayor_aumento(cambios: pd.DataFrame, nombre_categoria, meses: int) -> dict:
 NIVEL_BANDA = {"bajo": "Bajo", "medio": "Medio", "alto": "Alto"}
 
 
-def siguiente_paso(
-    nombre_paso: str | None,
-    lectura: str | None,
-    probabilidad_deficit: float | None,
-    meses: int,
-) -> str:
-    """El siguiente paso del cliente, armado con reglas: el paso actual de la
-    escalera financiera (lo que toca hacer y cuanto) y el riesgo de quedarse
-    sin dinero que da el simulador con su flujo actual. Sin modelo de
-    lenguaje."""
-    partes = []
-    if nombre_paso and lectura:
-        # El nombre del paso es la meta ("Pagos de deuda bajo control"), no
-        # el estado actual: dicho solo, se leeria como algo ya logrado.
-        partes.append(
-            f"Tu meta ahora: {nombre_paso[0].lower()}{nombre_paso[1:]}. {lectura}"
-        )
-    if probabilidad_deficit is not None:
-        p = round(probabilidad_deficit * 100)
-        if p == 0:
-            partes.append(
-                f"Con tu flujo actual, en ningún escenario simulado te quedas sin "
-                f"dinero en los próximos {meses} meses."
-            )
-        else:
-            partes.append(
-                f"Con tu flujo actual, en {p} de cada 100 escenarios simulados te "
-                f"quedarías sin dinero algún mes de los próximos {meses}."
-            )
-    return " ".join(partes) or "Todavía no tenemos datos para sugerirte un paso."
-
-
 # Meses de autonomia por debajo de los cuales el siguiente paso habla
 # primero del deficit.
 AUTONOMIA_MINIMA = 3
@@ -290,58 +286,127 @@ def frase_autonomia(meses: float | None, ventana: int) -> str | None:
     )
 
 
-def siguiente_paso_priorizado(
+def meta_escalera(paso: str, m: dict, cfg: dict) -> dict:
+    """Lo concreto del paso actual de la escalera, con los mismos umbrales y
+    metricas que src/gold/escalera.py usa para decidir el paso:
+
+      accion  lo que toca hacer, con la meta ("Baja tus pagos de deuda a
+              $10,999 al mes o menos").
+      hoy     donde esta hoy ("Hoy pagas $25,513 al mes").
+      falta   cuanto falta para la meta, o None.
+    """
+    u = cfg["umbrales"]
+    if paso == "pagos_deuda":
+        tope = u["pagos_deuda_max"]["valor"]
+        hoy = f"Hoy pagas {pesos(m['pago_comprometido'])} al mes de deudas"
+        if m["razon_pagos_deuda"] is None:
+            return {
+                "accion": (
+                    f"Que tus pagos de deuda no pasen del {tope * 100:.0f} % de lo que "
+                    "ganas."
+                ),
+                "hoy": hoy + " y no registramos ingreso",
+                "falta": None,
+            }
+        maximo = tope * m["ingreso_referencia"]
+        return {
+            "accion": f"Baja tus pagos de deuda a {pesos(maximo)} al mes o menos.",
+            "hoy": hoy,
+            "falta": f"Te faltan {pesos(m['pago_comprometido'] - maximo)} por bajar",
+        }
+    if paso == "uso_tarjeta":
+        tope = u["uso_tarjeta_max"]["valor"]
+        return {
+            "accion": f"Baja el uso de tu tarjeta al {tope * 100:.0f} % de su límite.",
+            "hoy": f"Hoy usas el {m['uso_tarjeta'] * 100:.0f} % de su límite",
+            "falta": f"Te faltan {(m['uso_tarjeta'] - tope) * 100:.0f} puntos",
+        }
+    if paso in ("fondo_minimo", "fondo_meta"):
+        meta = u["fondo_emergencia"][
+            "minimo_meses" if paso == "fondo_minimo" else "meta_meses"
+        ]
+        faltan = max(meta * m["gasto_mensual"] - m["saldo_liquido"], 0.0)
+        return {
+            "accion": f"Junta {pesos(faltan)} más para cubrir {meta} meses de gastos.",
+            "hoy": f"Hoy tu saldo cubre {(m['fondo_meses'] or 0.0):.1f} meses de gastos",
+            "falta": None,
+        }
+    if paso == "ahorro":
+        minimo = u["ahorro_min"]["valor"]
+        if m["tasa_ahorro"] is None:
+            return {
+                "accion": f"Ahorra al menos el {minimo * 100:.0f} % de tu ingreso.",
+                "hoy": "No registramos ingreso para medir cuánto ahorras",
+                "falta": None,
+            }
+        return {
+            "accion": f"Ahorra al menos {pesos(minimo * m['ingreso_ahorro'])} al mes.",
+            "hoy": f"Hoy ahorras el {m['tasa_ahorro'] * 100:.0f} % de tu ingreso",
+            "falta": None,
+        }
+    return {
+        "accion": "Ya puedes pensar en invertir.",
+        "hoy": "Tus deudas, tu tarjeta, tu fondo de emergencia y tu ahorro están en orden",
+        "falta": None,
+    }
+
+
+def siguiente_paso_compacto(
     banda: str | None,
-    probabilidad,
     saldo,
     capacidad_ahorro,
     ventana: int,
     nombre_paso: str | None,
-    lectura: str | None,
+    accion_escalera: str | None,
     probabilidad_deficit: float | None,
     meses_simulados: int,
-    factor_que_sube: str | None = None,
-) -> list[str]:
-    """Parrafos del siguiente paso, con reglas fijas (mismas entradas, mismo
-    texto). Si el riesgo es alto, o hay deficit promedio y el saldo alcanza
-    para menos de AUTONOMIA_MINIMA meses, primero va eso, con su cifra y su
-    periodo, y el paso de la escalera queda debajo. Si no, el texto de
-    siguiente_paso()."""
-    autonomia = autonomia_meses(saldo, capacidad_ahorro)
-    alto = banda == "alto"
-    deficit_urgente = autonomia is not None and autonomia < AUTONOMIA_MINIMA
-    if not (alto or deficit_urgente):
-        return [
-            siguiente_paso(nombre_paso, lectura, probabilidad_deficit, meses_simulados)
-        ]
+) -> dict:
+    """ "Tu siguiente paso" en tres piezas, con reglas fijas (mismas entradas,
+    mismo texto):
 
-    riesgo = (
-        f"tu riesgo de atrasarte en tus pagos es alto ({float(probabilidad) * 100:.1f} %)"
-        if alto and probabilidad is not None and not pd.isna(probabilidad)
-        else "tu riesgo de atrasarte en tus pagos es alto"
+      titular  una frase: lo urgente si el riesgo es alto o el saldo alcanza
+               para menos de AUTONOMIA_MINIMA meses; si no, la meta de la
+               escalera. No repite la autonomia, que vive en la tarjeta de
+               saldo.
+      accion   lo concreto que toca hacer (el paso actual de la escalera).
+      chips    hasta dos cifras cortas, cada una con su periodo.
+    """
+    autonomia = autonomia_meses(saldo, capacidad_ahorro)
+    urgente = banda == "alto" or (
+        autonomia is not None and autonomia < AUTONOMIA_MINIMA
     )
-    if autonomia is not None:
-        primero = (
-            f"Lo primero: en promedio, en los últimos {ventana} meses, gastas "
-            f"{pesos(-capacidad_ahorro)} más de lo que te entra al mes. A ese ritmo, "
-            f"tu saldo de {pesos(saldo)} alcanza para {texto_autonomia(autonomia)}."
-        )
-        if alto:
-            primero += f" Además, {riesgo}."
+    if urgente and autonomia is not None:
+        # La autonomia (cuantos meses alcanza el saldo) ya esta en la tarjeta
+        # de saldo; aqui va la causa, y su cifra en el primer chip.
+        titular = "Lo urgente: cada mes sale más dinero del que te entra."
+    elif urgente:
+        titular = "Tu riesgo de atrasarte en tus pagos es alto."
+    elif nombre_paso:
+        titular = f"Tu meta ahora: {nombre_paso[0].lower()}{nombre_paso[1:]}."
     else:
-        primero = f"Lo primero: {riesgo}."
-        if factor_que_sube:
-            primero += f" Lo que más lo sube: {factor_que_sube[0].lower()}{factor_que_sube[1:]}."
-    parrafos = [primero]
-    if nombre_paso and lectura:
-        parrafos.append(
-            f"Tu paso en la escalera: {nombre_paso[0].lower()}{nombre_paso[1:]}. "
-            f"{lectura}"
-        )
-    simulacion = siguiente_paso(None, None, probabilidad_deficit, meses_simulados)
+        titular = "Todavía no tenemos datos para sugerirte un paso."
+
+    chips = []
+    if capacidad_ahorro is not None and not pd.isna(capacidad_ahorro):
+        if capacidad_ahorro < 0:
+            chips.append(
+                f"Gastas {pesos(-capacidad_ahorro)} más de lo que te entra al mes "
+                f"(promedio de {ventana} meses)"
+            )
+        else:
+            chips.append(
+                f"Te quedan {pesos(capacidad_ahorro)} al mes (promedio de {ventana} "
+                "meses)"
+            )
     if probabilidad_deficit is not None:
-        parrafos.append(simulacion)
-    return parrafos
+        palabra = certeza(probabilidad_deficit)
+        quedarte = f"Quedarte sin dinero en {meses_simulados} meses"
+        chips.append(
+            f"{quedarte}: {palabra.replace('es ', '')}"
+            if palabra
+            else f"{quedarte}: {round(probabilidad_deficit * 100)} de cada 100 escenarios"
+        )
+    return {"titular": titular, "accion": accion_escalera, "chips": chips[:2]}
 
 
 TONO_BANDA = {
@@ -364,14 +429,34 @@ VARIABLES_VENTANA = {
 }
 
 
-def _con_periodo(factor, ventana: int | None) -> str:
+# Factores cuya cifra ya se muestra en otra parte de Mi resumen: aqui se
+# dicen sin el monto, para que cada cifra viva en un solo lugar.
+FRASE_SIN_CIFRA = {
+    ("capacidad_ahorro", True): "Gastas más de lo que te entra cada mes",
+    ("capacidad_ahorro", False): "Te queda dinero cada mes",
+    ("saldo_liquido_disponible", True): "Tu saldo disponible es bajo",
+    ("saldo_liquido_disponible", False): "Tu saldo disponible",
+    ("uso_linea_credito", True): "Usas buena parte del límite de tu tarjeta",
+    ("uso_linea_credito", False): "Usas poco del límite de tu tarjeta",
+}
+
+
+def _con_periodo(factor, ventana: int | None, sin_cifra: bool = False) -> str:
+    """Frase del factor SHAP. Con sin_cifra, los factores de FRASE_SIN_CIFRA
+    van sin monto; los KPIs de flujo dicen su periodo."""
+    if sin_cifra and factor.variable in {v for v, _ in FRASE_SIN_CIFRA}:
+        return FRASE_SIN_CIFRA[(factor.variable, factor.sube)]
     if ventana and factor.variable in VARIABLES_VENTANA:
         return f"{factor.frase} (promedio de los últimos {ventana} meses)"
     return factor.frase
 
 
 def resumen_riesgo(
-    banda: str, explicacion: Explicacion | None, n: int, ventana: int | None = None
+    banda: str,
+    explicacion: Explicacion | None,
+    n: int,
+    ventana: int | None = None,
+    sin_cifra: bool = False,
 ) -> dict:
     """La banda en palabras y lo que mas mueve el score del cliente, con sus
     propios valores SHAP: lo que lo sube y lo que lo baja. Con ventana, las
@@ -382,21 +467,53 @@ def resumen_riesgo(
     principales = explicacion.principales(n)
     return {
         "frase": frase,
-        "suben": [_con_periodo(f, ventana) for f in principales if f.sube],
-        "bajan": [_con_periodo(f, ventana) for f in principales if not f.sube],
+        "suben": [_con_periodo(f, ventana, sin_cifra) for f in principales if f.sube],
+        "bajan": [
+            _con_periodo(f, ventana, sin_cifra) for f in principales if not f.sube
+        ],
     }
+
+
+def certeza(probabilidad: float) -> str | None:
+    """Los extremos de la simulacion en palabras: 100 de cada 100 escenarios
+    es "prácticamente seguro" y 0 de cada 100, "muy poco probable". Con 5,000
+    escenarios, un conteo absoluto suena a certeza total, que el modelo no
+    tiene. None en los demas casos (se dice el conteo). El numero exacto
+    sigue en la vista del admin y en la documentacion."""
+    p = round(float(probabilidad) * 100)
+    if p >= 100:
+        return "es prácticamente seguro"
+    if p <= 0:
+        return "es muy poco probable"
+    return None
+
+
+def frase_riesgo_compra(con: float, sin: float, meses: int) -> str:
+    """Riesgo de quedarse sin dinero con y sin la compra, con los extremos
+    en palabras (certeza())."""
+    evento = f"te quedes sin dinero algún mes de los próximos {meses}"
+    c, s = certeza(con), certeza(sin)
+    if c and c == s:
+        return f"Con o sin la compra, {c} que {evento}."
+    if c:
+        parte_con = f"Con la compra, {c} que {evento}"
+    else:
+        parte_con = (
+            f"Con la compra, en {round(con * 100)} de cada 100 escenarios simulados "
+            f"te quedarías sin dinero algún mes de los próximos {meses}"
+        )
+    parte_sin = f"sin ella, {s}" if s else f"sin ella, en {round(sin * 100)}"
+    return f"{parte_con}; {parte_sin}."
 
 
 def resumen_compra(resultado: dict) -> str:
     """La respuesta de "¿me alcanza?" a partir de evaluar_compra."""
     if "error" in resultado:
         return resultado["error"]
-    meses_sim = resultado["meses_simulados"]
-    sin = resultado["probabilidad_deficit_sin_compra"] * 100
-    con = resultado["probabilidad_deficit_con_compra"] * 100
-    riesgo = (
-        f"Con la compra, en {con:.0f} de cada 100 escenarios simulados te quedarías "
-        f"sin dinero algún mes de los próximos {meses_sim}; sin ella, en {sin:.0f}."
+    riesgo = frase_riesgo_compra(
+        resultado["probabilidad_deficit_con_compra"],
+        resultado["probabilidad_deficit_sin_compra"],
+        resultado["meses_simulados"],
     )
     precio, saldo = resultado["precio"], resultado["saldo_disponible"]
     if resultado["forma_pago"] == "contado":
