@@ -496,23 +496,30 @@ if comun.gold_disponible():
                     md(f"Para el siguiente paso: {meta['falta'] or meta['hoy']}.")
                 )
             m = e.metricas
-            cifras(
-                [
-                    (
-                        ui.nombre_kpi("pago_comprometido", "cliente"),
-                        ui.formatear_mxn(m["pago_comprometido"]),
-                    ),
-                    (
-                        ui.nombre_kpi("uso_linea_credito", "cliente"),
+            if not (m["tiene_tarjeta"] or m["tiene_prestamo"]):
+                # Sin productos de credito, "$0.00 MXN" y "Sin tarjeta" dicen lo
+                # mismo con dos cifras vacias.
+                st.markdown("No tienes deudas ni tarjeta de crédito.")
+            else:
+                cifras(
+                    [
                         (
-                            ui.formatear_porcentaje(m["uso_tarjeta"])
-                            if m["tiene_tarjeta"]
-                            else "Sin tarjeta"
+                            ui.nombre_kpi("pago_comprometido", "cliente"),
+                            ui.formatear_mxn(m["pago_comprometido"]),
                         ),
-                    ),
-                ]
-            )
-            st.caption("Pago mínimo de tus tarjetas y cuota de tus préstamos, con IVA.")
+                        (
+                            ui.nombre_kpi("uso_linea_credito", "cliente"),
+                            (
+                                ui.formatear_porcentaje(m["uso_tarjeta"])
+                                if m["tiene_tarjeta"]
+                                else "Sin tarjeta"
+                            ),
+                        ),
+                    ]
+                )
+                st.caption(
+                    "Pago mínimo de tus tarjetas y cuota de tus préstamos, con IVA."
+                )
             if e.supuestos:
                 st.caption(vc.lenguaje_cliente(" ".join(e.supuestos)))
 
