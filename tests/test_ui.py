@@ -574,3 +574,19 @@ def test_cada_cifra_vive_en_un_solo_lugar(vistas):
     vistos = [m for montos in por_elemento for m in montos]
     repetidos = {m for m in vistos if vistos.count(m) > 1}
     assert repetidos == set(), repetidos
+
+
+def test_comparacion_de_gasto_con_la_ventana_de_12_meses():
+    from dashboard import vista_cliente as vc
+
+    # 18 meses anteriores: 6 de 50 y 12 de 100; este mes, 110.
+    flujo = pd.DataFrame(
+        {
+            "mes": [f"m{i:02d}" for i in range(19)],
+            "salidas": [50.0] * 6 + [100.0] * 12 + [110.0],
+        }
+    )
+    r = vc.comparacion_gasto(flujo, 12)
+    assert r["promedio"] == 100.0
+    assert r["frase"] == "10 % más que tu promedio de los 12 meses anteriores."
+    assert vc.comparacion_gasto(flujo)["promedio"] == pytest.approx(1500 / 18)

@@ -28,7 +28,11 @@ from src.simulacion.supuestos import cargar_simulacion
 usuario = acceso.requiere_rol("admin", "cliente")
 st.title("Mi resumen" if usuario.rol == "cliente" else "Vista del cliente")
 
-MESES_GASTO = 3
+# Ventana principal de lo que lee el cliente: la de las features
+# (config/features.yaml, 12 meses). Otras ventanas solo donde son
+# indispensables y con su periodo escrito: "Lo que más creció" (3 meses
+# contra los 3 anteriores), el horizonte del modelo de riesgo (6 meses) y el
+# Monte Carlo (36 meses).
 # Periodos que compara la tarjeta "Lo que más creció": los ultimos 3 meses
 # contra los 3 anteriores.
 MESES_CAMBIO = 3
@@ -216,7 +220,7 @@ if comun.gold_disponible():
         ),
         vc.frase_autonomia(autonomia, ventana),
     )
-    gasto = vc.comparacion_gasto(flujo_cliente)
+    gasto = vc.comparacion_gasto(flujo_cliente, ventana)
     crecio = vc.mayor_aumento(
         cambios(version, cliente_id), comun.nombre_categoria, MESES_CAMBIO
     )
@@ -318,7 +322,8 @@ if comun.gold_disponible():
             minimo = esc.cargar_config()["ingreso_variable"]["proporcion_depositos_min"]
             lectura_q = vc.resumen_quincenas(q, minimo, comun.nombre_mes)
             st.markdown(md(lectura_q["frase"]))
-            recientes = q[q["mes"].isin(sorted(q["mes"].unique())[-6:])].assign(
+            # Los 12 meses de la ventana, la misma de la frase de arriba.
+            recientes = q[q["mes"].isin(sorted(q["mes"].unique())[-ventana:])].assign(
                 etiqueta=lambda d: d["mes"].map(comun.nombre_mes),
                 cual=lambda d: d["quincena"].map(
                     {1: "1.ª quincena", 2: "2.ª quincena"}
@@ -360,13 +365,13 @@ if comun.gold_disponible():
     with ui.contenedor("gastos", izquierda):
         st.subheader("A dónde se va tu dinero")
         salidas = comun.datos.salidas_por_categoria(
-            cfg["gold_duckdb"], cliente_id, MESES_GASTO
+            cfg["gold_duckdb"], cliente_id, ventana
         )
         # Los montos van en las barras; la frase solo nombra las categorias.
         st.markdown(
             md(
                 vc.resumen_gastos(
-                    salidas, comun.nombre_categoria, MESES_GASTO, con_cifras=False
+                    salidas, comun.nombre_categoria, ventana, con_cifras=False
                 )
             )
         )
