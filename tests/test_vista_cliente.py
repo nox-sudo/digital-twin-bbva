@@ -33,7 +33,10 @@ from test_moneda_mxn import problemas_de_moneda  # noqa: E402
 
 RAIZ = Path(__file__).resolve().parents[1]
 PAGINA = RAIZ / "dashboard" / "paginas" / "mi_resumen.py"
+# Debajo del resumen de arriba (tarjeta heroe, tres tarjetas y siguiente
+# paso), el detalle en el mismo orden de siempre.
 TARJETAS = [
+    "El detalle",
     "Este mes",
     "Tus ingresos por quincena",
     "A dónde se va tu dinero",

@@ -250,6 +250,8 @@ def test_ninguna_pagina_muestra_nombres_internos(vistas, archivo, usuario):
     # El HTML de las tarjetas lleva clases CSS (gd-tarjeta): se quitan las
     # etiquetas antes de buscar.
     texto = re.sub(r"<[^>]+>", " ", texto_visible(at))
+    # Los iconos ":material/nombre:" se dibujan como icono, no como texto.
+    texto = re.sub(r":material/\w+:", " ", texto)
     assert INTERNO.findall(texto) == [], archivo
 
 
@@ -308,3 +310,86 @@ def test_ejemplos_del_asistente_por_rol(vistas, usuario, ejemplo):
     assert ejemplo in etiquetas
     otro = "¿Cuántos clientes están en riesgo alto?"
     assert (otro in etiquetas) is (usuario.rol == "admin")
+
+
+# --- Mi resumen: lo de arriba ------------------------------------------------
+
+
+def test_cambio_por_categoria(tmp_path):
+    from dashboard import datos
+    from datos_asistente import crear_gold
+
+    gold = crear_gold(tmp_path)
+    cambios = datos.cambio_por_categoria(gold, "CLI-1", 3)
+    primera = cambios.iloc[0]
+    # Ropa sube 50 al mes: ultimos 3 meses contra los 3 anteriores, +150.
+    assert primera["categoria"] == "ropa"
+    assert primera["reciente"] == pytest.approx(2600.0)
+    assert primera["anterior"] == pytest.approx(2450.0)
+    assert primera["cambio"] == pytest.approx(150.0)
+    assert cambios.set_index("categoria").loc["comida", "cambio"] == pytest.approx(0.0)
+
+
+def test_mayor_aumento_y_sin_aumento():
+    from dashboard import comun
+    from dashboard import vista_cliente as vc
+
+    cambios = pd.DataFrame(
+        {
+            "categoria": ["ropa", "comida"],
+            "reciente": [2600.0, 6000.0],
+            "anterior": [2450.0, 6000.0],
+            "cambio": [150.0, 0.0],
+        }
+    )
+    r = vc.mayor_aumento(cambios, comun.nombre_categoria, 3)
+    assert r["titulo"] == "Ropa" and "$150 más al mes" in r["frase"]
+    sin = vc.mayor_aumento(
+        cambios.assign(cambio=[-1.0, 0.0]), comun.nombre_categoria, 3
+    )
+    assert sin["categoria"] is None and sin["titulo"] == "Nada subió"
+
+
+def test_comparacion_gasto():
+    from dashboard import vista_cliente as vc
+
+    flujo = pd.DataFrame(
+        {"mes": ["2027-01", "2027-02", "2027-03"], "salidas": [100.0, 100.0, 88.0]}
+    )
+    r = vc.comparacion_gasto(flujo)
+    assert r["salidas"] == 88.0 and r["frase"] == "12 % menos que en un mes normal."
+    assert vc.comparacion_gasto(flujo.iloc[0:0]) is None
+
+
+def test_siguiente_paso_con_reglas():
+    from dashboard import vista_cliente as vc
+
+    texto = vc.siguiente_paso(
+        "Tarjeta bajo control", "Bajarlo al 30 % es el siguiente paso.", 0.42, 36
+    )
+    assert texto.startswith("Tu meta ahora: tarjeta bajo control. Bajarlo al 30 %")
+    assert "en 42 de cada 100 escenarios" in texto and "36" in texto
+    assert "ningún escenario" in vc.siguiente_paso(None, None, 0.0, 36)
+    assert vc.siguiente_paso(None, None, None, 0).startswith("Todavía no")
+
+
+def test_mi_resumen_responde_como_voy_arriba(vistas):
+    at = correr(PAGINAS / "mi_resumen.py", CLIENTE)
+    assert not at.exception, [e.value for e in at.exception]
+    html = "\n".join(str(m.value) for m in at.markdown)
+    assert "gd-heroe" in html and "Tienes disponible" in html
+    assert "&#36;30,000.00 MXN" in html  # saldo de CLI-1 en las fixtures
+    for titulo in ("Gastaste este mes", "Lo que más creció", "Tu nivel de riesgo"):
+        assert titulo in html, titulo
+    assert "Tu siguiente paso" in html
+
+
+def test_portafolio_lista_a_quien_atender(vistas):
+    at = correr(PAGINAS / "portafolio.py", ADMIN)
+    assert not at.exception, [e.value for e in at.exception]
+    botones = [b for b in at.button if b.label == "Ver cliente"]
+    assert len(botones) == 2  # las fixtures tienen dos clientes
+    html = "\n".join(str(m.value) for m in at.markdown)
+    # Primero el de mayor riesgo (CLI-2, 62 %), con su banda escrita.
+    assert html.index("CLI-2") < html.index("CLI-1")
+    assert "Riesgo alto · 62.0 %" in html
