@@ -363,3 +363,35 @@ def test_cerrar_sesion_borra_todo(vistas):
     assert "usuario" not in at.session_state
     assert "asistente_conversaciones" not in at.session_state
     assert [t.value for t in at.title] == ["Gemelo Digital Financiero"]
+
+
+def test_el_login_dice_que_usuario_usar(vistas):
+    at = correr(RAIZ / "dashboard" / "app.py")
+    at.run()
+    assert "número de cliente" in at.caption[0].value
+    assert at.text_input(key="login_usuario").placeholder == "CLI-000123"
+
+
+def test_el_error_del_login_no_dice_que_campo_fallo(vistas):
+    """Usuario inexistente y contrasena equivocada dan el mismo mensaje."""
+    mensajes = []
+    for usuario, contrasena in (("CLI-999", vistas["CLI-1"]), ("CLI-1", "mala")):
+        at = correr(RAIZ / "dashboard" / "app.py")
+        at.run()
+        at.text_input(key="login_usuario").input(usuario)
+        at.text_input(key="login_contrasena").input(contrasena)
+        at.button[0].click().run()
+        mensajes.append(at.error[0].value)
+    assert mensajes[0] == mensajes[1]
+
+
+@pytest.mark.parametrize(
+    "usuario, esperado",
+    [(ADMIN, "Sesión: Administrador"), (CLIENTE_1, "Sesión: Cliente · CLI-1")],
+)
+def test_despues_de_entrar_se_ve_el_rol_y_como_salir(vistas, usuario, esperado):
+    at = correr(RAIZ / "dashboard" / "app.py", usuario)
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert any(esperado in c.value for c in at.caption)
+    assert [b.label for b in at.sidebar.button] == ["Cerrar sesión"]

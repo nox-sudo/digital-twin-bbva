@@ -19,6 +19,7 @@ asistente, Ollama. No corre en CI. Uso:
 """
 
 import argparse
+import re
 import sys
 import time
 from pathlib import Path
@@ -172,7 +173,7 @@ def recorrido(
     if ancho == "escritorio" and con_respuesta:
         # Una respuesta real del modelo (una sola vez: tarda y no cambia
         # con el ancho de la ventana), con la primera pregunta de ejemplo.
-        page.locator("[data-testid='stMain'] button").filter(has_text="¿").first.click()
+        page.get_by_role("button", name=re.compile("^¿")).first.click()
         page.wait_for_selector("[data-testid='stChatMessage']", timeout=30_000)
         time.sleep(1)
         capturar(page, salida, f"11-cliente-asistente-pensando-{ancho}", px)

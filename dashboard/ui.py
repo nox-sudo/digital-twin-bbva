@@ -311,10 +311,14 @@ def _texto(valor) -> str:
     return html.escape(str(valor)).replace("$", "&#36;")
 
 
-def html_tarjeta(titulo: str, valor: str, detalle: str | None = None) -> str:
+def html_tarjeta(
+    titulo: str, valor: str, detalle: str | None = None, banda: str | None = None
+) -> str:
+    """Con banda, el valor va como semaforo (color y palabra)."""
+    cuerpo = html_semaforo(banda, valor) if banda else _texto(valor)
     partes = [
         f"<div class='gd-titulo'>{_texto(titulo)}</div>",
-        f"<div class='gd-valor'>{_texto(valor)}</div>",
+        f"<div class='gd-valor'>{cuerpo}</div>",
     ]
     if detalle:
         partes.append(f"<div class='gd-detalle'>{_texto(detalle)}</div>")
@@ -322,12 +326,17 @@ def html_tarjeta(titulo: str, valor: str, detalle: str | None = None) -> str:
 
 
 def tarjeta(
-    titulo: str, valor: str, detalle: str | None = None, *, contenedor=None
+    titulo: str,
+    valor: str,
+    detalle: str | None = None,
+    *,
+    banda: str | None = None,
+    contenedor=None,
 ) -> None:
     """Una cifra en tarjeta blanca: titulo, valor grande y una linea de
-    contexto opcional."""
+    contexto opcional. Con banda, el valor se dibuja como semaforo."""
     (contenedor or st).markdown(
-        html_tarjeta(titulo, valor, detalle), unsafe_allow_html=True
+        html_tarjeta(titulo, valor, detalle, banda), unsafe_allow_html=True
     )
 
 
@@ -360,6 +369,30 @@ def html_semaforo(banda: str, texto: str | None = None) -> str:
 def semaforo(banda: str, texto: str | None = None, *, contenedor=None) -> None:
     """Nivel de riesgo como pastilla de color con su palabra escrita."""
     (contenedor or st).markdown(html_semaforo(banda, texto), unsafe_allow_html=True)
+
+
+ROL_LEGIBLE = {"admin": "Administrador", "cliente": "Cliente"}
+
+
+def sesion(usuario, al_salir) -> None:
+    """Quien esta dentro y como salir, arriba de cada vista y en la barra
+    lateral (en el celular la barra empieza cerrada, por eso tambien
+    arriba). al_salir se llama al pulsar "Cerrar sesión"."""
+    rol = ROL_LEGIBLE.get(usuario.rol, usuario.rol)
+    quien = rol if usuario.rol == "admin" else f"{rol} · {usuario.usuario}"
+    st.caption(f":material/account_circle: Sesión: {quien}")
+    with st.sidebar.container(key="gd-tarjeta-sesion"):
+        st.markdown(f"**:material/account_circle: {rol}**")
+        if usuario.rol != "admin":
+            st.caption(usuario.usuario)
+        if st.button(
+            "Cerrar sesión",
+            icon=":material/logout:",
+            use_container_width=True,
+            key="cerrar_sesion",
+        ):
+            al_salir()
+            st.rerun()
 
 
 def contenedor(nombre: str, en=None):

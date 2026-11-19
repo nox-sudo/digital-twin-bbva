@@ -164,6 +164,36 @@ def salidas_por_categoria(
     return df
 
 
+def cambio_por_categoria(
+    ruta_duckdb: str, cliente_id: str, meses: int = 3
+) -> pd.DataFrame:
+    """Salidas por categoria de los ultimos `meses` meses contra los `meses`
+    anteriores, hasta el corte de Gold. Promedio mensual de cada periodo y
+    su diferencia, de mayor aumento a mayor baja. Solo lectura de
+    gold_movimientos_mensuales; vacio si no hay meses suficientes."""
+    with conexion_gold(ruta_duckdb) as con:
+        mes_corte = con.execute(
+            "SELECT MAX(mes) FROM gold_movimientos_mensuales"
+        ).fetchone()[0]
+        if not mes_corte:
+            return pd.DataFrame(columns=["categoria", "reciente", "anterior", "cambio"])
+        desde_reciente = inicio_ventana(mes_corte, meses)
+        desde_anterior = inicio_ventana(mes_corte, 2 * meses)
+        df = con.execute(
+            """
+            SELECT categoria,
+                   -SUM(CASE WHEN mes >= ? THEN monto_total ELSE 0 END) / ? AS reciente,
+                   -SUM(CASE WHEN mes < ? THEN monto_total ELSE 0 END) / ? AS anterior
+            FROM gold_movimientos_mensuales
+            WHERE cliente_id = ? AND monto_total < 0 AND mes >= ?
+            GROUP BY categoria
+            """,
+            [desde_reciente, meses, desde_reciente, meses, cliente_id, desde_anterior],
+        ).fetchdf()
+    df["cambio"] = df["reciente"] - df["anterior"]
+    return df.sort_values("cambio", ascending=False).reset_index(drop=True)
+
+
 def percentil_en_portafolio(df: pd.DataFrame, columna: str, valor: float) -> float:
     """Que proporcion del portafolio tiene un valor menor o igual. Sirve
     para leer un numero suelto ("ahorra 4,000") con contexto ("mas que el
