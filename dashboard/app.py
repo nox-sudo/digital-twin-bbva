@@ -33,7 +33,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from dashboard import acceso, ui  # noqa: E402
 
-st.set_page_config(page_title="Gemelo Digital Financiero", layout="wide")
+# Icono de la pestana: dos trazos paralelos que suben, el dato real (blanco)
+# y su gemelo (turquesa claro) sobre el marino de dashboard/ui.py.
+ICONO = Path(__file__).resolve().parent / "recursos" / "icono.svg"
+
+st.set_page_config(
+    page_title="Gemelo Digital Financiero", page_icon=str(ICONO), layout="wide"
+)
 ui.estilos()
 
 PAGINAS = Path(__file__).resolve().parent / "paginas"
