@@ -20,9 +20,15 @@ from src.gold.explicacion import Explicacion
 # Palabras internas que pueden llegar al texto del cliente desde los
 # modulos de calculo (src/gold/escalera.py): se cambian por lenguaje comun
 # solo al mostrarlas.
+# Las tasas del catalogo son las de los productos del banco simulado, no
+# tasas de mercado (las de Banxico estan en config/mercado_mx.yaml): por eso
+# se dicen "las tasas de tus productos" y no "de referencia".
 LENGUAJE_CLIENTE = {
-    "las tasas del catálogo": "tasas de referencia",
-    "tasas del catálogo": "tasas de referencia",
+    "Ingreso variable: la deuda se compara con el mes de menor ingreso de "
+    "los últimos meses (CONDUSEF).": "Como tu ingreso cambia de un mes a otro, "
+    "comparamos tus deudas con tu mes de menor ingreso.",
+    "las tasas del catálogo": "las tasas de tus productos",
+    "tasas del catálogo": "las tasas de tus productos",
 }
 
 
@@ -34,6 +40,16 @@ def lenguaje_cliente(texto: str) -> str:
 
 def pesos(valor) -> str:
     return formato_mxn(valor, estilo="cliente")
+
+
+def texto_meses(meses: float) -> str:
+    """'1 mes', '3 meses', '2.7 meses' (sin '1.0 meses')."""
+    redondeado = round(float(meses), 1)
+    if redondeado == 1:
+        return "1 mes"
+    if redondeado.is_integer():
+        return f"{int(redondeado)} meses"
+    return f"{redondeado:.1f} meses"
 
 
 def periodo_anterior(n: int) -> str:
@@ -319,7 +335,10 @@ def meta_escalera(paso: str, m: dict, cfg: dict) -> dict:
         return {
             "accion": f"Baja el uso de tu tarjeta al {tope * 100:.0f} % de su límite.",
             "hoy": f"Hoy usas el {m['uso_tarjeta'] * 100:.0f} % de su límite",
-            "falta": f"Te faltan {(m['uso_tarjeta'] - tope) * 100:.0f} puntos",
+            "falta": (
+                f"Te faltan {(m['uso_tarjeta'] - tope) * 100:.0f} puntos para bajar "
+                f"al {tope * 100:.0f} %"
+            ),
         }
     if paso in ("fondo_minimo", "fondo_meta"):
         meta = u["fondo_emergencia"][
@@ -328,7 +347,7 @@ def meta_escalera(paso: str, m: dict, cfg: dict) -> dict:
         faltan = max(meta * m["gasto_mensual"] - m["saldo_liquido"], 0.0)
         return {
             "accion": f"Junta {pesos(faltan)} más para cubrir {meta} meses de gastos.",
-            "hoy": f"Hoy tu saldo cubre {(m['fondo_meses'] or 0.0):.1f} meses de gastos",
+            "hoy": f"Hoy tu saldo cubre {texto_meses(m['fondo_meses'] or 0.0)} de gastos",
             "falta": None,
         }
     if paso == "ahorro":
@@ -430,20 +449,44 @@ VARIABLES_VENTANA = {
 
 
 # Factores cuya cifra ya se muestra en otra parte de Mi resumen: aqui se
-# dicen sin el monto, para que cada cifra viva en un solo lugar.
+# dicen sin el monto, para que cada cifra viva en un solo lugar. El saldo no
+# dice "bajo": el efecto del saldo en el modelo no es monotono y puede subir
+# el riesgo de un cliente con saldo mayor que la mediana (CLI-000303 en la
+# instancia de la demo), asi que la frase solo nombra el dato.
 FRASE_SIN_CIFRA = {
     ("capacidad_ahorro", True): "Gastas más de lo que te entra cada mes",
     ("capacidad_ahorro", False): "Te queda dinero cada mes",
-    ("saldo_liquido_disponible", True): "Tu saldo disponible es bajo",
+    ("saldo_liquido_disponible", True): "Tu saldo disponible",
     ("saldo_liquido_disponible", False): "Tu saldo disponible",
     ("uso_linea_credito", True): "Usas buena parte del límite de tu tarjeta",
     ("uso_linea_credito", False): "Usas poco del límite de tu tarjeta",
 }
 
 
+def _sin_valor(valor) -> bool:
+    return valor is None or pd.isna(valor) or float(valor) == 0
+
+
+def _frase_por_valor(factor) -> str | None:
+    """Casos en que la frase con la cifra se lee mal: sin tarjeta, el uso del
+    limite es 0 y no "poco"; una deuda menor a 0.05 veces el ingreso sale
+    como "0.0 veces"."""
+    if factor.variable == "uso_linea_credito" and _sin_valor(factor.valor):
+        return "No usas tarjeta de crédito"
+    if factor.variable == "ratio_endeudamiento":
+        if _sin_valor(factor.valor):
+            return "No tienes deudas"
+        if float(factor.valor) < 0.05:
+            return "Casi no tienes deudas"
+    return None
+
+
 def _con_periodo(factor, ventana: int | None, sin_cifra: bool = False) -> str:
     """Frase del factor SHAP. Con sin_cifra, los factores de FRASE_SIN_CIFRA
     van sin monto; los KPIs de flujo dicen su periodo."""
+    especial = _frase_por_valor(factor)
+    if especial:
+        return especial
     if sin_cifra and factor.variable in {v for v, _ in FRASE_SIN_CIFRA}:
         return FRASE_SIN_CIFRA[(factor.variable, factor.sube)]
     if ventana and factor.variable in VARIABLES_VENTANA:

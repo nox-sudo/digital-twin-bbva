@@ -275,6 +275,29 @@ cada rubro con la ENIGH de INEGI (con fuente y fecha, como pide
 cambia la instancia y todas las cifras publicadas: se reconstruye con
 `demo.sh` y se vuelve a medir el guion. Pendiente, no antes de la demo.
 
+### El saldo puede subir el riesgo de un cliente con saldo alto
+
+**Que pasa:** en la explicacion SHAP de Mi resumen, el saldo disponible
+aparece como lo que mas sube el riesgo de clientes cuyo saldo esta por
+encima de la mediana. El modelo no tiene restriccion de monotonia sobre
+`saldo_liquido_disponible`, y el efecto de una variable depende de las demas.
+Mi resumen decia "Tu saldo disponible es bajo", que para esos clientes es
+falso.
+
+**Evidencia** (instancia de la demo, corte abr 2027, medido el 2026-11-19
+sobre `gold_features_cliente`): CLI-000303 tiene $28,799.34 MXN de saldo,
+mas que el 83.6 % de los clientes (mediana $12,984.47 MXN), y le alcanza
+para 14 meses a su ritmo de deficit. El saldo es su primer factor de
+"Lo que mas lo sube".
+
+**Mitigacion actual:** la frase al cliente solo nombra el dato ("Tu saldo
+disponible"), sin decir si es alto o bajo (`FRASE_SIN_CIFRA` en
+`dashboard/vista_cliente.py`).
+
+**Posible fix:** restriccion de monotonia en el modelo para el saldo
+(`monotone_constraints`) y volver a medir AUC y calibracion. Cambia las
+probabilidades publicadas: pendiente, no antes de la demo.
+
 ## Resueltos
 
 ### El asistente daba la probabilidad media como "gastan mas de lo que ganan"

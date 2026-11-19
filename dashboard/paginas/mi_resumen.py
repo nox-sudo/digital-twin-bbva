@@ -304,6 +304,58 @@ if comun.gold_disponible():
         st.caption(":material/flag: Tu siguiente paso")
         ui.bloque_accion(paso["titular"], paso["accion"], paso["chips"])
 
+    # --- ¿Me alcanza para...? --------------------------------------------
+    # Arriba del detalle: es la parte interactiva de la vista, y el cliente
+    # llega a ella sin recorrer seis tarjetas de lectura.
+    with ui.contenedor("me-alcanza"):
+        st.subheader("¿Me alcanza para...?")
+        # La forma de pago va fuera del formulario: al cambiarla aparecen o
+        # desaparecen el plazo y la tasa, que solo aplican a credito.
+        forma = st.radio(
+            "¿Cómo lo pagas?", ["De contado", "A crédito"], horizontal=True
+        )
+        plazo, tasa = 12, None
+        with st.form("me_alcanza"):
+            if forma == "A crédito":
+                c1, c2, c3 = st.columns(3)
+            else:
+                c1, c2, c3 = st.columns(3)[0], None, None
+            precio = c1.number_input(
+                "¿Cuánto cuesta? (MXN)",
+                min_value=0,
+                value=15_000,
+                step=1_000,
+                format="%d",
+            )
+            if forma == "A crédito":
+                plazo = c2.selectbox("Plazo (meses)", [6, 12, 18, 24, 36, 48], index=1)
+                tasa = c3.number_input(
+                    "Tasa anual que te ofrecen (%)",
+                    min_value=0.0,
+                    max_value=150.0,
+                    value=None,
+                    step=1.0,
+                    help="Sin tasa no calculamos la cuota.",
+                )
+            calcular = st.form_submit_button("Calcular", type="primary")
+        st.caption("Para una casa, usa el Simulador de hipoteca.")
+        if calcular:
+            argumentos = {"precio": float(precio)}
+            if forma == "De contado":
+                argumentos["forma_pago"] = "contado"
+            else:
+                argumentos.update(forma_pago="credito", plazo_meses=int(plazo))
+                if tasa is not None:
+                    argumentos["tasa_anual"] = float(tasa) / 100
+            if argumentos.get("forma_pago") == "credito" and tasa is None:
+                st.warning("Escribe la tasa que te ofrecen para calcular la cuota.")
+            else:
+                with st.spinner("Simulando tus próximos meses..."):
+                    resultado = h.ejecutar(
+                        "evaluar_compra", argumentos, contexto(cliente_id)
+                    )
+                st.markdown(md(vc.resumen_compra(resultado)))
+
     st.subheader("El detalle")
     izquierda, derecha = st.columns(2, gap="large")
 
@@ -444,23 +496,30 @@ if comun.gold_disponible():
                     md(f"Para el siguiente paso: {meta['falta'] or meta['hoy']}.")
                 )
             m = e.metricas
-            cifras(
-                [
-                    (
-                        ui.nombre_kpi("pago_comprometido", "cliente"),
-                        ui.formatear_mxn(m["pago_comprometido"]),
-                    ),
-                    (
-                        ui.nombre_kpi("uso_linea_credito", "cliente"),
+            if not (m["tiene_tarjeta"] or m["tiene_prestamo"]):
+                # Sin productos de credito, "$0.00 MXN" y "Sin tarjeta" dicen lo
+                # mismo con dos cifras vacias.
+                st.markdown("No tienes deudas ni tarjeta de crédito.")
+            else:
+                cifras(
+                    [
                         (
-                            ui.formatear_porcentaje(m["uso_tarjeta"])
-                            if m["tiene_tarjeta"]
-                            else "Sin tarjeta"
+                            ui.nombre_kpi("pago_comprometido", "cliente"),
+                            ui.formatear_mxn(m["pago_comprometido"]),
                         ),
-                    ),
-                ]
-            )
-            st.caption("Pago mínimo de tus tarjetas y cuota de tus préstamos, con IVA.")
+                        (
+                            ui.nombre_kpi("uso_linea_credito", "cliente"),
+                            (
+                                ui.formatear_porcentaje(m["uso_tarjeta"])
+                                if m["tiene_tarjeta"]
+                                else "Sin tarjeta"
+                            ),
+                        ),
+                    ]
+                )
+                st.caption(
+                    "Pago mínimo de tus tarjetas y cuota de tus préstamos, con IVA."
+                )
             if e.supuestos:
                 st.caption(vc.lenguaje_cliente(" ".join(e.supuestos)))
 
@@ -486,53 +545,3 @@ if comun.gold_disponible():
                 "no una certeza. Estos son los datos que más pesan en tu caso "
                 "comparado con un cliente típico."
             )
-
-    # --- ¿Me alcanza para...? --------------------------------------------------
-    with ui.contenedor("me-alcanza"):
-        st.subheader("¿Me alcanza para...?")
-        # La forma de pago va fuera del formulario: al cambiarla aparecen o
-        # desaparecen el plazo y la tasa, que solo aplican a credito.
-        forma = st.radio(
-            "¿Cómo lo pagas?", ["De contado", "A crédito"], horizontal=True
-        )
-        plazo, tasa = 12, None
-        with st.form("me_alcanza"):
-            if forma == "A crédito":
-                c1, c2, c3 = st.columns(3)
-            else:
-                c1, c2, c3 = st.columns(3)[0], None, None
-            precio = c1.number_input(
-                "¿Cuánto cuesta? (MXN)",
-                min_value=0,
-                value=15_000,
-                step=1_000,
-                format="%d",
-            )
-            if forma == "A crédito":
-                plazo = c2.selectbox("Plazo (meses)", [6, 12, 18, 24, 36, 48], index=1)
-                tasa = c3.number_input(
-                    "Tasa anual que te ofrecen (%)",
-                    min_value=0.0,
-                    max_value=150.0,
-                    value=None,
-                    step=1.0,
-                    help="Sin tasa no calculamos la cuota.",
-                )
-            calcular = st.form_submit_button("Calcular", type="primary")
-        st.caption("Para una casa, usa el Simulador de hipoteca.")
-        if calcular:
-            argumentos = {"precio": float(precio)}
-            if forma == "De contado":
-                argumentos["forma_pago"] = "contado"
-            else:
-                argumentos.update(forma_pago="credito", plazo_meses=int(plazo))
-                if tasa is not None:
-                    argumentos["tasa_anual"] = float(tasa) / 100
-            if argumentos.get("forma_pago") == "credito" and tasa is None:
-                st.warning("Escribe la tasa que te ofrecen para calcular la cuota.")
-            else:
-                with st.spinner("Simulando tus próximos meses..."):
-                    resultado = h.ejecutar(
-                        "evaluar_compra", argumentos, contexto(cliente_id)
-                    )
-                st.markdown(md(vc.resumen_compra(resultado)))

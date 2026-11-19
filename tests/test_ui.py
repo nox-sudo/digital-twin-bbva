@@ -429,7 +429,8 @@ def test_meta_de_la_escalera_con_los_umbrales_de_la_escalera():
     assert meta["falta"] == "Te faltan $14,514 por bajar"
     tarjeta = vc.meta_escalera("uso_tarjeta", METRICAS_283, esc.cargar_config())
     assert tarjeta["accion"] == "Baja el uso de tu tarjeta al 30 % de su límite."
-    assert "38 %" in tarjeta["hoy"] and "8 puntos" in tarjeta["falta"]
+    assert "38 %" in tarjeta["hoy"]
+    assert tarjeta["falta"] == "Te faltan 8 puntos para bajar al 30 %"
 
 
 def test_siguiente_paso_compacto_urgente():
@@ -534,7 +535,54 @@ def test_sin_palabras_internas_para_el_cliente():
     texto = vc.lenguaje_cliente(
         "Pago de deuda estimado con las tasas del catálogo (tarjeta 45 %)."
     )
-    assert "catálogo" not in texto and "tasas de referencia" in texto
+    assert (
+        texto == "Pago de deuda estimado con las tasas de tus productos (tarjeta 45 %)."
+    )
+    variable = vc.lenguaje_cliente(
+        "Ingreso variable: la deuda se compara con el mes de menor ingreso de "
+        "los últimos meses (CONDUSEF)."
+    )
+    assert "CONDUSEF" not in variable and "Ingreso variable" not in variable
+    assert variable.startswith("Como tu ingreso cambia de un mes a otro")
+
+
+def test_meses_sin_decimal_de_mas():
+    from dashboard import vista_cliente as vc
+
+    assert vc.texto_meses(1.0) == "1 mes"
+    assert vc.texto_meses(0.98) == "1 mes"
+    assert vc.texto_meses(3.0) == "3 meses"
+    assert vc.texto_meses(2.74) == "2.7 meses"
+
+
+@pytest.mark.parametrize(
+    "variable, valor, sube, esperada",
+    [
+        ("uso_linea_credito", 0.0, False, "No usas tarjeta de crédito"),
+        ("uso_linea_credito", float("nan"), False, "No usas tarjeta de crédito"),
+        ("ratio_endeudamiento", 0.0, False, "No tienes deudas"),
+        ("ratio_endeudamiento", 0.02, False, "Casi no tienes deudas"),
+        ("saldo_liquido_disponible", 28799.34, True, "Tu saldo disponible"),
+    ],
+)
+def test_factores_que_se_leian_mal(variable, valor, sube, esperada):
+    from dashboard import vista_cliente as vc
+    from src.gold.explicacion import Factor
+
+    factor = Factor(variable, 0.3 if sube else -0.3, valor, "frase con cifra")
+    assert vc._con_periodo(factor, 12, sin_cifra=True) == esperada
+
+
+def test_factores_con_cifra_util_no_cambian():
+    from dashboard import vista_cliente as vc
+    from src.gold.explicacion import Factor
+
+    deuda = Factor("ratio_endeudamiento", 0.4, 4.6, "Lo que debes equivale a 4.6 veces")
+    tarjeta = Factor("uso_linea_credito", -0.2, 0.05, "Usas el 5 %")
+    assert vc._con_periodo(deuda, 12, sin_cifra=True) == deuda.frase
+    assert vc._con_periodo(tarjeta, 12, sin_cifra=True) == (
+        "Usas poco del límite de tu tarjeta"
+    )
 
 
 def test_mi_resumen_saluda_y_rotula_el_uso_de_la_tarjeta(vistas):

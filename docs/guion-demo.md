@@ -178,6 +178,17 @@ voy?":
   para menos de 3 meses; si no, es la meta de la escalera. Reglas fijas, sin
   modelo de lenguaje.
 
+Justo debajo de "Tu siguiente paso", antes del detalle, va lo interactivo:
+
+- ¿Me alcanza para algo de $15,000? La forma de pago se elige arriba del
+  formulario; el plazo y la tasa solo aparecen con "A crédito". De contado:
+  "Sí te alcanza: tienes $15,216 y cuesta $15,000. Con o sin la compra, es
+  prácticamente seguro que te quedes sin dinero algún mes de los próximos
+  36." A crédito a 12 meses con 45 % anual: "Pagarías $1,631 al mes durante
+  12 meses, ya con el IVA de 16 % sobre los intereses." (verificado el
+  2026-11-18 con la misma función que usa la página; el Monte Carlo da 100
+  de cada 100 con y sin la compra).
+
 Lo que lee el cliente usa una sola ventana, 12 meses; las otras van solo
 donde son indispensables y con su periodo escrito: "Lo que más creció" (3
 meses contra los 3 anteriores), el horizonte del modelo de riesgo (6 meses),
@@ -203,15 +214,6 @@ lugar (tabla en [ux/mi-resumen/fuente-unica.md](ux/mi-resumen/fuente-unica.md)):
   el medidor de la tarjeta de riesgo. Lo sube: gasta
   más de lo que le entra cada mes (la cifra está en el chip) y debe 4.6
   veces su ingreso de un mes. Lo baja: lleva 1.9 años como cliente.
-- ¿Me alcanza para algo de $15,000? La forma de pago se elige arriba del
-  formulario; el plazo y la tasa solo aparecen con "A crédito". De contado
-  el saldo alcanza ($15,216),
-  pero con o sin la compra se queda sin dinero algún mes en 100 de cada 100
-  escenarios; el cliente lo lee como "Con o sin la compra, es prácticamente
-  seguro que te quedes sin dinero algún mes de los próximos 36". A crédito a 12 meses con 45 % anual: $1,631 al mes con IVA
-  sobre intereses. Pendiente: volver a calcular las dos en pantalla con el
-formulario nuevo (el cálculo no cambió).
-
 La explicación reproduce el score publicado: usa el modelo que lo produjo
 (el del pliegue de la validación cruzada). Contraste: **CLI-000379** (riesgo
 bajo, 5 %): lo baja sobre todo que le quedan $11,313 al mes, su ingreso
@@ -221,6 +223,46 @@ déficit y con riesgo bajo, su siguiente paso queda como antes ("Tu meta
 ahora: fondo de emergencia completo...") y la tarjeta de saldo no muestra
 autonomía.
 CLI-000162, el contraste anterior, quedó en 13 % (banda media) tras #80.
+
+#### Cuatro tipos de cliente (opcional, 2 min)
+
+Para mostrar que Mi resumen se adapta a como le entra el dinero a cada
+cliente, entrar con estos cuatro usuarios (contraseñas en
+`data/credenciales_prueba.md`). La ocupacion sale de Silver; el dashboard no
+la muestra. Verificado el 2026-11-19 sobre esta instancia, con las capturas
+en [ux/perfiles/despues/](ux/perfiles/despues/).
+
+| Cliente | Como le entra el dinero | Saldo | Riesgo | Paso de la escalera |
+|---|---|---|---|---|
+| CLI-000481 | Empleado, nomina | $6,242.27 MXN | Bajo, 1.8 % | 3, fondo de emergencia minimo |
+| CLI-000249 | Estudiante, ingreso irregular | $22,596.14 MXN | Bajo, 2.2 % | 3, fondo de emergencia minimo |
+| CLI-000303 | Comerciante, ingreso variable | $28,799.34 MXN | Medio, 21.2 % | 2, tarjeta bajo control |
+| CLI-000283 | Empresario, ingreso variable | $15,215.70 MXN | Alto, 59.7 % | 1, pagos de deuda bajo control |
+
+- **Con nomina, CLI-000481.** "Te llegan unos $6,405 cada quincena: el 15 y
+  a fin de mes", con la grafica pareja. Siguiente paso: "Junta $11,954 más
+  para cubrir 3 meses de gastos"; le quedan $6,745 al mes y se queda sin
+  dinero en 3 de cada 100 escenarios a 36 meses. Sin tarjeta ni prestamos,
+  "Tu crédito" dice "No tienes deudas ni tarjeta de crédito." y su riesgo lo
+  baja que le queda dinero cada mes, que no tiene deudas y que no usa
+  tarjeta.
+- **Ingreso irregular, CLI-000249.** "Tus ingresos cambian de una quincena a
+  otra: en promedio $3,637 la primera y $8,993 la segunda. En 2 quincenas no
+  te entró nada." Mismo paso que el de nomina, pero le faltan $2,116; le
+  quedan $4,931 al mes.
+- **Ingreso variable con déficit, CLI-000303.** Gasta $2,052 más de lo que
+  le entra al mes, pero su saldo alcanza para 14 meses, así que el titular
+  no es urgente: "Tu meta ahora: tarjeta bajo control." con la acción "Baja
+  el uso de tu tarjeta al 30 % de su límite" (usa 33 %; le faltan 3 puntos).
+  Se queda sin dinero en 53 de cada 100 escenarios. En los últimos 3 meses
+  promedia $3,426 por quincena, 46 % menos que al inicio. Como su ingreso
+  varía, sus deudas se comparan con su mes de menor ingreso (lo dice la nota
+  de "Tu crédito").
+- **Urgente, CLI-000283.** El recorrido de arriba: titular "Lo urgente",
+  saldo para menos de 1 mes.
+
+Lo que cambia entre ellos son las frases y el paso, no la estructura: la
+misma página, en el mismo orden, para los cuatro.
 
 ### 4. Simulador de hipoteca (2 min)
 
@@ -329,6 +371,12 @@ responde.
   CLI-000001 tiene riesgo medio (19.8 %); en el simulador, sin hipoteca, se
   queda sin dinero algun mes en 41 de cada 100 escenarios a 36 meses y en 7
   de cada 100 a 6 meses, el horizonte del modelo.
+- **Por que el saldo sube el riesgo de CLI-000303 si tiene mas que la
+  mayoria?** Su saldo ($28,799.34 MXN) es mayor que el de 83.6 % de los
+  clientes y aun asi es su primer factor de "Lo que más lo sube". El modelo
+  no tiene restriccion de monotonia sobre el saldo y el efecto depende de
+  las demas variables. Por eso la frase solo dice "Tu saldo disponible", sin
+  "bajo". Pendiente en [technical-debt.md](technical-debt.md).
 - **Por que no sube la probabilidad media?** Ver Portafolio: calibracion a
   tasa fija en cada reentrenamiento.
 - **Los datos son reales?** No: sinteticos, reproducibles con la semilla 42 y
