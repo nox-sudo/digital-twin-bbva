@@ -763,3 +763,22 @@ def test_iva_sobre_intereses_en_consumo_y_no_en_vivienda(gold, tmp_path):
     assert hipoteca["cat_referencia"]["etiqueta"].startswith(
         "CAT promedio de referencia BBVA (informativo, sin IVA"
     )
+
+
+def test_resumen_trae_una_lectura_con_cada_cifra_rotulada(gold, tmp_path):
+    """Sin la lectura, a "¿que porcentaje gasta mas de lo que gana?" el modelo
+    tomaba probabilidad_media. La lectura dice que es cada cifra, con los
+    mismos valores del resultado."""
+    r = h.ejecutar("resumen_portafolio", {}, contexto(gold, tmp_path, rol="admin"))
+    # Gold de prueba: CLI-2 gasta de mas (1 de 2) y la probabilidad media es
+    # (0.04 + 0.62) / 2.
+    assert r["proporcion_ahorro_negativo"] == 0.5
+    assert r["probabilidad_media"] == 0.33
+    assert (
+        "Gastan mas de lo que ganan (capacidad de ahorro negativa): 50.0 % de los "
+        "clientes." in r["lectura"]
+    )
+    assert "Probabilidad media de impago: 33.0 %." in r["lectura"]
+    assert "Por banda de riesgo: 1 bajo, 0 medio, 1 alto." in r["lectura"]
+    assert r["lectura"].startswith("Portafolio al 2027-02-28: 2 clientes.")
+    assert es_json_valido(r)

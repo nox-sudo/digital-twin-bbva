@@ -853,7 +853,36 @@ def resumen_portafolio(ctx: Contexto) -> dict:
             "proporcion_ahorro_negativo": _numero(base["pct_ahorro_negativo"], 4),
             "probabilidad_media": _numero(base["probabilidad_media"], 4),
         }
+    resultado["lectura"] = _lectura_portafolio(resultado)
     return resultado
+
+
+def _lectura_portafolio(r: dict) -> str:
+    """Cada cifra del resumen con lo que significa. Sin ella, a "¿que
+    porcentaje de los clientes gasta mas de lo que gana?" llama3.1:8b
+    respondia con probabilidad_media (15.79 %) en vez de
+    proporcion_ahorro_negativo (56.6 %): el nombre de la llave no dice "gasta
+    mas de lo que gana" (docs/technical-debt.md). Mismos valores del
+    resultado, sin calculos nuevos."""
+    partes = [f"Portafolio al {r['fecha_corte']}: {r['clientes']} clientes."]
+    if r["proporcion_ahorro_negativo"] is not None:
+        partes.append(
+            "Gastan mas de lo que ganan (capacidad de ahorro negativa): "
+            f"{r['proporcion_ahorro_negativo'] * 100:.1f} % de los clientes."
+        )
+    if r["ingreso_mediano"] is not None:
+        partes.append(f"Ingreso mensual mediano: {_pesos(r['ingreso_mediano'])}.")
+    if r["probabilidad_media"] is not None:
+        partes.append(
+            f"Probabilidad media de impago: {r['probabilidad_media'] * 100:.1f} %."
+        )
+    bandas = r["clientes_por_banda"]
+    partes.append(
+        "Por banda de riesgo: "
+        + ", ".join(f"{bandas.get(b, 0)} {b}" for b in ("bajo", "medio", "alto"))
+        + "."
+    )
+    return " ".join(partes)
 
 
 # Fragmentos por consulta. Con 5 la evaluacion sube de 17 a 19 de 20

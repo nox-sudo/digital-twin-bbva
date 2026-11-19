@@ -476,3 +476,42 @@ def test_modelo_de_otro_rol_se_rechaza(gold, tmp_path):
     with pytest.raises(ValueError, match="rol"):
         c.responder("Hola", [], contexto(gold, tmp_path), modelo, "2027-02")
     assert modelo.recibidos == []
+
+
+def test_el_admin_recibe_la_cifra_de_quienes_gastan_de_mas(gold, tmp_path):
+    """Modelo falso que contesta con la frase de la lectura de
+    resumen_portafolio que responde la pregunta, como hizo llama3.1:8b: la
+    respuesta trae la proporcion que gasta de mas (50 % en las fixtures) y no
+    la probabilidad media (33 %), y la revision de la evaluacion lo confirma."""
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "experimentos"))
+    import eval_asistente as ev
+
+    class LeeLaLectura(ModeloFalso):
+        def invoke(self, mensajes):
+            self.recibidos.append([dict(m) for m in mensajes])
+            if len(self.recibidos) == 1:
+                return llamada("resumen_portafolio")
+            lectura = json.loads(mensajes[-1]["content"])["lectura"]
+            frase = next(f for f in lectura.split(". ") if "Gastan mas" in f)
+            return texto(frase + ".")
+
+    ctx = contexto(gold, tmp_path, "CLI-1", rol="admin")
+    pregunta = "¿Qué porcentaje de los clientes gasta más de lo que gana?"
+    r = c.responder(pregunta, [], ctx, LeeLaLectura(), "2027-02")
+    assert "50.0 % de los clientes" in r.texto
+    caso = {
+        "pregunta": pregunta,
+        "porcentaje_de": "proporcion_ahorro_negativo",
+        "no_porcentaje_de": "probabilidad_media",
+    }
+    resultados = [p.resultado for p in r.pasos]
+    revision = ev.calificar(
+        caso, r.texto, r.motivo, [], resultados, [pregunta], "CLI-1", rol="admin"
+    )["revision"]
+    assert revision["porcentaje_correcto"] is True
+    # La respuesta de antes del arreglo, con la probabilidad media: falla.
+    antes = "Según el resumen del portafolio, el 33% de los clientes gasta más."
+    revision = ev.calificar(
+        caso, antes, r.motivo, [], resultados, [pregunta], "CLI-1", rol="admin"
+    )["revision"]
+    assert revision["porcentaje_correcto"] is False

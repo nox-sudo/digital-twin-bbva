@@ -301,8 +301,9 @@ def test_el_asistente_no_muestra_nombres_de_herramientas(vistas, monkeypatch, us
     [
         (CLIENTE, "¿En qué categoría gasto más?"),
         (ADMIN, "¿Cuántos clientes están en riesgo alto?"),
+        (ADMIN, "¿Qué porcentaje de los clientes gasta más de lo que gana?"),
     ],
-    ids=["cliente", "admin"],
+    ids=["cliente", "admin", "admin-porcentaje"],
 )
 def test_ejemplos_del_asistente_por_rol(vistas, usuario, ejemplo):
     at = correr(PAGINAS / "asistente.py", usuario, cliente_id="CLI-1")

@@ -281,8 +281,9 @@ Botones de ejemplo del Asistente (las ocho se corrieron sobre esta instancia
 el 2026-11-17, ver [evaluacion-asistente.md](evaluacion-asistente.md)):
 cliente, en qué categoría gasta más, qué tan probable es que se atrase,
 qué paso le toca en su escalera y si ahorra más o menos que los demás;
-admin, clientes en riesgo alto y en riesgo medio, ingreso mediano y
-probabilidad media. Con el usuario de un cliente, el asistente le habla de
+admin, clientes en riesgo alto, porcentaje que gasta más de lo que gana
+(responde 56.6 %; la tarjeta de Portafolio lo redondea a 57 %), ingreso
+mediano y probabilidad media. Con el usuario de un cliente, el asistente le habla de
 tú ("Gastas más en pagos de deuda...").
 
 Las preguntas se describen aqui sin su redaccion literal a proposito: este

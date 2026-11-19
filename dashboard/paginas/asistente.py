@@ -40,10 +40,12 @@ acceso.requiere_rol("admin", "cliente")
 # Las del cliente se evaluaron en primera persona con rol cliente; las del
 # admin, con rol admin. No hay preguntas del admin sobre un cliente en
 # tercera persona evaluadas, asi que el admin solo tiene las del portafolio.
-# Ademas, las ocho se corrieron sobre la instancia de la demo (2026-11-17):
-# dos de la primera lista se cambiaron porque ahi fallaban (v2
-# porcentaje_gasta_mas daba 15.79 %, la probabilidad media, en vez de 57 %;
-# v2 siguiente_paso_escalera pedia un dato en vez de responder).
+# Ademas, las ocho se corrieron sobre la instancia de la demo (2026-11-17).
+# v2 siguiente_paso_escalera se cambio por v4 paso_actual porque ahi pedia un
+# dato en vez de responder. v2 porcentaje_gasta_mas daba 15.79 % (la
+# probabilidad media) en vez de 56.6 %; volvio despues de agregar la lectura
+# de resumen_portafolio, con la que da 56.6 % en 3 de 3 corridas
+# (docs/evaluacion-asistente.md).
 EJEMPLOS = {
     "cliente": [
         "¿En qué categoría gasto más?",  # v1 categoria_mayor_gasto
@@ -53,7 +55,7 @@ EJEMPLOS = {
     ],
     "admin": [
         "¿Cuántos clientes están en riesgo alto?",  # v1 clientes_riesgo_alto
-        "¿Cuántos clientes están en riesgo medio?",  # v3 clientes_riesgo_medio
+        "¿Qué porcentaje de los clientes gasta más de lo que gana?",  # v2 porcentaje_gasta_mas
         "¿Cuál es el ingreso mediano de los clientes del banco?",  # v2 ingreso_mediano_clientes
         # v3 probabilidad_media_portafolio
         "¿Cuál es la probabilidad media de impago de todo el portafolio?",
