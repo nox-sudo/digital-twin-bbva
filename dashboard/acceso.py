@@ -84,7 +84,23 @@ def cerrar_sesion() -> None:
 def pantalla_login() -> None:
     """Formulario de inicio de sesion. Tras INTENTOS_MAXIMOS fallos seguidos
     pide esperar ESPERA_SEGUNDOS antes de volver a intentar."""
+    _, centro, _ = st.columns([1, 2, 1])
+    with centro:
+        _formulario_login()
+
+
+# Lo que lee quien entra: que usuario usar. El mensaje de error no dice cual
+# de los dos campos fallo, para no confirmar que un usuario existe.
+INSTRUCCION_LOGIN = (
+    "Si eres cliente, tu usuario es tu número de cliente (por ejemplo, "
+    "CLI-000123). Si administras el gemelo, entra con tu usuario de administrador."
+)
+ERROR_LOGIN = "Usuario o contraseña incorrectos. Revisa los dos e intenta de nuevo."
+
+
+def _formulario_login() -> None:
     st.title("Gemelo Digital Financiero")
+    st.caption(INSTRUCCION_LOGIN)
     ruta = comun.config()["usuarios"]
     if not Path(ruta).exists():
         st.warning(
@@ -95,15 +111,23 @@ def pantalla_login() -> None:
 
     bloqueado_hasta = st.session_state.get("login_bloqueado_hasta", 0.0)
     with st.form("login"):
-        nombre = st.text_input("Usuario", key="login_usuario")
+        nombre = st.text_input("Usuario", key="login_usuario", placeholder="CLI-000123")
         contrasena = st.text_input(
             "Contraseña", type="password", key="login_contrasena"
         )
-        enviado = st.form_submit_button("Entrar")
+        enviado = st.form_submit_button(
+            "Entrar",
+            type="primary",
+            icon=":material/login:",
+            use_container_width=True,
+        )
     if not enviado:
         return
     if time.time() < bloqueado_hasta:
-        st.error("Demasiados intentos. Espera unos segundos y vuelve a intentar.")
+        st.error(
+            "Demasiados intentos. Espera unos segundos y vuelve a intentar.",
+            icon=ui.ICONO_ERROR,
+        )
         return
 
     usuario = u.verificar(ruta, nombre, contrasena)
@@ -113,7 +137,7 @@ def pantalla_login() -> None:
         if fallos >= INTENTOS_MAXIMOS:
             st.session_state["login_fallos"] = 0
             st.session_state["login_bloqueado_hasta"] = time.time() + ESPERA_SEGUNDOS
-        st.error("Usuario o contraseña incorrectos.")
+        st.error(ERROR_LOGIN, icon=ui.ICONO_ERROR)
         return
     iniciar_sesion(usuario)
     st.rerun()
