@@ -8,7 +8,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from dashboard import acceso, comun
+from dashboard import acceso, comun, ui
 
 st.title("Cliente")
 acceso.requiere_rol("admin")
@@ -30,65 +30,71 @@ if comun.gold_disponible():
         if pd.isna(percentil):
             return "Sin dato para este cliente."
         return (
-            f"Mayor o igual que el {percentil:.0%} de los clientes. "
-            f"Mediana del portafolio: {comun.formato_mxn(mediana)}."
+            f"Mayor o igual que el {ui.formatear_porcentaje(percentil)} de los "
+            f"clientes. Mediana del portafolio: {ui.formatear_mxn(mediana)}."
         )
 
     # --- Riesgo -----------------------------------------------------------
     banda = fila["banda_riesgo"]
     probabilidad = fila["probabilidad_impago"]
-    color = comun.COLOR_BANDA.get(banda, "#9a9a96")
     st.markdown(
-        f"<div style='display:flex;gap:12px;align-items:center;margin:4px 0 16px'>"
-        f"<span style='width:12px;height:12px;border-radius:50%;background:{color};"
-        f"display:inline-block'></span>"
-        f"<span style='font-size:1.1rem'><b>Riesgo {banda}</b> · probabilidad de impago "
-        f"{comun.porcentaje(probabilidad, 1)}</span></div>",
+        "<div style='display:flex;flex-wrap:wrap;gap:12px;align-items:center;"
+        "margin:4px 0 16px'>"
+        + ui.html_semaforo(banda)
+        + f"<span style='font-size:1.05rem'>{ui.nombre_kpi('probabilidad_impago')} "
+        f"<b>{ui.formatear_porcentaje(probabilidad, 1)}</b></span></div>",
         unsafe_allow_html=True,
     )
 
     # --- Salud financiera -------------------------------------------------
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric(
-        "Ingreso mensual",
-        comun.formato_mxn(fila["ingreso_mensual_promedio"]),
-        help=contexto("ingreso_mensual_promedio")
-        + f" Promedio de los últimos {cfg['ventana_meses']} meses.",
-    )
-    c2.metric(
-        "Gasto mensual",
-        comun.formato_mxn(fila["gasto_mensual_total"]),
-        help=contexto("gasto_mensual_total")
-        + f" Promedio de los últimos {cfg['ventana_meses']} meses.",
-    )
-    c3.metric(
-        "Capacidad de ahorro",
-        comun.formato_mxn(fila["capacidad_ahorro"]),
-        help=contexto("capacidad_ahorro")
-        + " Ingreso menos compras, pagos de deuda y retiros, en promedio mensual"
-        + f" de los últimos {cfg['ventana_meses']} meses.",
-    )
-    c4.metric(
-        "Saldo disponible",
-        comun.formato_mxn(fila["saldo_liquido_disponible"]),
-        help=contexto("saldo_liquido_disponible"),
-    )
+    ventana = {"ventana": cfg["ventana_meses"]}
+    columnas = st.columns(4)
+    for columna, clave in zip(
+        columnas,
+        [
+            "ingreso_mensual_promedio",
+            "gasto_mensual_total",
+            "capacidad_ahorro",
+            "saldo_liquido_disponible",
+        ],
+    ):
+        ui.tarjeta_kpi(
+            ui.nombre_kpi(clave),
+            ui.formatear_mxn(fila[clave]),
+            ayuda=ui.ayuda(clave, contexto(clave), **ventana),
+            contenedor=columna,
+        )
 
     p1, p2, p3, p4 = st.columns(4)
-    p1.metric("Edad", f"{fila['edad_anios']:.0f} años")
-    p2.metric("Antigüedad", f"{fila['antiguedad_dias'] / 365:.1f} años")
+    ui.tarjeta_kpi(
+        ui.nombre_kpi("edad_anios"),
+        f"{fila['edad_anios']:.0f} años",
+        ayuda=ui.ayuda("edad_anios"),
+        contenedor=p1,
+    )
+    ui.tarjeta_kpi(
+        ui.nombre_kpi("antiguedad_anios"),
+        f"{fila['antiguedad_dias'] / 365:.1f} años",
+        ayuda=ui.ayuda("antiguedad_anios"),
+        contenedor=p2,
+    )
     productos = ["cuenta digital"]
     if fila["tiene_tarjeta_credito"]:
         productos.append("tarjeta")
     if fila["tiene_prestamo_personal"]:
         productos.append("préstamo")
-    p3.metric("Productos", int(fila["numero_productos"]), help=", ".join(productos))
+    ui.tarjeta_kpi(
+        ui.nombre_kpi("numero_productos"),
+        str(int(fila["numero_productos"])),
+        ayuda=ui.ayuda("numero_productos", "Tiene: " + ", ".join(productos) + "."),
+        contenedor=p3,
+    )
     ratio = fila["ratio_endeudamiento"]
-    p4.metric(
-        "Deuda / ingreso",
+    ui.tarjeta_kpi(
+        ui.nombre_kpi("ratio_endeudamiento"),
         "Sin ingreso" if pd.isna(ratio) else f"{ratio:.2f}",
-        help="Saldo de tarjeta y préstamo entre ingreso mensual. 0 si no tiene "
-        "crédito; sin valor si tiene deuda y no tiene ingreso.",
+        ayuda=ui.ayuda("ratio_endeudamiento"),
+        contenedor=p4,
     )
 
     # --- Flujo mensual ------------------------------------------------------
@@ -101,6 +107,8 @@ if comun.gold_disponible():
         var_name="tipo",
         value_name="monto",
     )
+    largo["monto_texto"] = largo["monto"].map(ui.formatear_mxn)
+    largo["neto_texto"] = largo["neto"].map(ui.formatear_mxn)
     barras = (
         alt.Chart(largo)
         .mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3)
@@ -118,8 +126,8 @@ if comun.gold_disponible():
             tooltip=[
                 alt.Tooltip("mes_nombre:N", title="Mes"),
                 alt.Tooltip("tipo:N", title="Tipo"),
-                alt.Tooltip("monto:Q", title="Monto", format="$,.0f"),
-                alt.Tooltip("neto:Q", title="Neto del mes", format="$,.0f"),
+                alt.Tooltip("monto_texto:N", title="Monto"),
+                alt.Tooltip("neto_texto:N", title="Neto del mes"),
             ],
         )
         .properties(height=280)
@@ -134,7 +142,7 @@ if comun.gold_disponible():
         meses_negativos = int((en_ventana["neto"] < 0).sum())
         st.caption(
             f"Últimos {ventana} meses: neto promedio de "
-            f"{comun.formato_mxn(en_ventana['neto'].mean())} al mes; salidas mayores que "
+            f"{ui.formatear_mxn(en_ventana['neto'].mean())} al mes; salidas mayores que "
             f"entradas en {meses_negativos} de {len(en_ventana)} meses. La gráfica "
             f"muestra todo el historial ({len(flujo)} meses)."
         )
@@ -142,7 +150,11 @@ if comun.gold_disponible():
     # --- Salidas por categoria -------------------------------------------
     st.subheader("A dónde se va el dinero")
     categorias = comun.salidas_categoria(version, cliente_id)
-    categorias["etiqueta"] = categorias["proporcion"].map(lambda p: f"{p:.0%}")
+    categorias["etiqueta"] = categorias["proporcion"].map(ui.formatear_porcentaje)
+    categorias["total_texto"] = categorias["total"].map(ui.formatear_mxn)
+    categorias["proporcion_texto"] = categorias["proporcion"].map(
+        lambda p: ui.formatear_porcentaje(p, 1)
+    )
     categorias["categoria"] = categorias["categoria"].map(comun.nombre_categoria)
     base = alt.Chart(categorias).encode(
         y=alt.Y("categoria:N", sort="-x", title=None, axis=alt.Axis(labelLimit=260)),
@@ -155,8 +167,8 @@ if comun.gold_disponible():
     grafica = base.mark_bar(color=comun.AZUL, cornerRadiusEnd=4).encode(
         tooltip=[
             alt.Tooltip("categoria:N", title="Categoría"),
-            alt.Tooltip("total:Q", title="Total", format="$,.0f"),
-            alt.Tooltip("proporcion:Q", title="Proporción", format=".1%"),
+            alt.Tooltip("total_texto:N", title="Total"),
+            alt.Tooltip("proporcion_texto:N", title="Proporción"),
         ]
     ) + base.mark_text(align="left", dx=6, color="#3d3d3a").encode(text="etiqueta:N")
     st.altair_chart(grafica.properties(height=alt.Step(26)), use_container_width=True)

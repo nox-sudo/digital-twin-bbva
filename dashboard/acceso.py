@@ -18,7 +18,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from dashboard import comun
+from dashboard import comun, ui
 from src.common import usuarios as u
 
 LLAVE_SESION = "usuario"
@@ -140,7 +140,9 @@ def cliente_actual(
     usuario = requiere_rol("admin", "cliente")
     if usuario.rol == "cliente":
         if usuario.usuario not in clientes:
-            st.warning("Todavía no hay datos de tu cuenta en esta corrida.")
+            ui.estado_vacio(
+                "Todavía no hay datos de tu cuenta.", "Vuelve a intentarlo más tarde."
+            )
             st.stop()
         return usuario.usuario
     contenedor = contenedor or st

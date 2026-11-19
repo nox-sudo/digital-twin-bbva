@@ -9,7 +9,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from dashboard import acceso, comun
+from dashboard import acceso, comun, ui
 from src.monitoreo.psi import TEMPORAL
 from src.monitoreo.psi import cargar_config as cargar_config_psi
 
@@ -20,8 +20,9 @@ cfg = comun.config()
 corridas = comun.datos.corridas(cfg["logs"])
 
 if corridas.empty:
-    st.warning(
-        f"No hay logs de corridas en {cfg['logs']}. Corre el pipeline para generarlos."
+    ui.estado_vacio(
+        "Todavía no hay corridas registradas.",
+        "Corre el pipeline para generarlas.",
     )
 else:
     # --- Ultima corrida por capa -----------------------------------------
@@ -30,11 +31,13 @@ else:
     for columna, capa in zip(columnas, ["bronze", "silver", "gold"]):
         de_capa = corridas[corridas["capa"] == capa]
         if de_capa.empty:
-            columna.metric(capa.capitalize(), "sin corridas")
+            ui.tarjeta_kpi(capa.capitalize(), "Sin corridas", contenedor=columna)
             continue
         ultima = de_capa.iloc[-1]
         ok = ultima["estatus"] == "SUCCESS"
-        columna.metric(capa.capitalize(), "Correcta" if ok else "Fallida")
+        ui.tarjeta_kpi(
+            capa.capitalize(), "Correcta" if ok else "Fallida", contenedor=columna
+        )
         duracion = ultima["duracion_segundos"]
         columna.caption(
             (f"{duracion:.1f} s · " if pd.notna(duracion) else "")
@@ -74,11 +77,11 @@ else:
     st.subheader("Calidad en Silver, última corrida")
     silver = comun.datos.entidades_ultima_corrida(cfg["logs"], "silver")
     if silver.empty:
-        st.info("Todavia no hay corridas de Silver registradas.")
+        ui.estado_vacio("Todavía no hay corridas de Silver registradas.")
     else:
         en_cuarentena = int(silver["filas_cuarentena"].sum())
         st.caption(
-            "Filas que no pasaron alguna regla de config/business_rules.yaml. "
+            "Filas que no pasaron alguna regla de calidad de Silver. "
             "Se aislan en cuarentena sin detener el pipeline."
             if en_cuarentena
             else "Ninguna fila fue a cuarentena en la última corrida."
@@ -198,10 +201,17 @@ if cuarentena.empty:
     )
 else:
     st.caption(
-        "Entidades cuya proporción de filas en cuarentena alcanzó su umbral "
-        "(config/business_rules.yaml, umbrales_cuarentena). Un aviso deja seguir "
+        "Entidades cuya proporción de filas en cuarentena alcanzó su umbral. "
+        "Un aviso deja seguir "
         "la corrida; un bloqueo detiene Silver y conserva la versión anterior, "
         "para no publicar una entrega rota."
+    )
+    cuarentena = cuarentena.assign(
+        **{
+            columna: cuarentena[columna] * 100
+            for columna in ("tasa", "umbral_aviso", "umbral_bloqueo")
+            if columna in cuarentena
+        }
     )
     st.dataframe(
         cuarentena,
@@ -218,11 +228,9 @@ else:
             "filas_cuarentena": st.column_config.NumberColumn(
                 "En cuarentena", format="%,d"
             ),
-            "tasa": st.column_config.NumberColumn("Tasa", format="percent"),
-            "umbral_aviso": st.column_config.NumberColumn("Aviso", format="percent"),
-            "umbral_bloqueo": st.column_config.NumberColumn(
-                "Bloqueo", format="percent"
-            ),
+            "tasa": ui.columna_porcentaje("Tasa", 1),
+            "umbral_aviso": ui.columna_porcentaje("Aviso", 1),
+            "umbral_bloqueo": ui.columna_porcentaje("Bloqueo", 1),
             "reglas": "Reglas principales",
         },
     )
@@ -231,9 +239,9 @@ else:
 st.subheader("Deriva de datos (PSI)")
 historico_psi = comun.datos.deriva_psi(cfg["deriva_psi"])
 if historico_psi.empty:
-    st.info(
-        "Todavía no hay corridas del monitoreo de deriva. Las agrega el último "
-        "paso del DAG (monitor_drift.py)."
+    ui.estado_vacio(
+        "Todavía no hay corridas del monitoreo de deriva.",
+        "Las agrega el último paso del DAG de Airflow.",
     )
 else:
     cfg_psi = cargar_config_psi(cfg["monitoreo_psi"])
@@ -254,7 +262,7 @@ else:
     conteo = ultima["estado"].value_counts()
 
     st.caption(
-        f"Contra la referencia {tendencia['referencia_id'].iloc[0]}: "
+        "Contra la referencia congelada de la base: "
         f"{tendencia['fecha_corte'].nunique()} cortes medidos, el último al "
         f"{comun.fecha(ultimo_corte)}. Cada variable se compara con los deciles "
         "congelados de la población de entrenamiento del modelo base."
@@ -275,7 +283,7 @@ else:
             ("temporal", "Temporales"),
         ],
     ):
-        columna.metric(etiqueta, int(conteo.get(estado, 0)))
+        ui.tarjeta_kpi(etiqueta, str(int(conteo.get(estado, 0))), contenedor=columna)
 
     # Small multiples: un panel por variable, una sola linea cada uno. Con 18
     # variables, una grafica con una linea por variable necesitaria mas
@@ -294,14 +302,16 @@ else:
     )
     seleccion = st.multiselect(
         "Variables",
-        sorted(maximos.index),
+        sorted(maximos.index, key=ui.nombre_variable),
         default=por_defecto,
+        format_func=ui.nombre_variable,
         help="Por defecto: el score y las variables que alguna vez pasaron el "
         "umbral de vigilar, sin las temporales.",
     )
     if seleccion:
         grafica_datos = tendencia[tendencia["variable"].isin(seleccion)].copy()
-        grafica_datos["panel"] = grafica_datos["variable"] + grafica_datos[
+        grafica_datos["nombre"] = grafica_datos["variable"].map(ui.nombre_variable)
+        grafica_datos["panel"] = grafica_datos["nombre"] + grafica_datos[
             "variable"
         ].map(
             lambda v: (
@@ -340,7 +350,7 @@ else:
                 ),
                 y=alt.Y("psi:Q", title="PSI", scale=alt.Scale(domain=[0, techo_psi])),
                 tooltip=[
-                    alt.Tooltip("variable:N", title="Variable"),
+                    alt.Tooltip("nombre:N", title="Variable"),
                     alt.Tooltip("fecha_corte:T", title="Corte", format="%Y-%m-%d"),
                     alt.Tooltip("psi:Q", title="PSI", format=".3f"),
                     alt.Tooltip("estado:N", title="Estado"),
@@ -375,15 +385,14 @@ else:
         st.caption(
             f"Líneas punteadas: {cfg_psi.umbral_vigilar:.2f} (vigilar) y "
             f"{cfg_psi.umbral_reentrenar:.2f} (reentrenar). Las variables "
-            "temporales derivan por el paso del tiempo y no generan alerta "
-            "(docs/monitoreo-deriva.md)."
+            "temporales derivan por el paso del tiempo y no generan alerta."
         )
 
     with st.expander("Última corrida, todas las variables"):
         st.dataframe(
             ultima.sort_values("psi", ascending=False)[
                 ["variable", "tipo", "psi", "estado"]
-            ],
+            ].assign(variable=lambda d: d["variable"].map(ui.nombre_variable)),
             hide_index=True,
             use_container_width=True,
             column_config={

@@ -13,7 +13,7 @@ import altair as alt
 import streamlit as st
 
 from asistente import herramientas as h
-from dashboard import acceso, comun
+from dashboard import acceso, comun, ui
 from dashboard import vista_cliente as vc
 from src.gold import escalera as esc
 from src.gold import explicacion as ex
@@ -86,9 +86,9 @@ def explicacion(version: float, cliente_id: str):
         return str(e)
 
 
-def md(texto: str) -> str:
-    """Streamlit lee "$...$" como formula: se escapa el signo de pesos."""
-    return texto.replace("$", "\\$")
+# La vista del admin ("Vista del cliente") muestra lo mismo que ve el cliente:
+# los nombres de KPI son siempre los del cliente.
+md = ui.md
 
 
 def cifras(pares: list[tuple[str, str]]) -> None:
@@ -124,7 +124,7 @@ if comun.gold_disponible():
     izquierda, derecha = st.columns(2, gap="large")
 
     # --- Este mes ---------------------------------------------------------
-    with izquierda.container(border=True):
+    with ui.contenedor("este-mes", izquierda):
         st.subheader("Este mes")
         mes = vc.resumen_mes(comun.flujo(version, cliente_id), comun.nombre_mes)
         if mes is None:
@@ -132,15 +132,15 @@ if comun.gold_disponible():
         else:
             cifras(
                 [
-                    ("Te entró", vc.pesos(mes["entradas"])),
-                    ("Salió", vc.pesos(mes["salidas"])),
-                    ("Te quedó", vc.pesos(mes["neto"])),
+                    ("Te entró", ui.formatear_mxn(mes["entradas"])),
+                    ("Salió", ui.formatear_mxn(mes["salidas"])),
+                    ("Te quedó", ui.formatear_mxn(mes["neto"])),
                 ]
             )
             st.markdown(md(mes["frase"]))
 
     # --- Ingresos por quincena -------------------------------------------
-    with derecha.container(border=True):
+    with ui.contenedor("quincenas", derecha):
         st.subheader("Tus ingresos por quincena")
         q = quincenas(version, cliente_id)
         if q is None:
@@ -153,6 +153,7 @@ if comun.gold_disponible():
                 cual=lambda d: d["quincena"].map(
                     {1: "1.ª quincena", 2: "2.ª quincena"}
                 ),
+                monto_texto=lambda d: d["monto"].map(ui.formatear_mxn),
             )
             grafica = (
                 alt.Chart(recientes)
@@ -169,7 +170,7 @@ if comun.gold_disponible():
                     tooltip=[
                         alt.Tooltip("etiqueta:N", title="Mes"),
                         alt.Tooltip("cual:N", title="Quincena"),
-                        alt.Tooltip("monto:Q", title="Ingreso", format="$,.0f"),
+                        alt.Tooltip("monto_texto:N", title="Ingreso"),
                     ],
                 )
                 .properties(height=200)
@@ -179,7 +180,7 @@ if comun.gold_disponible():
     izquierda, derecha = st.columns(2, gap="large")
 
     # --- A donde se va tu dinero -------------------------------------------
-    with izquierda.container(border=True):
+    with ui.contenedor("gastos", izquierda):
         st.subheader("A dónde se va tu dinero")
         salidas = comun.datos.salidas_por_categoria(
             cfg["gold_duckdb"], cliente_id, MESES_GASTO
@@ -187,7 +188,9 @@ if comun.gold_disponible():
         st.markdown(md(vc.resumen_gastos(salidas, comun.nombre_categoria, MESES_GASTO)))
         if not salidas.empty:
             top = salidas.head(5).assign(
-                nombre=lambda d: d["categoria"].map(comun.nombre_categoria)
+                nombre=lambda d: d["categoria"].map(comun.nombre_categoria),
+                total_texto=lambda d: d["total"].map(ui.formatear_mxn),
+                proporcion_texto=lambda d: d["proporcion"].map(ui.formatear_porcentaje),
             )
             st.altair_chart(
                 alt.Chart(top)
@@ -197,8 +200,8 @@ if comun.gold_disponible():
                     x=alt.X("total:Q", title=None, axis=EJE_PESOS),
                     tooltip=[
                         alt.Tooltip("nombre:N", title="Categoría"),
-                        alt.Tooltip("total:Q", title="Total", format="$,.0f"),
-                        alt.Tooltip("proporcion:Q", title="Del total", format=".0%"),
+                        alt.Tooltip("total_texto:N", title="Total"),
+                        alt.Tooltip("proporcion_texto:N", title="Del total"),
                     ],
                 )
                 .properties(height=alt.Step(26)),
@@ -206,7 +209,7 @@ if comun.gold_disponible():
             )
 
     # --- Tu credito ------------------------------------------------------------
-    with derecha.container(border=True):
+    with ui.contenedor("credito", derecha):
         st.subheader("Tu crédito")
         cuentas = creditos(version, cliente_id)
         if cuentas is None:
@@ -221,11 +224,14 @@ if comun.gold_disponible():
             m = e.metricas
             cifras(
                 [
-                    ("Pagas de deudas al mes", vc.pesos(m["pago_comprometido"])),
                     (
-                        "Usas de tu tarjeta",
+                        ui.nombre_kpi("pago_comprometido", "cliente"),
+                        ui.formatear_mxn(m["pago_comprometido"]),
+                    ),
+                    (
+                        ui.nombre_kpi("uso_linea_credito", "cliente"),
                         (
-                            comun.porcentaje(m["uso_tarjeta"])
+                            ui.formatear_porcentaje(m["uso_tarjeta"])
                             if m["tiene_tarjeta"]
                             else "Sin tarjeta"
                         ),
@@ -237,7 +243,7 @@ if comun.gold_disponible():
                 st.caption(" ".join(e.supuestos))
 
     # --- Tu riesgo, explicado --------------------------------------------------
-    with st.container(border=True):
+    with ui.contenedor("riesgo"):
         st.subheader("Tu riesgo, explicado")
         exp = explicacion(version, cliente_id)
         n = ex.cargar_config()["factores_mostrados"]
@@ -258,13 +264,14 @@ if comun.gold_disponible():
                 for texto in riesgo["bajan"] or ["Nada en especial."]:
                     st.markdown(md(f"- {texto}"))
             st.caption(
-                f"Puntaje del modelo: {comun.porcentaje(fila['probabilidad_impago'])}. "
+                f"{ui.nombre_kpi('probabilidad_impago', 'cliente')}: "
+                f"{ui.formatear_porcentaje(fila['probabilidad_impago'], 1)}. "
                 "Es una estimación para ordenar el riesgo, no una certeza. Cada factor "
                 "es lo que más mueve tu puntaje frente a un cliente promedio."
             )
 
     # --- ¿Me alcanza para...? --------------------------------------------------
-    with st.container(border=True):
+    with ui.contenedor("me-alcanza"):
         st.subheader("¿Me alcanza para...?")
         with st.form("me_alcanza"):
             c1, c2, c3, c4 = st.columns(4)

@@ -25,7 +25,7 @@ from asistente.conversacion import (
     responder,
 )
 from asistente.herramientas import Contexto
-from dashboard import acceso, comun
+from dashboard import acceso, comun, ui
 
 st.title("Asistente")
 acceso.requiere_rol("admin", "cliente")
@@ -112,7 +112,13 @@ if comun.gold_disponible():
                         cfg.historial_turnos,
                     )
             except ErrorConexion as e:
-                st.error(str(e))
+                # El cliente lee que el asistente no esta disponible; el
+                # admin ve ademas la causa y como arreglarla.
+                ui.estado_error(
+                    "El asistente no está disponible en este momento. "
+                    "Intenta de nuevo en unos minutos.",
+                    detalle=str(e),
+                )
                 st.stop()
             st.markdown(respuesta.texto)
             mostrar_pasos(respuesta.pasos)

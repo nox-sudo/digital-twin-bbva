@@ -7,7 +7,7 @@ pregunta de un responsable de negocio: "a quien tengo que mirar".
 import altair as alt
 import streamlit as st
 
-from dashboard import acceso, comun
+from dashboard import acceso, comun, ui
 
 st.title("Portafolio")
 acceso.requiere_rol("admin")
@@ -29,8 +29,7 @@ if comun.gold_disponible():
         return f"{(actual - de_base) * 100:+.1f} pts vs. base"
 
     st.caption(
-        f"{resumen['clientes']:,} clientes · datos al {comun.fecha(resumen['fecha_corte'])} · "
-        "fuente: capa Gold (DuckDB)"
+        f"{resumen['clientes']:,} clientes · datos al {comun.fecha(resumen['fecha_corte'])}"
         + (
             f" · comparado con la base al {comun.fecha(base['fecha_corte'])}"
             if base is not None
@@ -38,34 +37,40 @@ if comun.gold_disponible():
         )
     )
 
+    ventana = {"ventana": cfg["ventana_meses"]}
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Clientes", f"{resumen['clientes']:,}")
-    c2.metric(
-        "Ingreso mensual mediano",
-        comun.formato_mxn(resumen["ingreso_mediano"]),
+    ui.tarjeta_kpi(
+        ui.nombre_kpi("clientes"),
+        f"{resumen['clientes']:,}",
+        ayuda=ui.ayuda("clientes"),
+        contenedor=c1,
+    )
+    ui.tarjeta_kpi(
+        ui.nombre_kpi("ingreso_mediano"),
+        ui.formatear_mxn(resumen["ingreso_mediano"]),
         delta=(
-            f"{comun.formato_mxn(resumen['ingreso_mediano'] - base['ingreso_mediano'])} vs. base"
+            f"{ui.formatear_mxn(resumen['ingreso_mediano'] - base['ingreso_mediano'])}"
+            " vs. base"
             if base is not None
             else None
         ),
-        help="Mediana por cliente del ingreso mensual (nómina y depósitos), "
-        f"promediado en los últimos {cfg['ventana_meses']} meses.",
+        ayuda=ui.ayuda("ingreso_mediano", **ventana),
+        contenedor=c2,
     )
-    c3.metric(
-        "Gastan más de lo que ganan",
-        comun.porcentaje(resumen["pct_ahorro_negativo"]),
+    ui.tarjeta_kpi(
+        ui.nombre_kpi("pct_ahorro_negativo"),
+        ui.formatear_porcentaje(resumen["pct_ahorro_negativo"]),
         delta=puntos(
             resumen["pct_ahorro_negativo"],
             base["pct_ahorro_negativo"] if base is not None else None,
         ),
         delta_color="inverse",
-        help="Clientes con capacidad de ahorro negativa: en los últimos "
-        f"{cfg['ventana_meses']} meses sus compras, pagos de deuda y retiros "
-        "superan en promedio a su ingreso.",
+        ayuda=ui.ayuda("pct_ahorro_negativo", **ventana),
+        contenedor=c3,
     )
-    c4.metric(
-        "Probabilidad media de impago",
-        comun.porcentaje(resumen["probabilidad_media"], 1),
+    ui.tarjeta_kpi(
+        ui.nombre_kpi("probabilidad_media"),
+        ui.formatear_porcentaje(resumen["probabilidad_media"], 1),
         delta=puntos(
             resumen["probabilidad_media"],
             base["probabilidad_media"] if base is not None else None,
@@ -73,15 +78,17 @@ if comun.gold_disponible():
         # Gris y no verde: que baje no significa que el portafolio mejoro
         # (ver la nota de abajo).
         delta_color="off",
-        help="Promedio de la salida del modelo de riesgo (XGBoost) sobre "
-        "todos los clientes con score. Se queda cerca de la tasa de impago "
-        "a la que se calibra la etiqueta; no mide el deterioro entre cortes.",
+        ayuda=ui.ayuda(
+            "probabilidad_media",
+            tasa_objetivo=ui.formatear_porcentaje(cfg["tasa_objetivo"]),
+        ),
+        contenedor=c4,
     )
     if base is not None:
         st.caption(
             "Por qué la probabilidad media no sube: el modelo se reentrena en "
             "cada corrida y la etiqueta de impago se calibra para que la tasa "
-            f"media sea {comun.porcentaje(cfg['tasa_objetivo'])} (config/etiquetas_impago.yaml). "
+            f"media sea {ui.formatear_porcentaje(cfg['tasa_objetivo'])}. "
             "El promedio del score se queda cerca de esa tasa aunque el "
             "portafolio empeore; el deterioro se ve en el ingreso, en quienes "
             "gastan más de lo que ganan y en la deriva del score "
@@ -90,16 +97,18 @@ if comun.gold_disponible():
     if resumen["clientes_sin_score"]:
         st.info(
             f"{resumen['clientes_sin_score']} clientes no tienen score de riesgo: "
-            "corre predict_risk.py para completarlos."
+            "se completan al correr de nuevo la predicción de riesgo del pipeline."
         )
 
     # --- Riesgo ----------------------------------------------------------
     st.subheader("Dónde está el riesgo")
     bandas_cfg = comun.config()["bandas_riesgo"]
-    limites = ", ".join(f"{b['nombre']} desde {b['desde']:.0%}" for b in bandas_cfg)
+    limites = ", ".join(
+        f"{b['nombre']} desde {ui.formatear_porcentaje(b['desde'])}" for b in bandas_cfg
+    )
 
     col_bandas, col_hist = st.columns(2)
-    with col_bandas:
+    with ui.contenedor("bandas", col_bandas):
         conteo = (
             df["banda_riesgo"]
             .value_counts()
@@ -109,8 +118,12 @@ if comun.gold_disponible():
             .reset_index(name="clientes")
         )
         conteo["proporcion"] = conteo["clientes"] / conteo["clientes"].sum()
+        conteo["proporcion_texto"] = conteo["proporcion"].map(
+            lambda p: ui.formatear_porcentaje(p, 1)
+        )
         conteo["etiqueta"] = conteo.apply(
-            lambda f: f"{int(f['clientes'])} ({f['proporcion']:.0%})", axis=1
+            lambda f: f"{int(f['clientes'])} ({ui.formatear_porcentaje(f['proporcion'])})",
+            axis=1,
         )
         base = alt.Chart(conteo).encode(
             y=alt.Y("banda:N", sort=comun.ORDEN_BANDAS, title=None),
@@ -128,7 +141,7 @@ if comun.gold_disponible():
             tooltip=[
                 alt.Tooltip("banda:N", title="Banda"),
                 alt.Tooltip("clientes:Q", title="Clientes"),
-                alt.Tooltip("proporcion:Q", title="Proporción", format=".1%"),
+                alt.Tooltip("proporcion_texto:N", title="Proporción"),
             ],
         )
         etiquetas = base.mark_text(align="left", dx=6, color="#3d3d3a").encode(
@@ -137,9 +150,9 @@ if comun.gold_disponible():
         st.altair_chart(
             (barras + etiquetas).properties(height=200), use_container_width=True
         )
-        st.caption(f"Bandas definidas en config/dashboard.yaml: {limites}.")
+        st.caption(f"Bandas de riesgo: {limites}.")
 
-    with col_hist:
+    with ui.contenedor("distribucion", col_hist):
         hist = (
             alt.Chart(df.dropna(subset=["probabilidad_impago"]))
             .mark_bar(color=comun.AZUL, cornerRadiusTopLeft=2, cornerRadiusTopRight=2)
@@ -172,6 +185,10 @@ if comun.gold_disponible():
         .sort_values("probabilidad_media", ascending=False)
     )
     segmento["categoria"] = segmento["categoria"].map(comun.nombre_categoria)
+    segmento["probabilidad_texto"] = segmento["probabilidad_media"].map(
+        lambda p: ui.formatear_porcentaje(p, 1)
+    )
+    segmento["ahorro_texto"] = segmento["ahorro_mediano"].map(ui.formatear_mxn)
     segmento_chart = (
         alt.Chart(segmento)
         .mark_bar(color=comun.AZUL, cornerRadiusEnd=4)
@@ -187,8 +204,10 @@ if comun.gold_disponible():
             tooltip=[
                 alt.Tooltip("categoria:N", title="Categoría"),
                 alt.Tooltip("clientes:Q", title="Clientes"),
-                alt.Tooltip("probabilidad_media:Q", title="Prob. media", format=".1%"),
-                alt.Tooltip("ahorro_mediano:Q", title="Ahorro mediano", format=",.0f"),
+                alt.Tooltip(
+                    "probabilidad_texto:N", title=ui.nombre_kpi("probabilidad_media")
+                ),
+                alt.Tooltip("ahorro_texto:N", title="Capacidad de ahorro mediana"),
             ],
         )
         .properties(height=alt.Step(26))
@@ -209,6 +228,7 @@ if comun.gold_disponible():
         var_name="tipo",
         value_name="monto",
     )
+    largo["monto_texto"] = largo["monto"].map(ui.formatear_mxn)
     lineas = (
         alt.Chart(largo)
         .mark_line(strokeWidth=2, point=alt.OverlayMarkDef(size=60, filled=True))
@@ -225,7 +245,7 @@ if comun.gold_disponible():
             tooltip=[
                 alt.Tooltip("mes_nombre:N", title="Mes"),
                 alt.Tooltip("tipo:N", title="Tipo"),
-                alt.Tooltip("monto:Q", title="Monto", format="$,.0f"),
+                alt.Tooltip("monto_texto:N", title="Monto"),
             ],
         )
         .properties(height=260)
@@ -256,31 +276,18 @@ if comun.gold_disponible():
         ]
         .reset_index(drop=True)
     )
+    vista, columnas = ui.preparar_tabla(tabla)
+    columnas["cliente_id"] = "Cliente"
+    columnas["probabilidad_impago"] = ui.columna_porcentaje(
+        ui.nombre_kpi("probabilidad_impago"), 1, barra=True
+    )
     seleccion = st.dataframe(
-        tabla,
+        vista,
         hide_index=True,
         use_container_width=True,
         on_select="rerun",
         selection_mode="single-row",
-        column_config={
-            "cliente_id": "Cliente",
-            "banda_riesgo": "Banda",
-            "probabilidad_impago": st.column_config.ProgressColumn(
-                "Prob. de impago", min_value=0.0, max_value=1.0, format="percent"
-            ),
-            "ingreso_mensual_promedio": st.column_config.NumberColumn(
-                "Ingreso mensual (MXN)", format="%,.0f"
-            ),
-            "capacidad_ahorro": st.column_config.NumberColumn(
-                "Capacidad de ahorro (MXN)", format="%,.0f"
-            ),
-            "ratio_endeudamiento": st.column_config.NumberColumn(
-                "Deuda / ingreso", format="%.2f"
-            ),
-            "uso_linea_credito": st.column_config.NumberColumn(
-                "Uso de línea", format="percent"
-            ),
-        },
+        column_config=columnas,
     )
     filas = seleccion.selection.rows if seleccion else []
     if filas:
@@ -288,8 +295,9 @@ if comun.gold_disponible():
         st.switch_page(st.session_state["pagina_cliente"])
 
     with st.expander("Ver todos los clientes"):
+        vista, columnas = ui.preparar_tabla(
+            df.drop(columns=["fecha_calculo"], errors="ignore")
+        )
         st.dataframe(
-            df.drop(columns=["fecha_calculo"], errors="ignore"),
-            hide_index=True,
-            use_container_width=True,
+            vista, hide_index=True, use_container_width=True, column_config=columnas
         )

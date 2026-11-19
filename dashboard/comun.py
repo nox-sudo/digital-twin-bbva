@@ -1,8 +1,8 @@
 """
 dashboard/comun.py
 
-Piezas compartidas por las tres paginas: configuracion, carga de datos
-con cache, formato de cifras y la paleta de graficas.
+Piezas compartidas por las paginas: configuracion, carga de datos con
+cache, nombres de categorias y meses, y la paleta de graficas.
 
 La cache se invalida sola cuando cambia Gold: cada funcion recibe la
 fecha de modificacion del archivo DuckDB como argumento, asi que una
@@ -20,7 +20,7 @@ RAIZ = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(RAIZ))
 
 from dashboard import datos  # noqa: E402
-from src.common.formato import formato_mxn as _formato_mxn  # noqa: E402
+from dashboard import ui  # noqa: E402
 
 # Paleta. Dos series (entradas y salidas) usan los dos primeros colores
 # categoricos; las bandas de riesgo usan colores de estado, siempre con su
@@ -28,12 +28,9 @@ from src.common.formato import formato_mxn as _formato_mxn  # noqa: E402
 AZUL = "#2a78d6"
 NARANJA = "#eb6834"
 AQUA = "#1baf7a"
-COLOR_BANDA = {
-    "bajo": "#0ca30c",
-    "medio": "#fab219",
-    "alto": "#d03b3b",
-    "sin score": "#9a9a96",
-}
+# Los mismos colores del semaforo de dashboard/ui.py, para que una banda se
+# vea igual en la grafica y en la pastilla de riesgo.
+COLOR_BANDA = {banda: colores["punto"] for banda, colores in ui.SEMAFORO.items()}
 ORDEN_BANDAS = ["bajo", "medio", "alto", "sin score"]
 
 # Nombres para mostrar de las categorias de los datos (generador y
@@ -115,28 +112,16 @@ def salidas_categoria(version: float, cliente_id: str) -> pd.DataFrame:
 
 
 def gold_disponible() -> bool:
-    """Si Gold no existe, cada pagina muestra como generarlo en vez de un
-    error de Python."""
+    """Si Gold no existe, cada pagina lo dice en lenguaje humano (con la
+    instruccion para generarlo solo al admin) en vez de un error de Python."""
     if Path(config()["gold_duckdb"]).exists():
         return True
-    st.warning(
-        "Todavía no hay datos en Gold. Corre el pipeline completo "
-        "(`./demo.sh` o `uv run python main.py --help`) y recarga esta página."
-    )
+    ui.sin_datos_de_gold()
     return False
 
 
-# Unico formato de moneda del dashboard y del asistente. La funcion vive en
-# src/common/formato.py (sin Streamlit) para que la usen tambien el asistente
-# y la escalera financiera; aqui se reexporta. Estilo "admin" ("$20,407 MXN")
-# en las vistas de este dashboard; "cliente" ("$20,407") en texto natural.
-formato_mxn = _formato_mxn
-
-
-def porcentaje(valor: float | None, decimales: int = 0) -> str:
-    if valor is None or pd.isna(valor):
-        return "sin dato"
-    return f"{valor * 100:.{decimales}f} %"
+# El formato de cifras de las vistas vive en dashboard/ui.py
+# (formatear_mxn, formatear_porcentaje).
 
 
 def nombre_mes(mes: str) -> str:

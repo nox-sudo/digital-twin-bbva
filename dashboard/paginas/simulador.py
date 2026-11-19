@@ -10,7 +10,7 @@ import pandas as pd
 import streamlit as st
 import yaml
 
-from dashboard import acceso, comun
+from dashboard import acceso, comun, ui
 from src.common.mercado import cargar_mercado, precio_minimo_vivienda
 from src.simulacion import montecarlo as mc
 from src.simulacion.supuestos import cargar_simulacion
@@ -160,49 +160,56 @@ if comun.gold_disponible():
     proporcion = (
         hipoteca.cuota_mensual / r["ingreso_medio"] if r["ingreso_medio"] else None
     )
-    m1.metric(
-        "Cuota mensual",
-        comun.formato_mxn(hipoteca.cuota_mensual),
-        help=f"Crédito de {comun.formato_mxn(hipoteca.monto_credito)}. "
-        + (
-            f"Equivale al {proporcion:.0%} de su ingreso laboral medio."
-            if proporcion
-            else ""
+    ui.tarjeta_kpi(
+        ui.nombre_kpi("cuota_mensual"),
+        ui.formatear_mxn(hipoteca.cuota_mensual),
+        ayuda=ui.ayuda(
+            "cuota_mensual",
+            f"Crédito de {ui.formatear_mxn(hipoteca.monto_credito)}."
+            + (
+                f" Equivale al {ui.formatear_porcentaje(proporcion)} de su ingreso "
+                "laboral medio."
+                if proporcion
+                else ""
+            ),
         ),
+        contenedor=m1,
     )
-    m2.metric(
-        "Riesgo sin hipoteca",
-        comun.porcentaje(sin.probabilidad_deficit),
-        help="Probabilidad de saldo negativo en el horizonte solo con su flujo actual "
-        "y el riesgo de perder el ingreso unos meses.",
+    ui.tarjeta_kpi(
+        ui.nombre_kpi("riesgo_sin_hipoteca"),
+        ui.formatear_porcentaje(sin.probabilidad_deficit),
+        ayuda=ui.ayuda("riesgo_sin_hipoteca"),
+        contenedor=m2,
     )
-    m3.metric(
-        "Riesgo con hipoteca",
-        comun.porcentaje(con.probabilidad_deficit),
-        help="Misma simulación, con la cuota (menos la renta que deja de pagar).",
+    ui.tarjeta_kpi(
+        ui.nombre_kpi("riesgo_con_hipoteca"),
+        ui.formatear_porcentaje(con.probabilidad_deficit),
+        ayuda=ui.ayuda("riesgo_con_hipoteca"),
+        contenedor=m3,
     )
     capacidad = r["capacidad"]
-    m4.metric(
-        "Capacidad hipotecaria",
-        comun.formato_mxn(capacidad.monto) if capacidad.aplica else "No aplica",
-        help=(
-            f"Precio máximo de vivienda con el que la hipoteca no sube el riesgo más de "
-            f"{r['incremento'] * 100:.0f} puntos, con este enganche, plazo y tasa."
+    ui.tarjeta_kpi(
+        ui.nombre_kpi("capacidad_hipotecaria"),
+        ui.formatear_mxn(capacidad.monto) if capacidad.aplica else "No aplica",
+        ayuda=(
+            ui.ayuda(
+                "capacidad_hipotecaria",
+                f"Aquí, que no lo suba más de {r['incremento'] * 100:.0f} puntos.",
+            )
             if capacidad.aplica
             else capacidad.detalle
         ),
+        contenedor=m4,
     )
     if not capacidad.aplica:
-        st.caption(
-            "Capacidad hipotecaria: no aplica. " + capacidad.detalle.replace("$", "\\$")
-        )
+        st.caption("Capacidad hipotecaria: no aplica. " + ui.md(capacidad.detalle))
 
     # --- Enganche ------------------------------------------------------------
     meses_enganche = r["meses_enganche"]
     # En st.info y similares, Streamlit interpreta "$...$" como formula; se
     # escapa el signo de pesos.
-    pago_inicial = comun.formato_mxn(hipoteca.pago_inicial).replace("$", "\\$")
-    ahorro = comun.formato_mxn(r["ahorro_medio"]).replace("$", "\\$")
+    pago_inicial = ui.md(ui.formatear_mxn(hipoteca.pago_inicial))
+    ahorro = ui.md(ui.formatear_mxn(r["ahorro_medio"]))
     if meses_enganche == 0:
         st.success(
             f"Enganche y gastos ({pago_inicial}): los cubre con su saldo actual."
@@ -227,6 +234,8 @@ if comun.gold_disponible():
             con.bandas.assign(escenario="con hipoteca"),
         ]
     )
+    for percentil in ("p10", "p50", "p90"):
+        bandas[f"{percentil}_texto"] = bandas[percentil].map(ui.formatear_mxn)
     escala = alt.Scale(
         domain=["sin hipoteca", "con hipoteca"], range=[comun.AZUL, comun.NARANJA]
     )
@@ -247,9 +256,9 @@ if comun.gold_disponible():
         tooltip=[
             alt.Tooltip("escenario:N", title="Escenario"),
             alt.Tooltip("mes:Q", title="Mes"),
-            alt.Tooltip("p10:Q", title="Escenario malo (p10)", format="$,.0f"),
-            alt.Tooltip("p50:Q", title="Mediana", format="$,.0f"),
-            alt.Tooltip("p90:Q", title="Escenario bueno (p90)", format="$,.0f"),
+            alt.Tooltip("p10_texto:N", title="Escenario malo (p10)"),
+            alt.Tooltip("p50_texto:N", title="Mediana"),
+            alt.Tooltip("p90_texto:N", title="Escenario bueno (p90)"),
         ],
     )
     cero = (
@@ -266,7 +275,7 @@ if comun.gold_disponible():
         "Debajo de la línea punteada, el saldo no alcanza."
     )
 
-    saldo_md = comun.formato_mxn(r["saldo"]).replace("$", "\\$")
+    saldo_md = ui.md(ui.formatear_mxn(r["saldo"]))
     with st.expander("Cómo se calcula y qué supone"):
         choque = config_simulacion()["choque_ingreso"]
         st.markdown(f"""
@@ -278,7 +287,7 @@ if comun.gold_disponible():
 - Saldo inicial: la cuenta digital ({saldo_md}). No cuenta CETES ni
   otros activos.
 - Tasa, plazo, enganche y gastos de escrituración son supuestos editables
-  (`config/simulacion.yaml`), no condiciones de un banco.
+  del simulador, no condiciones de un banco.
 - Los meses se eligen de forma independiente: el modelo no reproduce rachas ni
   estacionalidad.
 """)
