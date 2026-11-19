@@ -119,7 +119,8 @@ if comun.gold_disponible():
             color=alt.Color(
                 "tipo:N",
                 scale=alt.Scale(
-                    domain=["entradas", "salidas"], range=[comun.ENTRADAS, comun.SALIDAS]
+                    domain=["entradas", "salidas"],
+                    range=[comun.ENTRADAS, comun.SALIDAS],
                 ),
                 legend=alt.Legend(title=None, orient="top"),
             ),
@@ -170,7 +171,9 @@ if comun.gold_disponible():
             alt.Tooltip("total_texto:N", title="Total"),
             alt.Tooltip("proporcion_texto:N", title="Proporción"),
         ]
-    ) + base.mark_text(align="left", dx=6, color=ui.GRAFICA_TEXTO).encode(text="etiqueta:N")
+    ) + base.mark_text(align="left", dx=6, color=ui.GRAFICA_TEXTO).encode(
+        text="etiqueta:N"
+    )
     st.altair_chart(
         grafica.properties(height=alt.Step(26)), use_container_width=True, theme=None
     )

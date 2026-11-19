@@ -273,7 +273,8 @@ if comun.gold_disponible():
             color=alt.Color(
                 "tipo:N",
                 scale=alt.Scale(
-                    domain=["entradas", "salidas"], range=[comun.ENTRADAS, comun.SALIDAS]
+                    domain=["entradas", "salidas"],
+                    range=[comun.ENTRADAS, comun.SALIDAS],
                 ),
                 legend=alt.Legend(title=None, orient="top"),
             ),

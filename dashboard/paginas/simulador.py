@@ -249,9 +249,7 @@ if comun.gold_disponible():
     )
     for percentil in ("p10", "p50", "p90"):
         bandas[f"{percentil}_texto"] = bandas[percentil].map(ui.formatear_mxn)
-    escala = alt.Scale(
-        domain=["sin hipoteca", "con hipoteca"], range=comun.SERIES[:2]
-    )
+    escala = alt.Scale(domain=["sin hipoteca", "con hipoteca"], range=comun.SERIES[:2])
     base = alt.Chart(bandas).encode(
         x=alt.X(
             "mes:Q", title="Meses desde la firma", scale=alt.Scale(domain=[0, meses])
