@@ -234,7 +234,77 @@ Mientras tanto, la escalera no cuenta en el pago comprometido un prestamo
 cuyo plazo termino antes del mes de corte, aunque Gold le muestre saldo
 (`prestamo_vigente` en `src/gold/escalera.py`).
 
+### Suscripciones y otras categorias de cargo fijo sin escala propia
+
+**Que pasa:** el generador (`generate_synthetic_sources.py`) calcula el
+gasto del mes como `ingreso_base * tasa_gasto * ruido(0.85 a 1.15)` (por
+1.15 en diciembre), lo reparte en 8 a 25 compras con montos aleatorios
+(`_montos_que_suman`) y sortea la categoria de cada compra con la
+preferencia del cliente, `pesos_categoria ~ Dirichlet(0.7)`. Ninguna
+categoria tiene un precio o un tope propio. Con el escenario de deriva, el
+gasto total se multiplica ademas por 1.08^k (`efectos` en
+`src/common/escenario_deriva.py`; 1.71 en el septimo mes). "Suscripciones"
+son compras con comercio Amazon Prime, Disney+, HBO Max o Gimnasio, pero su
+monto hereda la escala del gasto total: un cliente con ingreso alto y
+preferencia alta por esa categoria paga miles de pesos al mes en
+streaming.
+
+**Evidencia** (instancia de la demo, corte abr 2027, medido el 2026-11-17
+sobre `gold_movimientos_mensuales`):
+
+| Medida | Valor |
+|---|---|
+| Suscripciones por cliente, promedio mensual feb a abr 2027: mediana | $576 |
+| p90 / p99 / maximo | $4,292 / $12,005 / $21,112 |
+| Clientes sin suscripciones en esos meses | 96 de 500 |
+| Monto por compra de suscripciones: mediana / maximo | $543 / $14,413 |
+| CLI-000283: promedio feb a abr 2027 | $17,674 al mes (22 % de sus compras; solo 2 clientes tienen mas) |
+| CLI-000283: meses, de oct 2025 a abr 2027 | de $4,165 a $23,427, con 1 a 6 compras al mes; $10,975 en oct 2025, antes de la deriva |
+
+El "+$10,567 al mes" que muestra Mi resumen para CLI-000283 ("Lo que mas
+crecio") compara feb a abr 2027 contra nov 2026 a ene 2027: es sobre todo
+ruido del sorteo de pocas compras grandes, mas el 1.71 de la deriva sobre el
+gasto total. Las cifras no son creibles como suscripciones (una compra de
+$14,413 en un servicio de streaming).
+
+**Posible fix:** dar a las categorias de cargo fijo (suscripciones,
+servicios) un monto mensual por cliente con su propio rango, y repartir el
+resto del gasto entre las categorias variables; o calibrar la proporcion de
+cada rubro con la ENIGH de INEGI (con fuente y fecha, como pide
+`docs/arquitectura.md` para las cifras externas). Cualquiera de los dos
+cambia la instancia y todas las cifras publicadas: se reconstruye con
+`demo.sh` y se vuelve a medir el guion. Pendiente, no antes de la demo.
+
 ## Resueltos
+
+### El asistente daba la probabilidad media como "gastan mas de lo que ganan"
+
+**Que pasaba:** en la instancia de la demo, a "¿Que porcentaje de los
+clientes gasta mas de lo que gana?" con rol admin, `llama3.1:8b` respondia
+"el 15,79% de los clientes gasta mas de lo que gana" en 3 de 3 corridas
+(2026-11-17). La cifra correcta es 56.6 % (57 % redondeado, como en
+Portafolio).
+
+**Causa:** de lectura, no de herramienta. El modelo elegia bien
+`resumen_portafolio` (sin argumentos) y el resultado traia las dos cifras:
+`"proporcion_ahorro_negativo": 0.566` y `"probabilidad_media": 0.1579`. El
+nombre de la llave no dice "gasta mas de lo que gana" y el modelo tomaba la
+otra. La evaluacion del 2026-11-05 dio 9 de 9 en este caso
+(`porcentaje_gasta_mas`, banco v2) porque solo revisaba que el porcentaje
+existiera en el resultado, y 15.79 % existe.
+
+**Arreglo:** `resumen_portafolio` devuelve ademas una `lectura` que dice que
+es cada cifra ("Gastan mas de lo que ganan (capacidad de ahorro negativa):
+56.6 % de los clientes. ... Probabilidad media de impago: 15.8 %."), con los
+mismos valores y sin calculos nuevos; es el patron de las demas
+herramientas. Una regla en el prompt del admin se probo antes y fue peor: en
+3 de 3 corridas el modelo dejo de llamar a la herramienta y pidio "el valor
+de la variable proporcion_ahorro_negativo". Despues del arreglo: 56.6 % en 3
+de 3, y las otras preguntas de ejemplo del admin sin cambio (86 en riesgo
+alto, 159 en riesgo medio, $9,796.94, 15.8 %). Nueva revision
+`porcentaje_correcto` en `experimentos/eval_asistente.py`: la respuesta da
+la proporcion de la llave esperada y no la de otra que tambien esta en el
+resultado. Detalle en [evaluacion-asistente.md](evaluacion-asistente.md).
 
 ### Tasa del simulador de hipoteca sin fuente
 

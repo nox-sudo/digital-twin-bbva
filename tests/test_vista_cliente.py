@@ -65,8 +65,9 @@ def test_resumen_mes():
     r = vc.resumen_mes(flujo, nombre_mes)
     assert r["neto"] == -3000 and r["promedio_neto"] == 5000
     assert r["frase"] == (
-        "En dic 2026 te entraron $20,000 y salieron $23,000. Gastaste $3,000 más "
-        "de lo que te entró. En un mes normal te quedan $5,000."
+        "Este mes (dic 2026) te entraron $20,000 y salieron $23,000: gastaste "
+        "$3,000 más de lo que te entró. En promedio, en el mes anterior, te "
+        "quedaban $5,000 al mes."
     )
     assert vc.resumen_mes(flujo.iloc[:0], nombre_mes) is None
 
@@ -293,9 +294,11 @@ def test_los_factores_son_los_shap_del_cliente(vista):
     )
     n = ex.cargar_config()["factores_mostrados"]
     mostrados = [t[2:] for t in textos(at) if t.startswith("- ")]
+    # Las frases son las del modelo; las de KPIs de flujo llevan su periodo.
+    ventana = vista["ventana_meses"]
     assert [m.replace("\\$", "$") for m in mostrados] == [
-        f.frase for f in e.principales(n) if f.sube
-    ] + [f.frase for f in e.principales(n) if not f.sube]
+        vc._con_periodo(f, ventana) for f in e.principales(n) if f.sube
+    ] + [vc._con_periodo(f, ventana) for f in e.principales(n) if not f.sube]
 
 
 def test_sin_tablas_nuevas_ni_modelo(vista):

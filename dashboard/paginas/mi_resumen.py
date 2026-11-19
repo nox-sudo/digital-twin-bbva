@@ -186,6 +186,13 @@ if comun.gold_disponible():
     mes = vc.resumen_mes(flujo_cliente, comun.nombre_mes)
 
     # --- ¿Como voy? -------------------------------------------------------
+    # Autonomia: saldo entre el deficit promedio de la ventana de 12 meses
+    # (capacidad de ahorro negativa), la misma cifra del KPI y de la
+    # explicacion del riesgo. Sin deficit no se muestra.
+    ventana = cfg["ventana_meses"]
+    autonomia = vc.autonomia_meses(
+        fila["saldo_liquido_disponible"], fila["capacidad_ahorro"]
+    )
     ui.tarjeta_heroe(
         ui.nombre_kpi("saldo_liquido_disponible", "cliente"),
         ui.formatear_mxn(fila["saldo_liquido_disponible"]),
@@ -194,12 +201,17 @@ if comun.gold_disponible():
             if mes
             else "Saldo de tu cuenta al último corte"
         ),
+        vc.frase_autonomia(autonomia, ventana),
     )
     st.write("")
     t1, t2, t3 = st.columns(3)
     gasto = vc.comparacion_gasto(flujo_cliente)
     ui.tarjeta(
-        "Gastaste este mes",
+        (
+            f"Gastaste este mes ({comun.nombre_mes(mes['mes'])})"
+            if mes
+            else "Gastaste este mes"
+        ),
         ui.formatear_mxn(gasto["salidas"]) if gasto else "Sin movimientos",
         gasto["frase"] if gasto else None,
         contenedor=t1,
@@ -223,18 +235,29 @@ if comun.gold_disponible():
     cuentas = creditos(version, cliente_id)
     e = escalera(version, cliente_id) if cuentas is not None else None
     riesgo_flujo = riesgo_flujo_actual(version, cliente_id)
+    exp = explicacion(version, cliente_id)
+    n_factores = ex.cargar_config()["factores_mostrados"]
+    riesgo = vc.resumen_riesgo(
+        banda, exp if isinstance(exp, ex.Explicacion) else None, n_factores, ventana
+    )
     with ui.contenedor("siguiente-paso"):
         st.markdown("**:material/flag: Tu siguiente paso**")
-        st.markdown(
-            md(
-                vc.siguiente_paso(
-                    esc.NOMBRES[e.paso_actual] if e else None,
-                    e.lectura if e else None,
-                    riesgo_flujo[0] if riesgo_flujo else None,
-                    riesgo_flujo[1] if riesgo_flujo else 0,
-                )
-            )
+        parrafos = vc.siguiente_paso_priorizado(
+            banda,
+            fila["probabilidad_impago"],
+            fila["saldo_liquido_disponible"],
+            fila["capacidad_ahorro"],
+            ventana,
+            esc.NOMBRES[e.paso_actual] if e else None,
+            e.lectura if e else None,
+            riesgo_flujo[0] if riesgo_flujo else None,
+            riesgo_flujo[1] if riesgo_flujo else 0,
+            riesgo["suben"][0] if riesgo["suben"] else None,
         )
+        # Con prioridad, el primer parrafo (lo urgente) va en negritas.
+        for i, parrafo in enumerate(parrafos):
+            texto = md(parrafo)
+            st.markdown(f"**{texto}**" if i == 0 and len(parrafos) > 1 else texto)
 
     st.subheader("El detalle")
     izquierda, derecha = st.columns(2, gap="large")
@@ -364,11 +387,6 @@ if comun.gold_disponible():
     # --- Tu riesgo, explicado --------------------------------------------------
     with ui.contenedor("riesgo"):
         st.subheader("Tu riesgo, explicado")
-        exp = explicacion(version, cliente_id)
-        n = ex.cargar_config()["factores_mostrados"]
-        riesgo = vc.resumen_riesgo(
-            fila["banda_riesgo"], exp if isinstance(exp, ex.Explicacion) else None, n
-        )
         st.markdown(f"**{riesgo['frase']}**")
         if isinstance(exp, str):
             st.caption(f"Por qué: {exp}")
@@ -387,9 +405,7 @@ if comun.gold_disponible():
                 f"{horizonte_modelo()} meses: "
                 f"{ui.formatear_porcentaje(fila['probabilidad_impago'], 1)}. Es una "
                 "estimación, no una certeza. Estos son los datos que más pesan en tu "
-                "caso comparado con un cliente típico; los montos son promedios de "
-                f"los últimos {cfg['ventana_meses']} meses, salvo donde se dice otro "
-                "periodo."
+                "caso comparado con un cliente típico."
             )
 
     # --- ¿Me alcanza para...? --------------------------------------------------

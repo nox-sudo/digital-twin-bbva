@@ -301,8 +301,9 @@ def test_el_asistente_no_muestra_nombres_de_herramientas(vistas, monkeypatch, us
     [
         (CLIENTE, "¿En qué categoría gasto más?"),
         (ADMIN, "¿Cuántos clientes están en riesgo alto?"),
+        (ADMIN, "¿Qué porcentaje de los clientes gasta más de lo que gana?"),
     ],
-    ids=["cliente", "admin"],
+    ids=["cliente", "admin", "admin-porcentaje"],
 )
 def test_ejemplos_del_asistente_por_rol(vistas, usuario, ejemplo):
     at = correr(PAGINAS / "asistente.py", usuario, cliente_id="CLI-1")
@@ -357,7 +358,9 @@ def test_comparacion_gasto():
         {"mes": ["2027-01", "2027-02", "2027-03"], "salidas": [100.0, 100.0, 88.0]}
     )
     r = vc.comparacion_gasto(flujo)
-    assert r["salidas"] == 88.0 and r["frase"] == "12 % menos que en un mes normal."
+    assert r["salidas"] == 88.0 and r["frase"] == (
+        "12 % menos que tu promedio de los 2 meses anteriores."
+    )
     assert vc.comparacion_gasto(flujo.iloc[0:0]) is None
 
 
@@ -393,3 +396,102 @@ def test_portafolio_lista_a_quien_atender(vistas):
     # Primero el de mayor riesgo (CLI-2, 62 %), con su banda escrita.
     assert html.index("CLI-2") < html.index("CLI-1")
     assert "Riesgo alto · 62.0 %" in html
+
+
+# --- Prioridad del siguiente paso y autonomia -----------------------------------
+
+
+def test_autonomia_de_saldo():
+    from dashboard import vista_cliente as vc
+
+    # CLI-000283 en la instancia de la demo: saldo y capacidad de ahorro (12 m).
+    meses = vc.autonomia_meses(15215.70, -27030.03)
+    assert meses == pytest.approx(0.563, abs=1e-3)
+    assert vc.frase_autonomia(meses, 12) == (
+        "A tu ritmo de los últimos 12 meses, tu saldo alcanza para menos de 1 mes."
+    )
+    assert vc.texto_autonomia(1.9) == "1 mes" and vc.texto_autonomia(4.2) == "4 meses"
+    assert vc.autonomia_meses(30000, 6000) is None, "sin deficit no hay autonomia"
+    assert vc.frase_autonomia(None, 12) is None
+    assert vc.autonomia_meses(0, -100) == 0.0
+
+
+ESCALERA = ("Pagos de deuda bajo control", "Tus pagos de deuda son $25,513 al mes.")
+
+
+def test_siguiente_paso_con_riesgo_alto_y_deficit():
+    from dashboard import vista_cliente as vc
+
+    argumentos = ("alto", 0.5974, 15215.70, -27030.03, 12, *ESCALERA, 1.0, 36)
+    parrafos = vc.siguiente_paso_priorizado(*argumentos)
+    assert parrafos[0] == (
+        "Lo primero: en promedio, en los últimos 12 meses, gastas $27,030 más de lo "
+        "que te entra al mes. A ese ritmo, tu saldo de $15,216 alcanza para menos de "
+        "1 mes. Además, tu riesgo de atrasarte en tus pagos es alto (59.7 %)."
+    )
+    assert parrafos[1].startswith(
+        "Tu paso en la escalera: pagos de deuda bajo control."
+    )
+    assert "100 de cada 100" in parrafos[2]
+    assert vc.siguiente_paso_priorizado(*argumentos) == parrafos, "reproducible"
+
+
+def test_siguiente_paso_deficit_sin_riesgo_alto():
+    from dashboard import vista_cliente as vc
+
+    parrafos = vc.siguiente_paso_priorizado(
+        "medio", 0.2, 5000.0, -2500.0, 12, *ESCALERA, 0.3, 36
+    )
+    assert parrafos[0].startswith("Lo primero: en promedio")
+    assert "alcanza para 2 meses" in parrafos[0] and "alto" not in parrafos[0]
+
+
+def test_siguiente_paso_riesgo_alto_sin_deficit():
+    from dashboard import vista_cliente as vc
+
+    parrafos = vc.siguiente_paso_priorizado(
+        "alto",
+        0.41,
+        50000.0,
+        1200.0,
+        12,
+        *ESCALERA,
+        0.1,
+        36,
+        "Usas el 90 % de tu tarjeta",
+    )
+    assert parrafos[0] == (
+        "Lo primero: tu riesgo de atrasarte en tus pagos es alto (41.0 %). Lo que más "
+        "lo sube: usas el 90 % de tu tarjeta."
+    )
+
+
+def test_siguiente_paso_cliente_sano_queda_igual():
+    from dashboard import vista_cliente as vc
+
+    # Riesgo bajo y sin deficit: el mismo texto de siempre.
+    parrafos = vc.siguiente_paso_priorizado(
+        "bajo", 0.05, 40000.0, 11313.0, 12, *ESCALERA, 0.0, 36
+    )
+    assert parrafos == [vc.siguiente_paso(*ESCALERA, 0.0, 36)]
+    assert parrafos[0].startswith("Tu meta ahora:")
+    # Deficit con saldo para 3 meses o mas: tampoco aplica la prioridad.
+    holgado = vc.siguiente_paso_priorizado(
+        "bajo", 0.05, 9000.0, -3000.0, 12, *ESCALERA, 0.0, 36
+    )
+    assert holgado == [vc.siguiente_paso(*ESCALERA, 0.0, 36)]
+
+
+@pytest.mark.parametrize(
+    "cliente, prioridad",
+    [("CLI-2", True), ("CLI-1", False)],
+    ids=["riesgo-alto", "sano"],
+)
+def test_mi_resumen_prioriza_segun_el_cliente(vistas, cliente, prioridad):
+    at = correr(PAGINAS / "mi_resumen.py", Usuario(cliente, "cliente"))
+    assert not at.exception, [e.value for e in at.exception]
+    texto = "\n".join(str(m.value) for m in at.markdown).replace("\\$", "$")
+    assert ("Lo primero:" in texto) is prioridad
+    assert ("Tu paso en la escalera:" in texto) is prioridad
+    # Autonomia en la tarjeta heroe solo con deficit (CLI-2: -$3,000 al mes).
+    assert ("tu saldo alcanza para" in texto) is prioridad

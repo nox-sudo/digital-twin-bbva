@@ -525,3 +525,84 @@ def test_las_fuentes_esperadas_existen():
     for caso in banco["casos"]:
         for archivo in caso.get("fuente_esperada", []):
             assert archivo in archivos, (caso["id"], archivo)
+
+
+@pytest.mark.parametrize(
+    "texto, esperado",
+    [
+        ("Gastas más en pago de deuda: $259,961 en el año.", True),
+        ("El cliente gasta más en pago de deuda.", False),
+        ("la cliente ahorra menos que el resto.", False),
+        ("EL CLIENTE CLI-000001 tiene riesgo alto.", False),
+        ("Ahorras menos que el resto de los clientes.", True),
+        ("Comparado con otros clientes, gastas más.", True),
+    ],
+)
+def test_segunda_persona_en_rol_cliente(texto, esperado):
+    revision = calificar({"pregunta": "¿En qué gasto más?"}, texto)
+    assert revision["segunda_persona"] is esperado
+
+
+def test_segunda_persona_no_aplica_al_admin():
+    revision = calificar(
+        {"pregunta": "¿Cuántos clientes hay?"},
+        "El cliente CLI-000001 gasta más.",
+        rol="admin",
+    )
+    assert "segunda_persona" not in revision
+
+
+RESUMEN = {"proporcion_ahorro_negativo": 0.566, "probabilidad_media": 0.1579}
+CASO_PORCENTAJE = {
+    "pregunta": "¿Qué porcentaje de los clientes gasta más de lo que gana?",
+    "porcentaje_de": "proporcion_ahorro_negativo",
+    "no_porcentaje_de": "probabilidad_media",
+}
+
+
+@pytest.mark.parametrize(
+    "texto, esperado",
+    [
+        ("El 56.6% de los clientes gasta más de lo que gana.", True),
+        ("El 57 % de los clientes gasta más de lo que gana.", True),
+        ("El 56,6 % de los clientes gasta más de lo que gana.", True),
+        # La respuesta de llama3.1:8b en la instancia de la demo.
+        (
+            "Según el resumen del portafolio, el 15,79% de los clientes gasta más.",
+            False,
+        ),
+        ("El 56.6 % gasta más; la probabilidad media de impago es 15.8 %.", False),
+        ("No tengo ese dato.", False),
+    ],
+)
+def test_porcentaje_correcto(texto, esperado):
+    revision = calificar(CASO_PORCENTAJE, texto, resultados=[RESUMEN])
+    assert revision["porcentaje_correcto"] is esperado
+    # La cifra equivocada si esta en el resultado: la revision de siempre no
+    # la ve como inventada.
+    assert revision["conteos_y_porcentajes_sin_inventar"] is True
+
+
+def test_porcentaje_correcto_sin_la_herramienta():
+    revision = calificar(CASO_PORCENTAJE, "El 57 % gasta más.", resultados=[])
+    assert revision["porcentaje_correcto"] is False
+
+
+def test_porcentaje_correcto_solo_si_el_caso_lo_pide():
+    revision = calificar({"pregunta": "x"}, "El 15.8 %.", resultados=[RESUMEN])
+    assert "porcentaje_correcto" not in revision
+
+
+def test_el_banco_v2_revisa_el_porcentaje_que_gasta_mas():
+    import yaml
+
+    banco = yaml.safe_load(
+        (
+            Path(__file__).resolve().parents[1]
+            / "experimentos"
+            / "eval_asistente_v2.yaml"
+        ).read_text()
+    )
+    caso = next(c for c in banco["casos"] if c["id"] == "porcentaje_gasta_mas")
+    assert caso["porcentaje_de"] == "proporcion_ahorro_negativo"
+    assert caso["no_porcentaje_de"] == "probabilidad_media"

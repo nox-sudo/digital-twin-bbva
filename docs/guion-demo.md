@@ -99,32 +99,50 @@ Entrar como `admin` (contraseña en `data/credenciales_prueba.md`): ve todas
 las vistas. Para mostrar lo que ve un cliente, cerrar sesión y entrar con su
 `cliente_id` (por ejemplo CLI-000283), o abrir "Vista del cliente" como admin.
 
+Interfaz desde los PRs de UX (base visual, asistente, Mi resumen, login;
+nov 2026), verificada el 2026-11-17 sobre esta instancia salvo donde dice
+pendiente:
+
+- El login dice que el usuario de un cliente es su número de cliente. Si
+  falla, el mensaje es el mismo para usuario o contraseña.
+- Arriba de cada vista se lee quién está dentro ("Sesión: Administrador" o
+  "Sesión: Cliente · CLI-000283"); en la barra lateral está "Cerrar sesión".
+- Tarjetas, tablas y tooltips muestran los montos con centavos y "MXN"
+  ($9,796.94 MXN); las frases para el cliente, sin centavos ($27,030). Las
+  cifras de este guion van redondeadas como en las frases.
+
 ### 1. Portafolio (2 min)
 
 Pregunta que responde: a quien tengo que mirar.
 
-- Cabecera contra la base: ingreso mensual mediano $9,797 (-$1,675), 57 %
-  gastan mas de lo que ganan (+37.0 pts).
+- Cabecera contra la base: ingreso mensual mediano $9,796.94 MXN
+  (-$1,675.48 MXN vs. base), 57 % gastan mas de lo que ganan (+37.0 pts).
 - La probabilidad media (15.8 %, -1.3 pts) no sube: el modelo se reentrena
   en cada corrida y la etiqueta se calibra a una tasa media de 15 %. La nota
   bajo las metricas lo explica; el deterioro se lee en las otras dos cifras
   y en Observabilidad.
+- "Clientes a atender primero", bajo la nota: los 5 de mayor probabilidad
+  (CLI-000060 68.1 %, CLI-000059 64.1 %, CLI-000209 62.3 %, CLI-000283
+  59.7 %, CLI-000151 57.6 %), cada uno con "Ver cliente".
 - Bandas: 255 bajo (51 %), 159 medio (32 %), 86 alto (17 %).
-- Tabla "Clientes a revisar": seleccionar una fila abre al cliente.
+- Tabla "Clientes a revisar", al final, igual que antes: seleccionar una fila
+  abre al cliente.
 - En el Asistente, toda pregunta del portafolio ("¿Cuántos clientes están
   en riesgo alto?") se hace como `admin`: es el unico rol con
-  `resumen_portafolio`. Con el usuario de un cliente el asistente contesta
-  que no da cifras de todo el banco y ofrece comparar al cliente con los
-  demas.
+  `resumen_portafolio`; es uno de los botones de ejemplo del admin. Con el
+  usuario de un cliente el asistente contesta que no da cifras de todo el
+  banco y ofrece compararlo con los demas.
 
 ### 2. Cliente (2 min)
 
 Ejemplo de riesgo alto: **CLI-000283**.
 
-- Probabilidad de impago 59.7 %. 26 anos, 1.9 anos de antiguedad.
-- Ingreso $55,535 al mes, capacidad de ahorro -$27,030, deuda / ingreso 4.63.
-- Ultimos 12 meses: neto promedio -$26,816 al mes; salidas mayores que
-  entradas en 10 de 12 meses.
+- Pastilla "Riesgo alto" y probabilidad de impago 59.7 %. 26 anos, 1.9 anos
+  de antiguedad.
+- Ingreso $55,535.03 MXN al mes, capacidad de ahorro -$27,030.03 MXN, deuda
+  / ingreso 4.63.
+- Ultimos 12 meses: neto promedio -$26,816.28 MXN al mes; salidas mayores
+  que entradas en 10 de 12 meses.
 - A donde se va el dinero: pago de deuda 26 %, suscripciones 15 %,
   servicios 13 %.
 
@@ -136,8 +154,29 @@ grafica mes a mes muestra los 19 meses de historial.
 El mismo **CLI-000283**, ahora como lo ve el cliente al entrar con su
 usuario: solo sus datos, sin selector de cliente, en frases cortas y en pesos.
 
-- Este mes (abr 2027): le entraron $32,876 y salieron $106,852. En un mes
-  normal gasta $16,658 más de lo que le entra.
+Arriba, la respuesta a "¿cómo voy?":
+
+- Tienes disponible $15,215.70 MXN (saldo al cierre de abr 2027). "A tu
+  ritmo de los últimos 12 meses, tu saldo alcanza para menos de 1 mes":
+  saldo entre la capacidad de ahorro negativa de 12 meses (-$27,030).
+- Tres tarjetas: gastó $106,852.34 MXN este mes (abr 2027), 35 % más que su
+  promedio de los 18 meses anteriores; lo que más creció, suscripciones
+  ($10,567 más al mes que en los 3 meses anteriores, de $7,107 a $17,674;
+  ver [technical-debt.md](technical-debt.md), la cifra no es creíble como
+  suscripciones); nivel de riesgo Alto.
+- Tu siguiente paso: con riesgo alto, o con déficit y saldo para menos de 3
+  meses, primero va eso: "Lo primero: en promedio, en los últimos 12 meses,
+  gastas $27,030 más de lo que te entra al mes. A ese ritmo, tu saldo de
+  $15,216 alcanza para menos de 1 mes. Además, tu riesgo de atrasarte en tus
+  pagos es alto (59.7 %)." Debajo, "Tu paso en la escalera" y el Monte
+  Carlo (100 de cada 100 escenarios). Reglas fijas, sin modelo de lenguaje.
+
+Debajo, "El detalle", en el orden de siempre. Cada cifra de déficit dice su
+periodo:
+
+- Este mes (abr 2027): le entraron $32,876 y salieron $106,852; la
+  diferencia, -$73,976. En promedio, en los 18 meses anteriores, gastaba
+  $16,658 más de lo que le entraba al mes.
 - Quincenas: le llegan unos $16,438 cada quincena; en may 2026 le llegaban
   unos $34,368 (su ingreso bajó 52 %, el escenario de deriva).
 - A dónde se va su dinero (3 meses): pago de deuda 24 %, otros 18 %,
@@ -146,19 +185,27 @@ usuario: solo sus datos, sin selector de cliente, en frases cortas y en pesos.
   Paga $25,513 al mes de deudas, el 70 % de su ingreso de los últimos 3
   meses ($36,665 al mes); para el siguiente paso deberían quedar en $10,999
   o menos. Usa 38 % de su tarjeta.
-- Su riesgo, alto (puntaje 60 %), explicado con sus propios valores SHAP. Lo
-  sube: gasta $27,030 más de lo que le entra al mes y debe 4.6 veces su
-  ingreso de un mes. Lo baja: lleva 1.9 años como cliente.
-- ¿Me alcanza para algo de $15,000? De contado el saldo alcanza ($15,216),
+- Su riesgo, alto, explicado con sus propios valores SHAP ("Tu riesgo
+  estimado de atrasarte en algún pago en los próximos 6 meses: 59.7 %"). Lo
+  sube: gasta $27,030 más de lo que le entra al mes (promedio de los
+  últimos 12 meses) y debe 4.6 veces su ingreso de un mes. Lo baja: lleva
+  1.9 años como cliente.
+- ¿Me alcanza para algo de $15,000? La forma de pago se elige arriba del
+  formulario; el plazo y la tasa solo aparecen con "A crédito". De contado
+  el saldo alcanza ($15,216),
   pero con o sin la compra se queda sin dinero algún mes en 100 de cada 100
   escenarios. A crédito a 12 meses con 45 % anual: $1,631 al mes con IVA
-  sobre intereses.
+  sobre intereses. Pendiente: volver a calcular las dos en pantalla con el
+formulario nuevo (el cálculo no cambió).
 
 La explicación reproduce el score publicado: usa el modelo que lo produjo
 (el del pliegue de la validación cruzada). Contraste: **CLI-000379** (riesgo
 bajo, 5 %): lo baja sobre todo que le quedan $11,313 al mes, su ingreso
 declarado ($40,926 al mes) y su edad (42 años); está en el paso 5 de 6
-(fondo de emergencia completo: su saldo cubre 3.4 meses de gastos).
+(fondo de emergencia completo: su saldo cubre 3.4 meses de gastos). Sin
+déficit y con riesgo bajo, su siguiente paso queda como antes ("Tu meta
+ahora: fondo de emergencia completo...") y la tarjeta de saldo no muestra
+autonomía.
 CLI-000162, el contraste anterior, quedó en 13 % (banda media) tras #80.
 
 ### 4. Simulador de hipoteca (2 min)
@@ -177,7 +224,9 @@ Para CLI-000001 la capacidad no aplica: ni una vivienda social de $214,047
 (el minimo de la Sociedad Hipotecaria Federal) cabe sin subir su riesgo mas
 de 5 puntos.
 
-Cuota mensual $8,471 en ambos (con 11.20 %; era $8,361 con 11 %). Riesgo = escenarios (de 5,000 trayectorias)
+Cuota mensual $8,471 en ambos (con 11.20 %; era $8,361 con 11 %); la
+tarjeta la muestra como $8,471.25 MXN. Pendiente: volver a leer la tabla de
+arriba en pantalla con el formato nuevo (el cálculo no cambió). Riesgo = escenarios (de 5,000 trayectorias)
 en los que el saldo queda negativo en algun mes de los proximos 36. Las
 trayectorias remuestrean los meses del propio cliente mas un choque de
 perdida de ingreso; todos los escenarios usan los mismos numeros
@@ -190,7 +239,10 @@ aleatorios, asi que la diferencia es la hipoteca, no el ruido.
   despausar el DAG y las 7 entregas); ninguna fila a cuarentena.
 - Duracion por corrida en escala logaritmica: una corrida fuera de lo normal
   se ve aunque las demas tarden segundos.
-- Deriva (PSI) contra la referencia congelada de la base:
+- Deriva (PSI) contra la referencia congelada de la base. Los paneles usan
+  nombres en español: "Probabilidad de impago (score)", "Capacidad de
+  ahorro", "Estabilidad del ingreso", "Gasto de los últimos 3 meses",
+  "Ingreso mensual". La tabla de abajo conserva los nombres de columna.
 
 | Corte | Score | capacidad_ahorro | estabilidad_ingreso | gasto_promedio_3_meses | ingreso_mensual_promedio |
 |---|---|---|---|---|---|
@@ -210,8 +262,10 @@ aleatorios, asi que la diferencia es la hipoteca, no el ruido.
 
 Como `admin`, en la pagina "Asistente", una pregunta sobre como se
 resguarda la clave unica de registro de poblacion. Lo que hay que mostrar no es
-la respuesta sino la cita: el asistente usa `buscar_documentacion` y
-termina con la fuente (`archivo § seccion`), no con algo de memoria.
+la respuesta sino la cita: el asistente busca en la documentación y termina
+con la fuente (`archivo § seccion`), no con algo de memoria. La interfaz ya
+no muestra el nombre de la herramienta: debajo de la respuesta sale "Según
+la documentación del proyecto.".
 
 - Fuente esperada: `docs/seguridad.md § ... > Clasificacion de datos por
   capa` (los tres fragmentos que recibe el modelo salen de ahi y del
@@ -220,7 +274,17 @@ termina con la fuente (`archivo § seccion`), no con algo de memoria.
   la que se construyo el gemelo; fuente esperada `docs/seguridad.md § ... > Datos
   personales sinteticos`.
 - **Pendiente de probar en la Mac** con `llama3.1:8b` antes de grabar el
-  clip: que elija la herramienta y cite la fuente.
+  clip: que elija la herramienta y cite la fuente, y que aparezca la línea
+  "Según la documentación del proyecto.".
+
+Botones de ejemplo del Asistente (las ocho se corrieron sobre esta instancia
+el 2026-11-17, ver [evaluacion-asistente.md](evaluacion-asistente.md)):
+cliente, en qué categoría gasta más, qué tan probable es que se atrase,
+qué paso le toca en su escalera y si ahorra más o menos que los demás;
+admin, clientes en riesgo alto, porcentaje que gasta más de lo que gana
+(responde 56.6 %; la tarjeta de Portafolio lo redondea a 57 %), ingreso
+mediano y probabilidad media. Con el usuario de un cliente, el asistente le habla de
+tú ("Gastas más en pagos de deuda...").
 
 Las preguntas se describen aqui sin su redaccion literal a proposito: este
 archivo tambien esta indexado, y una pregunta escrita igual que en la demo

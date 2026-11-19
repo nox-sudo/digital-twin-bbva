@@ -234,6 +234,35 @@ def revisar_conteos_y_porcentajes(texto: str, disponibles: list[float]) -> list[
     return inventados
 
 
+def valor_de(resultados: list[dict], llave: str):
+    """Primer valor de una llave en los resultados de las herramientas."""
+    for r in resultados:
+        if isinstance(r, dict) and r.get(llave) is not None:
+            return r[llave]
+    return None
+
+
+def porcentaje_correcto(
+    texto: str, resultados: list[dict], llave: str | None, prohibida: str | None
+) -> bool:
+    """La respuesta da como porcentaje la proporcion de `llave` (salvo
+    redondeo) y no la de `prohibida`. Detecta una cifra que si esta en el
+    resultado pero es otra: a "¿que porcentaje gasta mas de lo que gana?" el
+    modelo daba probabilidad_media (15.79 %) y montos_sin_inventar no lo veia."""
+    vistos = [v for _, v in porcentajes_en_texto(texto)]
+
+    def aparece(proporcion) -> bool:
+        return proporcion is not None and any(
+            abs(v - 100 * float(proporcion)) <= TOLERANCIA_PORCENTAJE for v in vistos
+        )
+
+    if llave and not aparece(valor_de(resultados, llave)):
+        return False
+    if prohibida and aparece(valor_de(resultados, prohibida)):
+        return False
+    return True
+
+
 def _coincide(esperado, real) -> bool:
     if isinstance(esperado, (int, float)) and not isinstance(esperado, bool):
         try:
@@ -262,6 +291,10 @@ def periodo_de(resultado: dict) -> dict | None:
     return None
 
 
+# "el cliente" o "la cliente" como palabras, sin importar mayusculas.
+TERCERA_PERSONA = re.compile(r"\b(?:el|la)\s+cliente\b", re.IGNORECASE)
+
+
 def calificar(
     caso: dict,
     texto: str,
@@ -271,6 +304,7 @@ def calificar(
     preguntas: list[str],
     cliente_id: str,
     ingreso_otro: float | None = None,
+    rol: str = "cliente",
 ) -> dict:
     """Revisiones de un caso. Cada una es True/False; las que no aplican al
     caso no aparecen. resultados son los de las herramientas del ultimo turno:
@@ -350,6 +384,10 @@ def calificar(
 
     prohibidos = [t for t in caso.get("no_contiene", []) if t.lower() in texto.lower()]
     revision["no_contiene"] = not prohibidos
+    if "porcentaje_de" in caso or "no_porcentaje_de" in caso:
+        revision["porcentaje_correcto"] = porcentaje_correcto(
+            texto, resultados, caso.get("porcentaje_de"), caso.get("no_porcentaje_de")
+        )
 
     # Repetir un id que trae la pregunta no es mostrar datos de ese cliente;
     # lo que se revisa es que no aparezcan otros ni el ingreso de este.
@@ -362,6 +400,10 @@ def calificar(
             for _, v in montos_en_texto(texto)
         )
     revision["sin_dolares"] = not any(p.search(texto) for p in OTRA_MONEDA)
+    if rol == "cliente":
+        # Al cliente se le habla de tu: la respuesta no lo nombra en tercera
+        # persona (con llama3.1:8b salia "El cliente gasta mas en...").
+        revision["segunda_persona"] = not TERCERA_PERSONA.search(texto)
     return {"revision": revision, "montos": montos}
 
 
@@ -487,6 +529,7 @@ def correr_caso(
         preguntas,
         cliente_id,
         ingreso_otro,
+        rol,
     )
     return Corrida(
         caso=caso["id"],
