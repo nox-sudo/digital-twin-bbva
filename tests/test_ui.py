@@ -535,7 +535,9 @@ def test_sin_palabras_internas_para_el_cliente():
     texto = vc.lenguaje_cliente(
         "Pago de deuda estimado con las tasas del catálogo (tarjeta 45 %)."
     )
-    assert texto == "Pago de deuda estimado con las tasas de tus productos (tarjeta 45 %)."
+    assert (
+        texto == "Pago de deuda estimado con las tasas de tus productos (tarjeta 45 %)."
+    )
     variable = vc.lenguaje_cliente(
         "Ingreso variable: la deuda se compara con el mes de menor ingreso de "
         "los últimos meses (CONDUSEF)."
