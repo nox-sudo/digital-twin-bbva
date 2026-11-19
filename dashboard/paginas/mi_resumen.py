@@ -263,24 +263,22 @@ if comun.gold_disponible():
     riesgo = vc.resumen_riesgo(
         banda, exp if isinstance(exp, ex.Explicacion) else None, n_factores, ventana
     )
+    meta = (
+        vc.meta_escalera(e.paso_actual, e.metricas, esc.cargar_config()) if e else None
+    )
+    paso = vc.siguiente_paso_compacto(
+        banda,
+        fila["saldo_liquido_disponible"],
+        fila["capacidad_ahorro"],
+        ventana,
+        esc.NOMBRES[e.paso_actual] if e else None,
+        meta["accion"] if meta else None,
+        riesgo_flujo[0] if riesgo_flujo else None,
+        riesgo_flujo[1] if riesgo_flujo else 0,
+    )
     with ui.contenedor("siguiente-paso"):
-        st.markdown("**:material/flag: Tu siguiente paso**")
-        parrafos = vc.siguiente_paso_priorizado(
-            banda,
-            fila["probabilidad_impago"],
-            fila["saldo_liquido_disponible"],
-            fila["capacidad_ahorro"],
-            ventana,
-            esc.NOMBRES[e.paso_actual] if e else None,
-            e.lectura if e else None,
-            riesgo_flujo[0] if riesgo_flujo else None,
-            riesgo_flujo[1] if riesgo_flujo else 0,
-            riesgo["suben"][0] if riesgo["suben"] else None,
-        )
-        # Con prioridad, el primer parrafo (lo urgente) va en negritas.
-        for i, parrafo in enumerate(parrafos):
-            texto = md(parrafo)
-            st.markdown(f"**{texto}**" if i == 0 and len(parrafos) > 1 else texto)
+        st.caption(":material/flag: Tu siguiente paso")
+        ui.bloque_accion(paso["titular"], paso["accion"], paso["chips"])
 
     st.subheader("El detalle")
     izquierda, derecha = st.columns(2, gap="large")

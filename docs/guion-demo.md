@@ -166,15 +166,15 @@ voy?":
   ($10,567 más al mes que en los 3 meses anteriores, de $7,107 a $17,674;
   ver [technical-debt.md](technical-debt.md), la cifra no es creíble como
   suscripciones); nivel de riesgo Alto.
-- Tu siguiente paso: con riesgo alto, o con déficit y saldo para menos de 3
-  meses, primero va eso: "Lo primero: en promedio, en los últimos 12 meses,
-  gastas $27,030 más de lo que te entra al mes. A ese ritmo, tu saldo de
-  $15,216 alcanza para menos de 1 mes. Además, tu riesgo de atrasarte en tus
-  pagos es alto (59.7 %)." Debajo, "Tu paso en la escalera" y el Monte
-  Carlo: al cliente, 100 de cada 100 escenarios se le dice "es prácticamente
-  seguro que te quedes sin dinero algún mes de los próximos 36" (0 de cada
-  100 sería "muy poco probable"); el conteo exacto queda en el Simulador del
-  admin. Reglas fijas, sin modelo de lenguaje.
+- Tu siguiente paso, en tres piezas: un titular ("Lo urgente: cada mes sale
+  más dinero del que te entra."), una acción ("Baja tus pagos de deuda a
+  $10,999 al mes o menos.", la meta del paso actual de la escalera) y dos
+  chips: "Gastas $27,030 más de lo que te entra al mes (promedio de 12
+  meses)" y "Quedarte sin dinero en 36 meses: prácticamente seguro" (el
+  Monte Carlo da 100 de cada 100; el conteo exacto queda en el Simulador
+  del admin). El titular es urgente si el riesgo es alto o el saldo alcanza
+  para menos de 3 meses; si no, es la meta de la escalera. Reglas fijas, sin
+  modelo de lenguaje.
 
 Debajo, "El detalle", en el orden de siempre. Cada cifra de déficit dice su
 periodo:

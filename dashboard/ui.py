@@ -309,6 +309,11 @@ CSS = f"""
 .gd-heroe .gd-detalle {{ color: {TURQUESA_CLARO}; font-size: 1rem; }}
 .gd-heroe .gd-nota {{ color: #ffffff; font-size: 1rem; font-weight: 600;
   margin-top: 8px; }}
+.gd-titular {{ font-size: 1.2rem; font-weight: 600; color: {TEXTO};
+  margin: 2px 0 6px; }}
+.gd-chips {{ display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }}
+.gd-chip {{ background: {FONDO_2}; color: {TEXTO}; border-radius: 999px;
+  padding: 4px 12px; font-size: 0.9rem; }}
 .gd-semaforo {{
   display: inline-flex; align-items: center; gap: 8px;
   border-radius: 999px; padding: 4px 12px; font-weight: 600; font-size: 0.95rem;
@@ -438,6 +443,22 @@ def sesion(usuario, al_salir) -> None:
         ):
             al_salir()
             st.rerun()
+
+
+def bloque_accion(titular: str, accion: str | None, chips: list[str]) -> None:
+    """Un titular de una frase, una accion y hasta dos chips (etiquetas
+    cortas con una cifra). Sin parrafos largos ni negritas en todo el
+    bloque."""
+    partes = [f"<div class='gd-titular'>{_texto(titular)}</div>"]
+    if accion:
+        partes.append(f"<div>{_texto(accion)}</div>")
+    if chips:
+        partes.append(
+            "<div class='gd-chips'>"
+            + "".join(f"<span class='gd-chip'>{_texto(c)}</span>" for c in chips[:2])
+            + "</div>"
+        )
+    st.markdown("".join(partes), unsafe_allow_html=True)
 
 
 def contenedor(nombre: str, en=None):
