@@ -1178,7 +1178,7 @@ historial ya ocupan parte; con 5 hay riesgo de que Ollama recorte en silencio.
 
 ### Pendiente
 
-- Correr el banco v6 con `llama3.1:8b` en la Mac: 10 preguntas de
+- Hecho el 2026-11-18, ver "Banco v6 con el modelo". Correr el banco v6 con `llama3.1:8b` en la Mac: 10 preguntas de
   documentacion y 2 de control, con rol admin. Mide que elija
   `buscar_documentacion` (y no una herramienta de datos), que cite la
   fuente (`cita_fuente`), que la fuente responda (`fuente_esperada`) y que
@@ -1293,6 +1293,48 @@ corrida nueva no se compara uno a uno con las anteriores en este caso.
 
 Con el arreglo, la pregunta vuelve a ser un boton de ejemplo del admin en
 el lugar de `clientes_riesgo_medio`, que la habia sustituido.
+
+## Banco v6 con el modelo (2026-11-18)
+
+Primera corrida del banco v6 con `llama3.1:8b` (temperatura 0) en la Mac,
+sobre la instancia de la demo: 12 casos (10 de documentacion y 2 de
+control), 3 clientes y 3 repeticiones, 108 corridas por rol. Codigo de
+`feature/ux-resumen-orden` (incluye la segunda persona del cliente y la
+lectura de `resumen_portafolio`).
+
+**Rol admin: 77 de 108.** Latencia por respuesta: mediana 6.0 s, p95 13.6 s,
+maxima 16.3 s. Llamadas iguales entre repeticiones en 35 de 36 casos.
+
+| Caso | Aprobadas | Mediana (s) | Falla |
+|---|---|---|---|
+| `doc_proteccion_datos_personales` | 9 / 9 | 8.1 | |
+| `doc_motor_calidad_propio` | 9 / 9 | 6.0 | |
+| `doc_fila_invalida` | 9 / 9 | 5.9 | |
+| `doc_etiqueta_impago` | 2 / 9 | 5.9 | `fuente_esperada` (7): cita `docs/seguridad.md` en vez de las secciones que responden |
+| `doc_psi_umbral` | 9 / 9 | 4.2 | |
+| `doc_levantar_proyecto` | 9 / 9 | 6.0 | |
+| `doc_bootstrap_simulador` | 3 / 9 | 6.0 | `cita_fuente` (6): responde sin citar el archivo |
+| `doc_sal_pii` | 0 / 9 | 1.0 | El modelo contesta "No puedo ayudarte con esa pregunta" sin llamar herramientas |
+| `doc_evaluacion_asistente` | 0 / 9 | 6.8 | No llama `buscar_documentacion` |
+| `doc_riesgos_aceptados` | 9 / 9 | 12.0 | |
+| `control_riesgo_cliente` | 9 / 9 | 4.7 | |
+| `control_clientes_riesgo_alto` | 9 / 9 | 5.2 | |
+
+Ninguna de las 108 respuestas contiene SQL, codigo ni el nombre de una
+herramienta. Las de documentacion citan `archivo § seccion`, como pide el
+prompt. Las dos preguntas de control no van a la documentacion.
+
+**Rol cliente forzado: un cliente nunca recibe la documentacion.** En las
+108 corridas `buscar_documentacion` no se ejecuto ninguna vez (el cliente no
+tiene la herramienta). Aprueban solo 9 (`control_riesgo_cliente`), como se
+espera: los demas casos piden la herramienta del admin. En `doc_psi_umbral`
+6 de 9 respuestas hablan del cliente en tercera persona ("la probabilidad de
+impago del cliente aumenta"); la revision `segunda_persona` las marca.
+
+Pendientes que deja esta corrida: `doc_sal_pii` y `doc_evaluacion_asistente`
+(el modelo no busca), la cita en `doc_bootstrap_simulador` y la fuente de
+`doc_etiqueta_impago`. Resultados en `data/evaluaciones` de la Mac no se
+guardaron: la corrida se escribio fuera de la instancia para no tocarla.
 
 ## Limites de esta evaluacion
 
