@@ -177,18 +177,20 @@ if comun.gold_disponible():
                 alt.Tooltip("proporcion_texto:N", title="Proporción"),
             ],
         )
-        etiquetas = base.mark_text(align="left", dx=6, color="#3d3d3a").encode(
+        etiquetas = base.mark_text(align="left", dx=6, color=ui.GRAFICA_TEXTO).encode(
             text="etiqueta:N"
         )
         st.altair_chart(
-            (barras + etiquetas).properties(height=200), use_container_width=True
+            (barras + etiquetas).properties(height=200),
+            use_container_width=True,
+            theme=None,
         )
         st.caption(f"Bandas de riesgo: {limites}.")
 
     with ui.contenedor("distribucion", col_hist):
         hist = (
             alt.Chart(df.dropna(subset=["probabilidad_impago"]))
-            .mark_bar(color=comun.AZUL, cornerRadiusTopLeft=2, cornerRadiusTopRight=2)
+            .mark_bar(color=comun.SERIE, cornerRadiusTopLeft=2, cornerRadiusTopRight=2)
             .encode(
                 x=alt.X(
                     "probabilidad_impago:Q",
@@ -201,7 +203,7 @@ if comun.gold_disponible():
             )
             .properties(height=200)
         )
-        st.altair_chart(hist, use_container_width=True)
+        st.altair_chart(hist, use_container_width=True, theme=None)
         st.caption("Distribución del score de riesgo, en tramos de 5 puntos.")
 
     # --- Riesgo por segmento ---------------------------------------------
@@ -224,7 +226,7 @@ if comun.gold_disponible():
     segmento["ahorro_texto"] = segmento["ahorro_mediano"].map(ui.formatear_mxn)
     segmento_chart = (
         alt.Chart(segmento)
-        .mark_bar(color=comun.AZUL, cornerRadiusEnd=4)
+        .mark_bar(color=comun.SERIE, cornerRadiusEnd=4)
         .encode(
             y=alt.Y(
                 "categoria:N", sort="-x", title=None, axis=alt.Axis(labelLimit=260)
@@ -245,7 +247,7 @@ if comun.gold_disponible():
         )
         .properties(height=alt.Step(26))
     )
-    st.altair_chart(segmento_chart, use_container_width=True)
+    st.altair_chart(segmento_chart, use_container_width=True, theme=None)
     st.caption(
         "Categoría en la que cada cliente concentra la mayor parte de sus compras. "
         "Con pocos clientes por categoría, las diferencias pequeñas no son concluyentes."
@@ -271,7 +273,7 @@ if comun.gold_disponible():
             color=alt.Color(
                 "tipo:N",
                 scale=alt.Scale(
-                    domain=["entradas", "salidas"], range=[comun.AZUL, comun.NARANJA]
+                    domain=["entradas", "salidas"], range=[comun.ENTRADAS, comun.SALIDAS]
                 ),
                 legend=alt.Legend(title=None, orient="top"),
             ),
@@ -283,7 +285,7 @@ if comun.gold_disponible():
         )
         .properties(height=260)
     )
-    st.altair_chart(lineas, use_container_width=True)
+    st.altair_chart(lineas, use_container_width=True, theme=None)
     st.caption(
         "Entradas: nómina, depósitos y transferencias recibidas. Salidas: compras, "
         "pagos de deuda, retiros y transferencias enviadas."

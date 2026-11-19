@@ -131,7 +131,7 @@ else:
                 "capa:N",
                 scale=alt.Scale(
                     domain=["bronze", "silver", "gold"],
-                    range=[comun.AZUL, comun.NARANJA, comun.AQUA],
+                    range=comun.SERIES,
                 ),
                 legend=alt.Legend(title=None, orient="top"),
             ),
@@ -144,7 +144,7 @@ else:
         )
         .properties(height=260)
     )
-    st.altair_chart(grafica, use_container_width=True)
+    st.altair_chart(grafica, use_container_width=True, theme=None)
     st.caption(
         "Una corrida que tarda mucho más que las anteriores con el mismo volumen "
         "es la primera señal de un problema. Eje en escala logarítmica: cada "
@@ -337,9 +337,9 @@ else:
         linea = (
             alt.Chart()
             .mark_line(
-                color=comun.AZUL,
+                color=comun.SERIE,
                 strokeWidth=2,
-                point=alt.OverlayMarkDef(size=60, filled=True, color=comun.AZUL),
+                point=alt.OverlayMarkDef(size=60, filled=True, color=comun.SERIE),
             )
             .encode(
                 x=alt.X(
@@ -359,7 +359,7 @@ else:
         )
         umbrales = [
             alt.Chart()
-            .mark_rule(color="#9a9a96", strokeDash=[4, 4], strokeWidth=1)
+            .mark_rule(color=ui.GRAFICA_REFERENCIA, strokeDash=[4, 4], strokeWidth=1)
             .encode(y=alt.datum(valor))
             for valor in (cfg_psi.umbral_vigilar, cfg_psi.umbral_reentrenar)
         ]
@@ -381,6 +381,7 @@ else:
                         data=grafica_datos[grafica_datos["panel"] == panel],
                     ).properties(height=170, title=panel),
                     use_container_width=True,
+                    theme=None,
                 )
         st.caption(
             f"Líneas punteadas: {cfg_psi.umbral_vigilar:.2f} (vigilar) y "

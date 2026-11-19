@@ -250,7 +250,7 @@ if comun.gold_disponible():
     for percentil in ("p10", "p50", "p90"):
         bandas[f"{percentil}_texto"] = bandas[percentil].map(ui.formatear_mxn)
     escala = alt.Scale(
-        domain=["sin hipoteca", "con hipoteca"], range=[comun.AZUL, comun.NARANJA]
+        domain=["sin hipoteca", "con hipoteca"], range=comun.SERIES[:2]
     )
     base = alt.Chart(bandas).encode(
         x=alt.X(
@@ -276,11 +276,13 @@ if comun.gold_disponible():
     )
     cero = (
         alt.Chart(pd.DataFrame({"y": [0]}))
-        .mark_rule(color="#6b6b66", strokeDash=[4, 4])
+        .mark_rule(color=ui.GRAFICA_REFERENCIA, strokeDash=[4, 4])
         .encode(y="y:Q")
     )
     st.altair_chart(
-        (area + linea + cero).properties(height=320), use_container_width=True
+        (area + linea + cero).properties(height=320),
+        use_container_width=True,
+        theme=None,
     )
     st.caption(
         "Línea: mediana de las trayectorias. Banda: del escenario malo (percentil 10) al "

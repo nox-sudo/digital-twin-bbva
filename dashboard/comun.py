@@ -22,12 +22,14 @@ sys.path.insert(0, str(RAIZ))
 from dashboard import datos  # noqa: E402
 from dashboard import ui  # noqa: E402
 
-# Paleta. Dos series (entradas y salidas) usan los dos primeros colores
-# categoricos; las bandas de riesgo usan colores de estado, siempre con su
-# etiqueta escrita al lado, nunca solo el color. Una sola serie usa el azul.
-AZUL = "#2a78d6"
-NARANJA = "#eb6834"
-AQUA = "#1baf7a"
+# Paleta de graficas (dashboard/ui.py). Una sola serie va en marino;
+# entradas en turquesa, el color de lo positivo, y salidas en marino. Las
+# bandas de riesgo usan colores de estado, siempre con su etiqueta escrita
+# al lado, nunca solo el color.
+SERIE = ui.GRAFICA_1
+ENTRADAS = ui.GRAFICA_2
+SALIDAS = ui.GRAFICA_1
+SERIES = [ui.GRAFICA_1, ui.GRAFICA_2, ui.GRAFICA_3]
 # Los mismos colores del semaforo de dashboard/ui.py, para que una banda se
 # vea igual en la grafica y en la pastilla de riesgo.
 COLOR_BANDA = {banda: colores["punto"] for banda, colores in ui.SEMAFORO.items()}

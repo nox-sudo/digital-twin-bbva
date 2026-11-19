@@ -119,7 +119,7 @@ if comun.gold_disponible():
             color=alt.Color(
                 "tipo:N",
                 scale=alt.Scale(
-                    domain=["entradas", "salidas"], range=[comun.AZUL, comun.NARANJA]
+                    domain=["entradas", "salidas"], range=[comun.ENTRADAS, comun.SALIDAS]
                 ),
                 legend=alt.Legend(title=None, orient="top"),
             ),
@@ -132,7 +132,7 @@ if comun.gold_disponible():
         )
         .properties(height=280)
     )
-    st.altair_chart(barras, use_container_width=True)
+    st.altair_chart(barras, use_container_width=True, theme=None)
     # El neto se resume sobre la misma ventana que las metricas de arriba;
     # la grafica muestra todo el historial.
     ventana = cfg["ventana_meses"]
@@ -164,14 +164,16 @@ if comun.gold_disponible():
             axis=alt.Axis(format="~s"),
         ),
     )
-    grafica = base.mark_bar(color=comun.AZUL, cornerRadiusEnd=4).encode(
+    grafica = base.mark_bar(color=comun.SERIE, cornerRadiusEnd=4).encode(
         tooltip=[
             alt.Tooltip("categoria:N", title="Categoría"),
             alt.Tooltip("total_texto:N", title="Total"),
             alt.Tooltip("proporcion_texto:N", title="Proporción"),
         ]
-    ) + base.mark_text(align="left", dx=6, color="#3d3d3a").encode(text="etiqueta:N")
-    st.altair_chart(grafica.properties(height=alt.Step(26)), use_container_width=True)
+    ) + base.mark_text(align="left", dx=6, color=ui.GRAFICA_TEXTO).encode(text="etiqueta:N")
+    st.altair_chart(
+        grafica.properties(height=alt.Step(26)), use_container_width=True, theme=None
+    )
     st.caption(
         f"Todas las salidas de los últimos {cfg['ventana_meses']} meses: compras "
         "por categoría, pagos de deuda, retiros en efectivo y transferencias "

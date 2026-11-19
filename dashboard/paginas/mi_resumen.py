@@ -412,7 +412,7 @@ if comun.gold_disponible():
                         "cual:N",
                         # Dos tonos de la paleta azul: las quincenas son la
                         # misma serie partida en dos, no dos cosas distintas.
-                        scale=alt.Scale(range=[ui.MARINO, comun.AZUL]),
+                        scale=alt.Scale(range=[ui.GRAFICA_1, ui.GRAFICA_3]),
                         legend=alt.Legend(title=None, orient="top"),
                     ),
                     tooltip=[
@@ -423,7 +423,7 @@ if comun.gold_disponible():
                 )
                 .properties(height=240, title=titulo_quincenas(lectura_q))
             )
-            st.altair_chart(grafica, width="stretch")
+            st.altair_chart(grafica, width="stretch", theme=None)
 
     izquierda, derecha = st.columns(2, gap="large")
 
@@ -472,12 +472,13 @@ if comun.gold_disponible():
             )
             st.altair_chart(
                 (
-                    base.mark_bar(color=comun.AZUL, cornerRadiusEnd=4)
+                    base.mark_bar(color=comun.SERIE, cornerRadiusEnd=4)
                     + base.mark_text(
                         align="left", dx=6, color=ui.TEXTO_2, fontSize=12
                     ).encode(text="etiqueta:N")
                 ).properties(height=alt.Step(30)),
                 width="stretch",
+                theme=None,
             )
 
     # --- Tu credito ------------------------------------------------------------

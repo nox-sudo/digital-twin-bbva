@@ -39,11 +39,25 @@ WCAG 2.1 medido contra el fondo en que se usa cada color:
 
 Los colores del semaforo (riesgo bajo, medio, alto) van siempre con su
 palabra escrita al lado: el color nunca es la unica señal.
+
+Graficas (tema_graficas, registrado y activo al importar este modulo):
+
+  GRAFICA_1  #13315c  serie unica, salidas, escenario base. 12.4:1.
+  GRAFICA_2  #0e7c7b  segunda serie, entradas. 4.8:1.
+  GRAFICA_3  #5a8ad6  tercera serie, siempre con leyenda. 3.3:1.
+  GRAFICA_TEXTO       #334155  ejes y etiquetas sobre las marcas. 9.9:1.
+  GRAFICA_EJE         #94a3b8  linea de eje y graduaciones.
+  GRAFICA_CUADRICULA  #e2e8f0  cuadricula horizontal.
+  GRAFICA_REFERENCIA  #64748b  lineas punteadas de referencia. 4.5:1.
+
+st.altair_chart aplica por defecto el tema de Streamlit encima del de
+Altair: cada grafica se dibuja con theme=None para que se vea este.
 """
 
 import html
 import math
 
+import altair as alt
 import streamlit as st
 
 from dashboard.kpis import KPIS
@@ -68,6 +82,51 @@ SEMAFORO = {
     "alto": {"punto": "#dc2626", "fondo": "#fee2e2", "texto": "#7f1d1d"},
     "sin score": {"punto": "#64748b", "fondo": "#e2e8f0", "texto": "#1e293b"},
 }
+
+GRAFICA_1 = MARINO
+GRAFICA_2 = TURQUESA
+GRAFICA_3 = "#5a8ad6"
+GRAFICA_TEXTO = "#334155"
+GRAFICA_EJE = "#94a3b8"
+GRAFICA_CUADRICULA = "#e2e8f0"
+GRAFICA_REFERENCIA = "#64748b"
+
+
+@alt.theme.register("gemelo", enable=True)
+def tema_graficas() -> alt.theme.ThemeConfig:
+    """Aspecto comun de las graficas: sin marco, cuadricula solo en el eje
+    de valores, la sans de Streamlit y la paleta GRAFICA_*."""
+    return {
+        "config": {
+            "background": "transparent",
+            "font": '"Source Sans", sans-serif',
+            "view": {"stroke": None},
+            "axis": {
+                "labelColor": GRAFICA_TEXTO,
+                "titleColor": GRAFICA_TEXTO,
+                "labelFontSize": 12,
+                "titleFontSize": 12,
+                "titleFontWeight": "normal",
+                "domainColor": GRAFICA_EJE,
+                "tickColor": GRAFICA_EJE,
+                "gridColor": GRAFICA_CUADRICULA,
+            },
+            "axisX": {"grid": False},
+            "range": {"category": [GRAFICA_1, GRAFICA_2, GRAFICA_3]},
+            "bar": {"color": GRAFICA_1},
+            "line": {"color": GRAFICA_1, "strokeWidth": 2},
+            "area": {"opacity": 0.18},
+            "rule": {"color": GRAFICA_REFERENCIA, "strokeDash": [4, 4]},
+            "text": {"color": GRAFICA_TEXTO, "fontSize": 12},
+            "legend": {
+                "orient": "top",
+                "labelColor": GRAFICA_TEXTO,
+                "labelFontSize": 12,
+                "symbolType": "circle",
+            },
+        }
+    }
+
 
 ICONO_VACIO = ":material/hourglass_empty:"
 ICONO_ERROR = ":material/error:"
