@@ -329,6 +329,15 @@ CSS = f"""
 .gd-escalon.hecho {{ background: #ccfbf1; color: #134e4a; }}
 .gd-escalon.actual {{ background: {MARINO}; color: #ffffff; font-weight: 600; }}
 .gd-escalon.actual .gd-num {{ color: {MARINO}; }}
+.gd-medidor {{ margin: 8px 0 2px; }}
+.gd-medidor-barra {{ position: relative; height: 10px; border-radius: 999px;
+  background: {FONDO_2}; overflow: hidden; }}
+.gd-medidor-relleno {{ position: absolute; left: 0; top: 0; bottom: 0;
+  border-radius: 999px; }}
+.gd-corte {{ position: absolute; top: 0; bottom: 0; width: 2px;
+  background: #ffffff; }}
+.gd-medidor-leyenda {{ font-size: 0.9rem; color: {TEXTO}; margin-top: 4px;
+  font-weight: 600; }}
 .gd-semaforo {{
   display: inline-flex; align-items: center; gap: 8px;
   border-radius: 999px; padding: 4px 12px; font-weight: 600; font-size: 0.95rem;
@@ -355,15 +364,42 @@ def _texto(valor) -> str:
     return html.escape(str(valor)).replace("$", "&#36;")
 
 
-def html_tarjeta(
-    titulo: str, valor: str, detalle: str | None = None, banda: str | None = None
+def html_medidor(
+    probabilidad: float, banda: str, cortes: list[float], leyenda: str
 ) -> str:
-    """Con banda, el valor va como semaforo (color y palabra)."""
+    """Barra de 0 a 100 % con la probabilidad rellena del color de la banda y
+    una marca en cada corte de banda (10 % y 30 %). El porcentaje va escrito
+    al lado: la barra no es la unica señal."""
+    p = max(0.0, min(1.0, float(probabilidad)))
+    color = SEMAFORO.get(banda, SEMAFORO["sin score"])["punto"]
+    marcas = "".join(
+        f"<span class='gd-corte' style='left:{c * 100:.1f}%'></span>" for c in cortes
+    )
+    return (
+        "<div class='gd-medidor' role='img' "
+        f"aria-label='{_texto(leyenda)}'>"
+        f"<div class='gd-medidor-barra'><span class='gd-medidor-relleno' "
+        f"style='width:{p * 100:.1f}%;background:{color}'></span>{marcas}</div>"
+        f"<div class='gd-medidor-leyenda'>{_texto(leyenda)}</div></div>"
+    )
+
+
+def html_tarjeta(
+    titulo: str,
+    valor: str,
+    detalle: str | None = None,
+    banda: str | None = None,
+    extra_html: str | None = None,
+) -> str:
+    """Con banda, el valor va como semaforo (color y palabra). extra_html va
+    entre el valor y el detalle (por ejemplo, un medidor)."""
     cuerpo = html_semaforo(banda, valor) if banda else _texto(valor)
     partes = [
         f"<div class='gd-titulo'>{_texto(titulo)}</div>",
         f"<div class='gd-valor'>{cuerpo}</div>",
     ]
+    if extra_html:
+        partes.append(extra_html)
     if detalle:
         partes.append(f"<div class='gd-detalle'>{_texto(detalle)}</div>")
     return "<div class='gd-tarjeta'>" + "".join(partes) + "</div>"

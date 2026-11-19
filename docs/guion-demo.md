@@ -165,7 +165,9 @@ voy?":
   promedio de los 12 meses anteriores; lo que más creció, suscripciones
   ($10,567 más al mes que en los 3 meses anteriores, de $7,107 a $17,674;
   ver [technical-debt.md](technical-debt.md), la cifra no es creíble como
-  suscripciones); nivel de riesgo Alto.
+  suscripciones); nivel de riesgo Alto, con un medidor: barra en 59.7 %,
+  marcas en los cortes de banda (10 % y 30 %) y "59.7 % de probabilidad en
+  6 meses" escrito debajo.
 - Tu siguiente paso, en tres piezas: un titular ("Lo urgente: cada mes sale
   más dinero del que te entra."), una acción ("Baja tus pagos de deuda a
   $10,999 al mes o menos.", la meta del paso actual de la escalera) y dos
@@ -197,8 +199,8 @@ lugar (tabla en [ux/mi-resumen/fuente-unica.md](ux/mi-resumen/fuente-unica.md)):
   "Para el siguiente paso: Te faltan $14,514 por bajar." Paga $25,512.94 MXN
   al mes de deudas y usa 38 % del límite de su tarjeta; la meta ($10,999 o
   menos) está en "Tu siguiente paso".
-- Su riesgo explicado con sus propios valores SHAP ("Tu riesgo estimado de
-  atrasarte en algún pago en los próximos 6 meses: 59.7 %"). Lo sube: gasta
+- Su riesgo explicado con sus propios valores SHAP; la probabilidad está en
+  el medidor de la tarjeta de riesgo. Lo sube: gasta
   más de lo que le entra cada mes (la cifra está en el chip) y debe 4.6
   veces su ingreso de un mes. Lo baja: lleva 1.9 años como cliente.
 - ¿Me alcanza para algo de $15,000? La forma de pago se elige arriba del
