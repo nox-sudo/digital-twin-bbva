@@ -244,7 +244,7 @@ def test_un_salario_minimo(vista):
     quincena = formato_mxn(SALARIO_MINIMO / 2, estilo="cliente")
     assert f"Te llegan unos {quincena} cada quincena" in texto
     assert "Paso 1 de 6" not in texto  # sin deuda, no se queda en el paso 1
-    assert "Sin tarjeta" in texto
+    assert "No tienes deudas ni tarjeta de crédito." in texto
 
     # 15,000 de contado: con $1,200 de saldo no alcanza.
     at.number_input[0].set_value(15000)
@@ -279,8 +279,9 @@ def test_ingreso_variable(vista):
 
 def test_sin_credito(vista):
     texto = todo(correr(Usuario("CLI-SIN", "cliente")))
-    assert "Sin tarjeta" in texto
-    assert "$0" in texto  # pago de deudas
+    # Sin productos de credito, una frase en lugar de "$0.00 MXN" y "Sin tarjeta".
+    assert "No tienes deudas ni tarjeta de crédito." in texto
+    assert "Sin tarjeta" not in texto and "Pagas de deudas al mes" not in texto
 
 
 def test_los_factores_son_los_shap_del_cliente(vista):
