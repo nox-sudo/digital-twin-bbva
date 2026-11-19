@@ -224,6 +224,46 @@ ahora: fondo de emergencia completo...") y la tarjeta de saldo no muestra
 autonomía.
 CLI-000162, el contraste anterior, quedó en 13 % (banda media) tras #80.
 
+#### Cuatro tipos de cliente (opcional, 2 min)
+
+Para mostrar que Mi resumen se adapta a como le entra el dinero a cada
+cliente, entrar con estos cuatro usuarios (contraseñas en
+`data/credenciales_prueba.md`). La ocupacion sale de Silver; el dashboard no
+la muestra. Verificado el 2026-11-19 sobre esta instancia, con las capturas
+en [ux/perfiles/despues/](ux/perfiles/despues/).
+
+| Cliente | Como le entra el dinero | Saldo | Riesgo | Paso de la escalera |
+|---|---|---|---|---|
+| CLI-000481 | Empleado, nomina | $6,242.27 MXN | Bajo, 1.8 % | 3, fondo de emergencia minimo |
+| CLI-000249 | Estudiante, ingreso irregular | $22,596.14 MXN | Bajo, 2.2 % | 3, fondo de emergencia minimo |
+| CLI-000303 | Comerciante, ingreso variable | $28,799.34 MXN | Medio, 21.2 % | 2, tarjeta bajo control |
+| CLI-000283 | Empresario, ingreso variable | $15,215.70 MXN | Alto, 59.7 % | 1, pagos de deuda bajo control |
+
+- **Con nomina, CLI-000481.** "Te llegan unos $6,405 cada quincena: el 15 y
+  a fin de mes", con la grafica pareja. Siguiente paso: "Junta $11,954 más
+  para cubrir 3 meses de gastos"; le quedan $6,745 al mes y se queda sin
+  dinero en 3 de cada 100 escenarios a 36 meses. Sin tarjeta ni prestamos,
+  "Tu crédito" dice "No tienes deudas ni tarjeta de crédito." y su riesgo lo
+  baja que le queda dinero cada mes, que no tiene deudas y que no usa
+  tarjeta.
+- **Ingreso irregular, CLI-000249.** "Tus ingresos cambian de una quincena a
+  otra: en promedio $3,637 la primera y $8,993 la segunda. En 2 quincenas no
+  te entró nada." Mismo paso que el de nomina, pero le faltan $2,116; le
+  quedan $4,931 al mes.
+- **Ingreso variable con déficit, CLI-000303.** Gasta $2,052 más de lo que
+  le entra al mes, pero su saldo alcanza para 14 meses, así que el titular
+  no es urgente: "Tu meta ahora: tarjeta bajo control." con la acción "Baja
+  el uso de tu tarjeta al 30 % de su límite" (usa 33 %; le faltan 3 puntos).
+  Se queda sin dinero en 53 de cada 100 escenarios. En los últimos 3 meses
+  promedia $3,426 por quincena, 46 % menos que al inicio. Como su ingreso
+  varía, sus deudas se comparan con su mes de menor ingreso (lo dice la nota
+  de "Tu crédito").
+- **Urgente, CLI-000283.** El recorrido de arriba: titular "Lo urgente",
+  saldo para menos de 1 mes.
+
+Lo que cambia entre ellos son las frases y el paso, no la estructura: la
+misma página, en el mismo orden, para los cuatro.
+
 ### 4. Simulador de hipoteca (2 min)
 
 Con los parametros por defecto (vivienda de $900,000, tasa de 11.20 % de
@@ -331,6 +371,12 @@ responde.
   CLI-000001 tiene riesgo medio (19.8 %); en el simulador, sin hipoteca, se
   queda sin dinero algun mes en 41 de cada 100 escenarios a 36 meses y en 7
   de cada 100 a 6 meses, el horizonte del modelo.
+- **Por que el saldo sube el riesgo de CLI-000303 si tiene mas que la
+  mayoria?** Su saldo ($28,799.34 MXN) es mayor que el de 83.6 % de los
+  clientes y aun asi es su primer factor de "Lo que más lo sube". El modelo
+  no tiene restriccion de monotonia sobre el saldo y el efecto depende de
+  las demas variables. Por eso la frase solo dice "Tu saldo disponible", sin
+  "bajo". Pendiente en [technical-debt.md](technical-debt.md).
 - **Por que no sube la probabilidad media?** Ver Portafolio: calibracion a
   tasa fija en cada reentrenamiento.
 - **Los datos son reales?** No: sinteticos, reproducibles con la semilla 42 y
