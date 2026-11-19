@@ -50,10 +50,7 @@ if usuario.rol == "admin":
     # cliente; guarda aqui la referencia a la pagina para no duplicar rutas.
     st.session_state["pagina_cliente"] = paginas["Negocio"][1]
 navegacion = st.navigation(paginas)
-st.sidebar.caption(f"Sesión: {usuario.usuario} ({usuario.rol})")
-if st.sidebar.button("Cerrar sesión"):
-    acceso.cerrar_sesion()
-    st.rerun()
+ui.sesion(usuario, acceso.cerrar_sesion)
 st.sidebar.caption(
     "Gemelo Digital Financiero · Path Data Engineering BBVA × Tecmilenio"
 )
