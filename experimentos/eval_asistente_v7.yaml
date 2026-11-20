@@ -1,0 +1,113 @@
+# experimentos/eval_asistente_v7.yaml
+#
+# Banco de evaluacion del asistente, v7: preguntas nuevas sobre la
+# documentacion del proyecto, para medir sin sesgo la segunda oportunidad y
+# la consulta con la pregunta literal (feature/asistente-segunda-oportunidad).
+# Los dos cambios se ajustaron con fallas del v6, asi que el v6 ya no sirve
+# para medirlos.
+#
+# Escrito el 2026-11-20 y guardado en git antes de correrlo con el modelo:
+# no se usa para ajustar el prompt, las descripciones ni la busqueda.
+# Ninguna pregunta esta en v1 a v6, el sondeo ni
+# experimentos/eval_rag_documentacion.yaml. La fuente esperada de cada caso
+# se tomo de leer la documentacion, no de correr la busqueda.
+#
+# Campos como en el v6. Todos los casos corren con rol admin (categoria
+# documentacion). Tres casos de control: preguntas de datos que el admin hace
+# y que NO van a la documentacion.
+
+version: 7
+clientes:
+  CLI-000283: riesgo alto, empresario, el caso urgente del guion
+  CLI-000303: riesgo medio, comerciante con ingreso variable
+  CLI-000481: riesgo bajo, empleado con nomina, sin credito
+repeticiones: 3
+
+casos:
+  - id: doc_cetes
+    categoria: documentacion
+    pregunta: "¿Qué información guarda la entidad de inversiones en Cetes?"
+    herramientas: [buscar_documentacion]
+    cita_fuente: true
+    fuente_esperada: [docs/diccionario-datos.md]
+  - id: doc_silver_falla
+    categoria: documentacion
+    pregunta: "Si la transformación a Silver falla a la mitad, ¿qué pasa con los datos que ya se escribieron?"
+    herramientas: [buscar_documentacion]
+    cita_fuente: true
+    fuente_esperada: [docs/technical-debt.md, README.md]
+  - id: doc_alertas
+    categoria: documentacion
+    pregunta: "¿Cómo me entero si una tarea del pipeline falla en la madrugada?"
+    herramientas: [buscar_documentacion]
+    cita_fuente: true
+    fuente_esperada: [docs/arquitectura.md, docs/ejecucion-local.md, README.md]
+  - id: doc_variables_modelo
+    categoria: documentacion
+    pregunta: "¿Con qué variables decide el modelo si un cliente es riesgoso?"
+    herramientas: [buscar_documentacion]
+    cita_fuente: true
+    fuente_esperada: [docs/diccionario-datos.md, docs/arquitectura.md, README.md]
+  - id: doc_simular_deterioro
+    categoria: documentacion
+    pregunta: "¿Cómo simularon que los clientes se deterioran con el tiempo para probar el monitoreo?"
+    herramientas: [buscar_documentacion]
+    cita_fuente: true
+    fuente_esperada: [docs/monitoreo-deriva.md, docs/ejecucion-local.md, README.md]
+  - id: doc_antiguedad_deriva
+    categoria: documentacion
+    pregunta: "¿Por qué la antigüedad de los clientes sale con deriva alta aunque la población sea la misma?"
+    herramientas: [buscar_documentacion]
+    cita_fuente: true
+    fuente_esperada: [docs/monitoreo-deriva.md, docs/technical-debt.md]
+  - id: doc_contrasenas_dashboard
+    categoria: documentacion
+    pregunta: "¿Cómo se guardan las contraseñas de los usuarios del dashboard?"
+    herramientas: [buscar_documentacion]
+    cita_fuente: true
+    fuente_esperada: [README.md, docs/arquitectura.md]
+  - id: doc_puertos
+    categoria: documentacion
+    pregunta: "¿Qué servicios quedan expuestos en la red y en qué puertos?"
+    herramientas: [buscar_documentacion]
+    cita_fuente: true
+    fuente_esperada: [docs/seguridad.md, docs/ejecucion-local.md, README.md]
+  - id: doc_sesion_datos
+    categoria: documentacion
+    pregunta: "¿Qué es una sesión de datos y para qué sirve?"
+    herramientas: [buscar_documentacion]
+    cita_fuente: true
+    fuente_esperada: [docs/ejecucion-local.md, docs/arquitectura.md, docs/diccionario-datos.md, README.md]
+  - id: doc_robustez
+    categoria: documentacion
+    pregunta: "¿Qué pruebas de robustez le hicieron al pipeline y qué encontraron?"
+    herramientas: [buscar_documentacion]
+    cita_fuente: true
+    fuente_esperada: [docs/pruebas-robustez.md]
+  - id: doc_capacidad_ahorro
+    categoria: documentacion
+    pregunta: "¿Cómo se calcula la capacidad de ahorro de un cliente?"
+    herramientas: [buscar_documentacion]
+    cita_fuente: true
+    fuente_esperada: [docs/diccionario-datos.md]
+  - id: doc_datos_sinteticos
+    categoria: documentacion
+    pregunta: "¿Por qué los datos personales del proyecto son sintéticos y no reales?"
+    herramientas: [buscar_documentacion]
+    cita_fuente: true
+    fuente_esperada: [docs/seguridad.md]
+
+  # --- Control: preguntas de datos del admin, no de documentacion -------------------
+  - id: control_banda_media
+    categoria: documentacion
+    pregunta: "¿Qué parte de los clientes está en riesgo medio?"
+    herramientas: [resumen_portafolio]
+  - id: control_gasto_comida
+    categoria: documentacion
+    pregunta: "¿Cuánto gastó este cliente en comida en los últimos 3 meses?"
+    herramientas: [gasto_por_categoria]
+    argumentos: {categoria: comida}
+  - id: control_saldo
+    categoria: documentacion
+    pregunta: "¿Cuánto saldo disponible tiene este cliente?"
+    herramientas: [perfil_cliente]
