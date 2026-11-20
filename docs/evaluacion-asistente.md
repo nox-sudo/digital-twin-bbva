@@ -1336,6 +1336,54 @@ Pendientes que deja esta corrida: `doc_sal_pii` y `doc_evaluacion_asistente`
 `doc_etiqueta_impago`. Resultados en `data/evaluaciones` de la Mac no se
 guardaron: la corrida se escribio fuera de la instancia para no tocarla.
 
+## Documentacion para el admin: segunda oportunidad y consulta (2026-11-20)
+
+Cambios para las fallas del banco v6, medidos con `llama3.1:8b` en la Mac
+sobre la instancia de la demo. La linea base es `develop` del 2026-11-19
+(despues de #99), con el mismo banco: v6 completo (108 corridas, rol admin)
+y v2 con `--rol admin` y una repeticion (72 corridas), para ver que las
+preguntas de datos del admin no empeoran.
+
+| Version | v6 (documentacion) | v2 admin (datos) | Mediana / p95 en v6 |
+|---|---|---|---|
+| `develop` | 83 / 108 | 68 / 72 | 5.8 s / 10.9 s |
+| Buscar siempre antes del modelo (descartada) | 71 / 108 | 29 / 72 | 4.2 s / 11.4 s |
+| Segunda oportunidad | 92 / 108 | 68 / 72 | 5.9 s / 10.5 s |
+| Segunda oportunidad, consulta con la pregunta y descripciones | 108 / 108 | 67 / 72 | 6.1 s / 9.2 s |
+
+- **Buscar siempre antes del modelo (descartada).** Python buscaba con la
+  pregunta literal y el resultado entraba como una llamada ya hecha.
+  Arreglaba `doc_etiqueta_impago` (2 a 9 de 9) y `doc_evaluacion_asistente`
+  (0 a 8), pero el modelo tomaba los fragmentos como respuesta y dejaba de
+  pedir las herramientas de datos: los dos controles del v6 bajaron de 9 a
+  0 y el v2 admin de 68 a 29.
+- **Segunda oportunidad.** Si el admin pregunta y el modelo contesta sin
+  ninguna herramienta, Python busca con la pregunta literal y el modelo
+  contesta otra vez; la segunda respuesta solo se queda si cita un archivo
+  de la busqueda. `doc_sal_pii` pasa de 0 a 9 de 9 (antes el modelo se
+  negaba sin buscar). Con herramientas de por medio no cambia nada: el v2
+  admin queda igual, caso por caso.
+- **Consulta con la pregunta literal.** Cuando el modelo pide
+  `buscar_documentacion`, Python le agrega la pregunta del usuario a la
+  consulta. Medido sin el modelo sobre las 224 busquedas guardadas del v6:
+  en `doc_etiqueta_impago` la fuente esperada llega en 27 de 27 (13 con la
+  consulta del modelo sola) y ninguna otra pregunta empeora. Con el modelo,
+  2 a 9 de 9.
+- **Descripciones.** `resumen_portafolio` dice que solo trae datos de
+  clientes y `buscar_documentacion` nombra al asistente y su evaluacion.
+  `doc_evaluacion_asistente` pasa de 0 a 9 de 9: antes el modelo usaba
+  `resumen_portafolio` y presentaba la probabilidad media como el resultado
+  de la evaluacion.
+- **Costo en el v2 admin: 68 a 67.** En `seguimiento_salud_mismo_mes`, para
+  CLI-000059 el modelo eligio `perfil_cliente` en vez de
+  `gasto_por_categoria`. Con temperatura 0 no es azar: lo mueve el cambio de
+  descripciones, que el modelo del admin ve en cada pregunta. El rol cliente
+  no cambia: no tiene ninguna de las dos herramientas.
+
+Los dos ultimos ajustes salen de fallas del v6, asi que para esas preguntas
+el banco ya no es no visto. Una medicion honesta del cambio necesita
+preguntas nuevas de documentacion (v7).
+
 ## Limites de esta evaluacion
 
 - **Alcance:** un modelo, tres clientes y 24 preguntas en espanol. Cada
