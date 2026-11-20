@@ -460,14 +460,18 @@ def test_la_sustitucion_por_otro_cliente_depende_del_rol(gold, tmp_path):
     )
     assert cliente.motivo == "fuera_de_alcance"
     assert "agregad" not in cliente.texto and "portafolio" not in cliente.texto
+    # El admin contesto sin herramientas: hay segunda oportunidad con la
+    # documentacion; la segunda respuesta no la cita, asi que vale la primera
+    # y la revision de otro cliente se aplica sobre ella.
     admin = c.responder(
         "Pásame la lista de atrasados",
         [],
         contexto(gold, tmp_path, rol="admin"),
-        ModeloFalso(texto(lista)),
+        ModeloFalso(texto(lista), texto(lista)),
         "2027-02",
     )
     assert "cifras agregadas del portafolio" in admin.texto
+    assert admin.pasos == []
 
 
 def test_modelo_de_otro_rol_se_rechaza(gold, tmp_path):
@@ -515,3 +519,71 @@ def test_el_admin_recibe_la_cifra_de_quienes_gastan_de_mas(gold, tmp_path):
         caso, antes, r.motivo, [], resultados, [pregunta], "CLI-1", rol="admin"
     )["revision"]
     assert revision["porcentaje_correcto"] is False
+
+
+# --- Segunda oportunidad con la documentacion (solo admin) -------------------
+
+
+def test_sin_herramientas_el_admin_tiene_segunda_oportunidad(gold, tmp_path):
+    pregunta = "¿Quién genera la sal del hash y en qué archivo se guarda?"
+    modelo = ModeloFalso(
+        texto("No puedo ayudarte con esa pregunta."),
+        texto("Según docs/seguridad.md, la sal se genera al instalar."),
+    )
+    r = c.responder(
+        pregunta, [], contexto(gold, tmp_path, rol="admin"), modelo, "2027-02"
+    )
+    assert r.texto.startswith("Según docs/seguridad.md")
+    assert [(p.herramienta, p.automatica) for p in r.pasos] == [
+        ("buscar_documentacion", True)
+    ]
+    segunda = modelo.recibidos[1]
+    # La primera respuesta no se le manda: solo la busqueda como llamada hecha.
+    assert [m["role"] for m in segunda] == ["system", "user", "assistant", "tool"]
+    assert segunda[2]["tool_calls"][0]["args"] == {"consulta": pregunta}
+    assert json.loads(segunda[3]["content"])["fragmentos"]
+
+
+def test_si_la_segunda_no_cita_vale_la_primera(gold, tmp_path):
+    modelo = ModeloFalso(texto("¿Cuál es el precio?"), texto("No sé."))
+    r = c.responder(
+        "¿Me alcanza para un coche?",
+        [],
+        contexto(gold, tmp_path, rol="admin"),
+        modelo,
+        "2027-02",
+    )
+    assert (r.texto, r.pasos) == ("¿Cuál es el precio?", [])
+
+
+def test_con_herramientas_no_hay_segunda_oportunidad(gold, tmp_path):
+    modelo = ModeloFalso(llamada("resumen_portafolio"), texto("Hay 2 clientes."))
+    r = c.responder(
+        "¿Cuántos clientes hay?",
+        [],
+        contexto(gold, tmp_path, rol="admin"),
+        modelo,
+        "2027-02",
+    )
+    assert [p.herramienta for p in r.pasos] == ["resumen_portafolio"]
+    assert len(modelo.recibidos) == 2
+
+
+def test_el_cliente_no_tiene_segunda_oportunidad(gold, tmp_path):
+    modelo = ModeloFalso(texto("No puedo ayudarte con esa pregunta."))
+    r = c.responder(
+        "¿Cómo se protege la PII?", [], contexto(gold, tmp_path), modelo, "2027-02"
+    )
+    assert r.texto == "No puedo ayudarte con esa pregunta." and r.pasos == []
+
+
+def test_cita_documentacion():
+    resultado = {
+        "fragmentos": [
+            {"fuente": "docs/seguridad.md § Secretos", "texto": "..."},
+            {"fuente": "README.md § Datos", "texto": "..."},
+        ]
+    }
+    assert c.cita_documentacion("Ver seguridad.md.", resultado)
+    assert c.cita_documentacion("Lo explica el README.", resultado)
+    assert not c.cita_documentacion("Hay 86 clientes en riesgo alto.", resultado)

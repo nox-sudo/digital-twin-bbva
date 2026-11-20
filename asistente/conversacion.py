@@ -18,7 +18,16 @@ redacta la respuesta con lo que devolvieron.
      Si el modelo escribe la llamada como texto (un JSON con el nombre de
      una herramienta) en vez de hacerla, se trata como llamada: asi pasa por
      las mismas guardas y la persona no ve el JSON.
-  4. Revision de la respuesta final: si nombra otro cliente_id se cambia
+  4. Segunda oportunidad con la documentacion: si el rol tiene
+     buscar_documentacion (el admin) y el modelo contesto sin usar ninguna
+     herramienta, Python busca con la pregunta literal y el modelo contesta
+     otra vez con esos fragmentos. La segunda respuesta solo se queda si
+     cita un archivo de la busqueda; si no, se queda la primera. En el banco
+     v6 el modelo se negaba sin buscar ("la sal del hash", 0 de 9). Buscar
+     siempre antes de llamar al modelo se probo y se descarto: el modelo
+     dejaba de pedir las herramientas de datos (banco v2 con rol admin, de
+     68 a 29 de 72).
+  5. Revision de la respuesta final: si nombra otro cliente_id se cambia
      por la respuesta fija; si dice que no hubo movimientos cuando la
      herramienta si los trajo, se cambia por la lectura de ese resultado.
 
@@ -47,6 +56,7 @@ import yaml
 from asistente.alcance import respuesta_otro_cliente, verificar_alcance
 from asistente.herramientas import (
     HERRAMIENTAS,
+    LARGO_MAXIMO_CONSULTA,
     ROL_POR_DEFECTO,
     RAIZ,
     Contexto,
@@ -117,6 +127,9 @@ class Paso:
     herramienta: str
     argumentos: dict
     resultado: dict
+    # La ejecuto Python (segunda oportunidad con la documentacion), no el
+    # modelo.
+    automatica: bool = False
 
 
 @dataclass
@@ -208,6 +221,42 @@ def _regla_documentacion(ctx: Contexto) -> str:
         "correrlo), usa buscar_documentacion y cita la fuente que devuelve. No "
         "lo respondas de memoria; si los fragmentos no lo responden, dilo."
     )
+
+
+DOCUMENTACION = "buscar_documentacion"
+ID_SEGUNDA_OPORTUNIDAD = "segunda_oportunidad"
+LECTURA_SEGUNDA_OPORTUNIDAD = (
+    "Busqueda en la documentacion del proyecto con la pregunta del usuario. "
+    "Si estos fragmentos responden la pregunta, contesta solo con lo que dicen "
+    "y cita la fuente (archivo § seccion). Si no la responden, dilo."
+)
+
+
+def busqueda_documentacion(pregunta: str, ctx: Contexto) -> Paso | None:
+    """La busqueda en la documentacion con la pregunta literal, si el rol
+    tiene buscar_documentacion; None si no la tiene, si no hay fragmentos o
+    si la herramienta devuelve un error."""
+    if ctx.rol not in HERRAMIENTAS[DOCUMENTACION]["roles"]:
+        return None
+    argumentos = {"consulta": pregunta.strip()[:LARGO_MAXIMO_CONSULTA]}
+    resultado = ejecutar(DOCUMENTACION, argumentos, ctx)
+    if "error" in resultado or not resultado.get("fragmentos"):
+        return None
+    resultado = {**resultado, "lectura": LECTURA_SEGUNDA_OPORTUNIDAD}
+    return Paso(DOCUMENTACION, argumentos, resultado, automatica=True)
+
+
+def cita_documentacion(texto: str, resultado: dict) -> bool:
+    """La respuesta nombra el archivo de alguno de los fragmentos:
+    "docs/seguridad.md", "seguridad.md" o "README"."""
+    archivos = {
+        f.get("fuente", "").split(" § ")[0] for f in resultado.get("fragmentos", [])
+    } - {""}
+    nombres = archivos | {Path(a).name for a in archivos}
+    if "README.md" in archivos:
+        nombres.add("README")
+    minusculas = texto.lower()
+    return any(n.lower() in minusculas for n in nombres)
 
 
 def _mensajes_iniciales(
@@ -338,6 +387,9 @@ def responder(
         pregunta, historial, prompt_sistema(ctx, ultimo_mes), historial_turnos
     )
     pasos: list[Paso] = []
+    # Respuesta sin herramientas guardada mientras corre la segunda
+    # oportunidad con la documentacion.
+    primera: Respuesta | None = None
     textos_usuario = [anterior for anterior, _ in historial] + [pregunta]
     for _ in range(max_vueltas):
         mensaje = modelo.invoke(mensajes)
@@ -350,6 +402,21 @@ def responder(
                 mensaje = {"content": "", "tool_calls": llamadas}
         if not llamadas:
             texto = (mensaje.get("content") or "").strip()
+            if primera is None and not pasos:
+                segunda = busqueda_documentacion(pregunta, ctx)
+                if segunda is not None:
+                    log.info("respuesta sin herramientas: segunda oportunidad")
+                    primera = Respuesta(texto=texto, motivo="respuesta")
+                    pasos.append(segunda)
+                    mensajes += _llamada_hecha(segunda, ID_SEGUNDA_OPORTUNIDAD)
+                    continue
+            usa_documentacion = primera is not None and cita_documentacion(
+                texto, pasos[0].resultado
+            )
+            if primera is not None and not usa_documentacion:
+                # La segunda respuesta no uso la documentacion: vale la primera.
+                texto = primera.texto
+                pasos = []
             if not texto:
                 return Respuesta(texto=SIN_RESPUESTA, motivo="sin_texto", pasos=pasos)
             if menciona_otro_cliente(texto, ctx.cliente_id):
@@ -392,8 +459,29 @@ def responder(
                     "tool_call_id": llamada.get("id", ""),
                 }
             )
+    if primera is not None and primera.texto:
+        return primera
     log.info("limite de vueltas: %s herramientas ejecutadas", len(pasos))
     return Respuesta(texto=LIMITE_VUELTAS, motivo="limite_vueltas", pasos=pasos)
+
+
+def _llamada_hecha(paso: Paso, id_llamada: str) -> list[dict]:
+    """Una herramienta que ejecuto Python, en los mensajes como si el modelo
+    la hubiera pedido: la llamada y su resultado."""
+    return [
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {"name": paso.herramienta, "args": paso.argumentos, "id": id_llamada}
+            ],
+        },
+        {
+            "role": "tool",
+            "content": json.dumps(paso.resultado, ensure_ascii=False),
+            "tool_call_id": id_llamada,
+        },
+    ]
 
 
 class ModeloOllama:
