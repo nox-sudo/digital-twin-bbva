@@ -246,6 +246,18 @@ def busqueda_documentacion(pregunta: str, ctx: Contexto) -> Paso | None:
     return Paso(DOCUMENTACION, argumentos, resultado, automatica=True)
 
 
+def consulta_con_pregunta(consulta: str, pregunta: str) -> str:
+    """La consulta del modelo mas la pregunta literal del usuario. El modelo
+    a veces reformula ("fuente de la etiqueta de impago") y la busqueda trae
+    otra seccion; con la pregunta junto, la fuente esperada llega en todas
+    las busquedas del banco v6 (27 de 27 en la etiqueta de impago, contra 13
+    con la consulta sola) y ninguna otra pregunta empeora."""
+    consulta, pregunta = str(consulta).strip(), pregunta.strip()
+    if not consulta or pregunta in consulta:
+        return (consulta or pregunta)[:LARGO_MAXIMO_CONSULTA]
+    return f"{consulta} {pregunta}"[:LARGO_MAXIMO_CONSULTA]
+
+
 def cita_documentacion(texto: str, resultado: dict) -> bool:
     """La respuesta nombra el archivo de alguno de los fragmentos:
     "docs/seguridad.md", "seguridad.md" o "README"."""
@@ -448,6 +460,13 @@ def responder(
                 )
                 resultado = {"error": decision.rechazo}
             else:
+                if decision.nombre == DOCUMENTACION:
+                    decision.argumentos = {
+                        **decision.argumentos,
+                        "consulta": consulta_con_pregunta(
+                            decision.argumentos.get("consulta", ""), pregunta
+                        ),
+                    }
                 resultado = ejecutar(decision.nombre, decision.argumentos, ctx)
                 if decision.notas:
                     resultado = {**resultado, "ajustes": decision.notas}

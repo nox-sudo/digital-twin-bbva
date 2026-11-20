@@ -587,3 +587,25 @@ def test_cita_documentacion():
     assert c.cita_documentacion("Ver seguridad.md.", resultado)
     assert c.cita_documentacion("Lo explica el README.", resultado)
     assert not c.cita_documentacion("Hay 86 clientes en riesgo alto.", resultado)
+
+
+def test_la_busqueda_del_modelo_lleva_la_pregunta_literal(gold, tmp_path):
+    pregunta = "¿De dónde sale la etiqueta de impago con la que se entrena el modelo?"
+    modelo = ModeloFalso(
+        llamada("buscar_documentacion", {"consulta": "fuente de la etiqueta"}),
+        texto("Lo explica docs/arquitectura.md."),
+    )
+    r = c.responder(
+        pregunta, [], contexto(gold, tmp_path, rol="admin"), modelo, "2027-02"
+    )
+    assert r.pasos[0].argumentos["consulta"] == f"fuente de la etiqueta {pregunta}"
+
+
+def test_consulta_con_pregunta():
+    assert c.consulta_con_pregunta("", "¿Qué es el PSI?") == "¿Qué es el PSI?"
+    # Si el modelo ya mando la pregunta, no se repite.
+    assert c.consulta_con_pregunta("¿Qué es el PSI?", "¿Qué es el PSI?") == (
+        "¿Qué es el PSI?"
+    )
+    largo = c.consulta_con_pregunta("x" * 290, "una pregunta larga")
+    assert len(largo) == h.LARGO_MAXIMO_CONSULTA
