@@ -1384,6 +1384,35 @@ Los dos ultimos ajustes salen de fallas del v6, asi que para esas preguntas
 el banco ya no es no visto. Una medicion honesta del cambio necesita
 preguntas nuevas de documentacion (v7).
 
+### Banco v7: preguntas no vistas (2026-11-20)
+
+`experimentos/eval_asistente_v7.yaml`, guardado en git antes de correrlo:
+12 preguntas de documentacion que no estan en v1 a v6 ni en la evaluacion
+de recuperacion, mas 3 de control con datos; clientes CLI-000283,
+CLI-000303 y CLI-000481, 3 repeticiones, rol admin.
+
+| Version | Aprobadas | Mediana / p95 |
+|---|---|---|
+| `develop` | 99 / 135 | 5.6 s / 11.2 s |
+| Esta rama | 108 / 135 | 6.4 s / 13.7 s |
+
+| Caso | `develop` | Rama | Que paso |
+|---|---|---|---|
+| `doc_contrasenas_dashboard` | 0 / 9 | 9 / 9 | Con la pregunta en la consulta llega el fragmento de argon2id; antes respondia que estaban en `.env` |
+| `doc_alertas` | 0 / 9 | 6 / 9 | Llega la fuente; en 3 corridas responde sin citarla |
+| `doc_simular_deterioro` | 0 / 9 | 3 / 9 | Llega la fuente; en 6 corridas no la cita |
+| `doc_variables_modelo` | 9 / 9 | 0 / 9 | Regresion: el modelo ahora llama `perfil_cliente` y lista variables de memoria |
+| `doc_capacidad_ahorro` | 0 / 9 | 0 / 9 | En las dos versiones llama `perfil_cliente` ("de un cliente") y responde de memoria |
+| Los otros 7 de documentacion y los 3 de control | 9 / 9 | 9 / 9 | |
+
+La mejora se sostiene con preguntas no vistas (+9 corridas) y los
+controles no cambian. Quedan dos limites: la segunda oportunidad no entra
+cuando el modelo usa una herramienta de datos para una pregunta de "como se
+calcula" o "con que variables", y la regresion en `doc_variables_modelo`
+coincide con el cambio de descripciones, que es el unico que toca la
+eleccion de herramienta en ese caso; falta confirmarlo con una corrida sin
+ese cambio. El p95 sube 2.5 s por la segunda llamada al modelo.
+
 ## Limites de esta evaluacion
 
 - **Alcance:** un modelo, tres clientes y 24 preguntas en espanol. Cada
