@@ -1072,8 +1072,7 @@ HERRAMIENTAS = {
         "gana, probabilidad media de impago y su cambio contra la sesion base. "
         "Es la que responde '¿cuantos clientes...?' y las preguntas sobre el "
         "portafolio; proporcion_por_banda da la parte de los clientes en cada "
-        "banda. Solo datos de clientes: no responde como funciona el proyecto, "
-        "el asistente ni su evaluacion.",
+        "banda.",
         "parametros": {},
         "requeridos": [],
     },
@@ -1083,9 +1082,9 @@ HERRAMIENTAS = {
         "descripcion": "Busca en la documentacion tecnica del proyecto (README y "
         "docs/) como funciona algo: arquitectura, capas Bronze/Silver/Gold, "
         "reglas de calidad y cuarentena, seguridad y PII, modelo de riesgo, "
-        "monitoreo de deriva, simulador, el asistente y como se evaluo, "
-        "decisiones de diseno, como correrlo. No trae datos de clientes ni del "
-        "portafolio. Devuelve fragmentos con su fuente.",
+        "monitoreo de deriva, simulador, decisiones de diseno, como correrlo. "
+        "No trae datos de clientes ni del portafolio. Devuelve fragmentos con "
+        "su fuente.",
         "parametros": {
             "consulta": {
                 "type": "string",

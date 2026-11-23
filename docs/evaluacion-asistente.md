@@ -1413,6 +1413,30 @@ coincide con el cambio de descripciones, que es el unico que toca la
 eleccion de herramienta en ese caso; falta confirmarlo con una corrida sin
 ese cambio. El p95 sube 2.5 s por la segunda llamada al modelo.
 
+### Sin el cambio de descripciones (2026-11-23)
+
+Para confirmar la regresion de `doc_variables_modelo` se corrio la rama con
+las descripciones de `resumen_portafolio` y `buscar_documentacion` como en
+`develop` (con la segunda oportunidad y la consulta con la pregunta).
+
+| Banco | `develop` | Rama con descripciones | Rama sin descripciones |
+|---|---|---|---|
+| v7 (no visto) | 99 / 135 | 108 / 135 | 114 / 135 |
+| v6 | 83 / 108 | 108 / 108 | 99 / 108 |
+| v2 admin (datos) | 68 / 72 | 67 / 72 | 68 / 72 |
+
+El cambio de descripciones causa la caida de `doc_variables_modelo` (9 a 0
+de 9) y la corrida que se perdia en el v2 admin. Lo que gana esta casi todo
+en la pregunta del v6 con la que se ajusto (`doc_evaluacion_asistente`, 0 a
+9) y en `doc_simular_deterioro` del v7 (0 a 3). Con preguntas no vistas
+resta: 108 contra 114. Se quita; la rama queda con la segunda oportunidad y
+la consulta con la pregunta literal.
+
+Queda abierto: cuando el modelo usa una herramienta de datos para una
+pregunta sobre el proyecto (`doc_evaluacion_asistente` con
+`resumen_portafolio`, `doc_capacidad_ahorro` con `perfil_cliente`), la
+segunda oportunidad no entra y la respuesta sale de memoria.
+
 ## Limites de esta evaluacion
 
 - **Alcance:** un modelo, tres clientes y 24 preguntas en espanol. Cada
