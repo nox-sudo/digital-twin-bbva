@@ -269,6 +269,51 @@ def mayor_aumento(cambios: pd.DataFrame, nombre_categoria, meses: int) -> dict:
 
 NIVEL_BANDA = {"bajo": "Bajo", "medio": "Medio", "alto": "Alto"}
 
+# La banda de riesgo dicha como respuesta a "¿te podrias atrasar en un
+# pago?": el cliente no tiene por que saber que es una banda de riesgo.
+PROBABILIDAD_BANDA = {
+    "bajo": "Poco probable",
+    "medio": "Posible",
+    "alto": "Muy probable",
+}
+
+
+def de_cada_100(probabilidad: float) -> str:
+    n = round(float(probabilidad) * 100)
+    return "menos de 1 de cada 100" if n < 1 else f"{n} de cada 100"
+
+
+def frase_atraso(probabilidad: float, meses: int) -> str:
+    """La probabilidad de impago como frecuencia: el modelo esta calibrado,
+    asi que de 100 clientes con esa probabilidad se atrasan unos tantos."""
+    return (
+        f"{de_cada_100(probabilidad)} clientes como tú se atrasan en algún pago "
+        f"en los próximos {meses} meses."
+    )
+
+
+def plazo_en_palabras(meses: int) -> str:
+    if meses % 12 == 0:
+        anios = meses // 12
+        return "1 año" if anios == 1 else f"{anios} años"
+    return f"{meses} meses"
+
+
+def frase_alcanza(probabilidad: float, meses: int) -> str:
+    """El Monte Carlo del flujo actual en una frase, con los extremos en
+    palabras (certeza())."""
+    plazo = plazo_en_palabras(meses)
+    palabra = certeza(probabilidad)
+    if palabra:
+        return (
+            f"Si sigues gastando igual, {palabra} que te quedes sin dinero algún "
+            f"mes de los próximos {plazo}."
+        )
+    return (
+        f"Si sigues gastando igual, en {round(probabilidad * 100)} de cada 100 "
+        f"casos simulados te quedas sin dinero algún mes de los próximos {plazo}."
+    )
+
 
 # Meses de autonomia por debajo de los cuales el siguiente paso habla
 # primero del deficit.
@@ -300,6 +345,102 @@ def frase_autonomia(meses: float | None, ventana: int) -> str | None:
         f"A tu ritmo de los últimos {ventana} meses, tu saldo alcanza para "
         f"{texto_autonomia(meses)}."
     )
+
+
+def _falta_tarjeta(m: dict, tope: float) -> str:
+    """Lo que falta para la meta de uso de la tarjeta, en pesos si se conocen
+    el saldo y el limite: saldo menos el tope por el limite."""
+    limite = m.get("limite_tarjeta") or 0
+    if limite > 0 and m.get("saldo_tarjeta") is not None:
+        pagar = max(m["saldo_tarjeta"] - tope * limite, 0.0)
+        return f"Paga {pesos(pagar)} de tu tarjeta y llegas a la meta"
+    return (
+        f"Te faltan {(m['uso_tarjeta'] - tope) * 100:.0f} puntos para bajar "
+        f"al {tope * 100:.0f} %"
+    )
+
+
+# La meta de cada paso de la escalera dicha como accion (titulo de "Tus
+# metas"). El nombre del paso ("Tarjeta bajo control") sigue en la lista.
+ACCION_PASO = {
+    "pagos_deuda": "Baja tus pagos de deuda",
+    "uso_tarjeta": "Baja lo que debes en tu tarjeta",
+    "fondo_minimo": "Junta tu fondo de emergencia",
+    "ahorro": "Ahorra cada mes",
+    "fondo_meta": "Completa tu fondo de emergencia",
+    "invertir": "Ya puedes pensar en invertir",
+}
+
+
+def _pct(valor: float) -> str:
+    return f"{valor * 100:.0f} %"
+
+
+def avance_meta(paso: str, m: dict, cfg: dict) -> dict | None:
+    """Donde esta el cliente y donde esta la meta del paso actual, para una
+    barra: fracciones de 0 a 1 de la escala de la barra y sus etiquetas.
+    None si el paso no tiene una cifra que medir (invertir) o falta el dato.
+    Mismos umbrales que src/gold/escalera.py."""
+    u = cfg["umbrales"]
+    if paso == "pagos_deuda" and m.get("razon_pagos_deuda") is not None:
+        valor, meta = m["razon_pagos_deuda"], u["pagos_deuda_max"]["valor"]
+        # De 0 a 100 % del ingreso, como el uso de la tarjeta: una barra llena
+        # se leeria como meta cumplida.
+        escala = max(valor, 1.0)
+        return {
+            "valor": valor / escala,
+            "meta": meta / escala,
+            "hoy": f"Pagas el {_pct(valor)} de tu ingreso en deudas",
+            "objetivo": f"Meta: {_pct(meta)} o menos",
+        }
+    if paso == "uso_tarjeta" and m.get("uso_tarjeta") is not None:
+        valor, meta = m["uso_tarjeta"], u["uso_tarjeta_max"]["valor"]
+        escala = max(valor, 1.0)
+        return {
+            "valor": valor / escala,
+            "meta": meta / escala,
+            "hoy": f"Usas el {_pct(valor)} de tu límite",
+            "objetivo": f"Meta: {_pct(meta)} o menos",
+        }
+    if paso in ("fondo_minimo", "fondo_meta"):
+        meta = u["fondo_emergencia"][
+            "minimo_meses" if paso == "fondo_minimo" else "meta_meses"
+        ]
+        valor = m.get("fondo_meses") or 0.0
+        return {
+            "valor": min(valor / meta, 1.0),
+            "meta": 1.0,
+            "hoy": f"Tu saldo cubre {texto_meses(valor)} de gastos",
+            "objetivo": f"Meta: {meta} meses",
+        }
+    if paso == "ahorro" and m.get("tasa_ahorro") is not None:
+        valor, meta = m["tasa_ahorro"], u["ahorro_min"]["valor"]
+        escala = max(valor, 2 * meta)
+        return {
+            "valor": max(valor, 0.0) / escala,
+            "meta": meta / escala,
+            "hoy": (
+                f"Ahorras el {_pct(valor)} de tu ingreso"
+                if valor >= 0
+                else "Gastas más de lo que te entra"
+            ),
+            "objetivo": f"Meta: {_pct(meta)} o más",
+        }
+    return None
+
+
+def frase_pagos(m: dict) -> str:
+    """Lo que paga al mes de deudas y en que productos; sin productos de
+    credito, una frase en lugar de cifras vacias."""
+    tarjeta, prestamo = m.get("tiene_tarjeta"), m.get("tiene_prestamo")
+    if not (tarjeta or prestamo):
+        return "No tienes deudas ni tarjeta de crédito."
+    productos = (
+        "entre tu tarjeta y tu préstamo"
+        if tarjeta and prestamo
+        else "de tu tarjeta" if tarjeta else "de tu préstamo"
+    )
+    return f"Hoy pagas {pesos(m['pago_comprometido'])} al mes {productos}."
 
 
 def meta_escalera(paso: str, m: dict, cfg: dict) -> dict:
@@ -335,10 +476,7 @@ def meta_escalera(paso: str, m: dict, cfg: dict) -> dict:
         return {
             "accion": f"Baja el uso de tu tarjeta al {tope * 100:.0f} % de su límite.",
             "hoy": f"Hoy usas el {m['uso_tarjeta'] * 100:.0f} % de su límite",
-            "falta": (
-                f"Te faltan {(m['uso_tarjeta'] - tope) * 100:.0f} puntos para bajar "
-                f"al {tope * 100:.0f} %"
-            ),
+            "falta": _falta_tarjeta(m, tope),
         }
     if paso in ("fondo_minimo", "fondo_meta"):
         meta = u["fondo_emergencia"][

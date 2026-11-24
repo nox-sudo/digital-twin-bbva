@@ -370,7 +370,11 @@ def test_mi_resumen_responde_como_voy_arriba(vistas):
     html = "\n".join(str(m.value) for m in at.markdown)
     assert "gd-heroe" in html and "Tienes disponible" in html
     assert "&#36;30,000.00 MXN" in html  # saldo de CLI-1 en las fixtures
-    for titulo in ("Gastaste este mes", "Lo que más creció", "Tu nivel de riesgo"):
+    for titulo in (
+        "Gastaste este mes",
+        "Lo que más creció",
+        "¿Te podrías atrasar en un pago?",
+    ):
         assert titulo in html, titulo
     assert "gd-titular" in html, "Tu siguiente paso: titular, accion y chips"
 
@@ -590,7 +594,7 @@ def test_mi_resumen_saluda_y_rotula_el_uso_de_la_tarjeta(vistas):
     assert not at.exception, [e.value for e in at.exception]
     html = "\n".join(str(m.value) for m in at.markdown)
     assert "Hola. Así van tus finanzas al cierre de" in html
-    assert "Límite de tu tarjeta que usas" in html
+    assert "Hoy pagas" in html  # lo que paga de deudas al mes, en "Tus metas"
     assert "gd-fila" in html, "las tres tarjetas van en una cuadricula"
 
 
@@ -653,7 +657,13 @@ def test_escalera_visual_con_el_paso_actual(vistas):
     assert all(p == "" for p in pasos[actual + 1 :])  # noqa: E203
     # El estado tambien va escrito, no solo en el color.
     assert "estás aquí" in escalera
-    assert "Para el siguiente paso:" in html
+    # Arriba de la lista plegada: el paso en texto, una marca por paso, la
+    # meta como accion y la barra de avance.
+    assert f"Paso {actual + 1} de 6" in html
+    puntos = re.search(r"<div class='gd-puntos'[^>]*>(.*?)</div>", html).group(1)
+    assert puntos.count("<span") == 6 and puntos.count("class='actual'") == 1
+    assert "gd-meta-titulo" in html and "gd-avance" in html
+    assert any(e.label == "Ver los 6 pasos" for e in at.expander)
 
 
 def test_medidor_de_riesgo_junto_al_nivel(vistas):
@@ -664,6 +674,74 @@ def test_medidor_de_riesgo_junto_al_nivel(vistas):
     # CLI-2 (fixtures): probabilidad 0.62, banda alta; cortes en 10 % y 30 %.
     assert "width:62.0%" in medidor
     assert "left:10.0%" in medidor and "left:30.0%" in medidor
-    assert "62.0 % de probabilidad en 6 meses" in medidor
-    # La probabilidad vive solo en el medidor (su leyenda y su aria-label).
-    assert "62.0 %" not in html.replace(medidor, "")
+    # La probabilidad como frecuencia: 62 de cada 100 clientes como el.
+    assert "62 de cada 100 clientes como tú se atrasan" in medidor
+    # Vive solo en el medidor (su leyenda y su aria-label).
+    assert "62 de cada 100" not in html.replace(medidor, "")
+    assert "62.0 %" not in html
+
+
+def test_tus_metas_en_frases_y_barras():
+    from dashboard import vista_cliente as vc
+    from src.gold import escalera as esc
+
+    cfg = esc.cargar_config()
+    m = {
+        "uso_tarjeta": 0.45,
+        "saldo_tarjeta": 13_500.0,
+        "limite_tarjeta": 30_000.0,
+        "fondo_meses": 1.0,
+        "razon_pagos_deuda": 0.6,
+        "tasa_ahorro": -0.2,
+        "pago_comprometido": 3958.34,
+        "tiene_tarjeta": True,
+        "tiene_prestamo": True,
+    }
+    tarjeta = vc.avance_meta("uso_tarjeta", m, cfg)
+    assert tarjeta["hoy"] == "Usas el 45 % de tu límite"
+    assert tarjeta["objetivo"] == "Meta: 30 % o menos"
+    assert (round(tarjeta["valor"], 2), round(tarjeta["meta"], 2)) == (0.45, 0.3)
+    # Lo que falta en pesos: 13,500 - 30 % de 30,000.
+    assert vc.meta_escalera("uso_tarjeta", m, cfg)["falta"] == (
+        "Paga $4,500 de tu tarjeta y llegas a la meta"
+    )
+    fondo = vc.avance_meta("fondo_minimo", m, cfg)
+    assert fondo["hoy"] == "Tu saldo cubre 1 mes de gastos"
+    assert fondo["objetivo"] == "Meta: 3 meses"
+    deuda = vc.avance_meta("pagos_deuda", m, cfg)
+    # Escala de 0 a 100 % del ingreso; con mas de 100 %, el valor.
+    assert (deuda["valor"], deuda["meta"]) == (0.6, 0.3)
+    assert (
+        vc.avance_meta("pagos_deuda", {**m, "razon_pagos_deuda": 1.5}, cfg)["valor"]
+        == 1.0
+    )
+    assert vc.avance_meta("ahorro", m, cfg)["hoy"] == "Gastas más de lo que te entra"
+    assert vc.avance_meta("invertir", m, cfg) is None
+    assert vc.frase_pagos(m) == (
+        "Hoy pagas $3,958 al mes entre tu tarjeta y tu préstamo."
+    )
+    sin_credito = {**m, "tiene_tarjeta": False, "tiene_prestamo": False}
+    assert vc.frase_pagos(sin_credito) == "No tienes deudas ni tarjeta de crédito."
+
+
+def test_el_riesgo_como_dos_preguntas():
+    from dashboard import vista_cliente as vc
+
+    assert vc.PROBABILIDAD_BANDA == {
+        "bajo": "Poco probable",
+        "medio": "Posible",
+        "alto": "Muy probable",
+    }
+    assert vc.frase_atraso(0.212, 6) == (
+        "21 de cada 100 clientes como tú se atrasan en algún pago en los "
+        "próximos 6 meses."
+    )
+    assert vc.de_cada_100(0.004) == "menos de 1 de cada 100"
+    assert vc.frase_alcanza(0.53, 36) == (
+        "Si sigues gastando igual, en 53 de cada 100 casos simulados te quedas "
+        "sin dinero algún mes de los próximos 3 años."
+    )
+    assert vc.frase_alcanza(1.0, 36) == (
+        "Si sigues gastando igual, es prácticamente seguro que te quedes sin "
+        "dinero algún mes de los próximos 3 años."
+    )

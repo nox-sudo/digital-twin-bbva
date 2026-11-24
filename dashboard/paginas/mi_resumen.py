@@ -225,6 +225,21 @@ if comun.gold_disponible():
         cambios(version, cliente_id), comun.nombre_categoria, MESES_CAMBIO
     )
     banda = fila["banda_riesgo"]
+    riesgo_flujo = riesgo_flujo_actual(version, cliente_id)
+    html_riesgo = None
+    if banda in vc.PROBABILIDAD_BANDA:
+        cortes = [b["desde"] for b in cfg["bandas_riesgo"] if b["desde"] > 0]
+        prob = fila["probabilidad_impago"]
+        html_riesgo = ui.html_medidor(
+            prob, banda, cortes, vc.frase_atraso(prob, horizonte_modelo())
+        )
+        if riesgo_flujo:
+            alcanza = vc.frase_alcanza(riesgo_flujo[0], riesgo_flujo[1])
+            html_riesgo += (
+                "<div class='gd-titulo' style='margin-top:14px'>"
+                "¿Te alcanza tu dinero?</div>"
+                f"<div class='gd-detalle'>{alcanza}</div>"
+            )
     # Las tres tarjetas en una cuadricula: misma altura y separacion fija
     # con la tarjeta de saldo y con "Tu siguiente paso".
     ui.fila_tarjetas(
@@ -246,28 +261,15 @@ if comun.gold_disponible():
                 "detalle": crecio["frase"],
             },
             {
-                "titulo": ui.nombre_kpi("banda_riesgo", "cliente"),
-                "valor": vc.NIVEL_BANDA.get(banda, "Sin dato"),
-                "detalle": vc.TONO_BANDA.get(
-                    banda, "Todavía no tenemos tu nivel de riesgo."
-                )
-                .split(": ")[-1]
-                .capitalize(),
-                "banda": banda if banda in vc.NIVEL_BANDA else None,
-                # Medidor junto a la palabra: la probabilidad y los cortes de
-                # las bandas (config/dashboard.yaml). Es el unico lugar de la
-                # probabilidad en Mi resumen.
-                "extra_html": (
-                    ui.html_medidor(
-                        fila["probabilidad_impago"],
-                        banda,
-                        [b["desde"] for b in cfg["bandas_riesgo"] if b["desde"] > 0],
-                        f"{ui.formatear_porcentaje(fila['probabilidad_impago'], 1)} de "
-                        f"probabilidad en {horizonte_modelo()} meses",
-                    )
-                    if banda in vc.NIVEL_BANDA
-                    else None
-                ),
+                # La banda como respuesta a una pregunta, no como "nivel de
+                # riesgo": el cliente lee si se podria atrasar y cuantos de
+                # cada 100 clientes como el se atrasan. Es el unico lugar de
+                # la probabilidad en Mi resumen. Debajo, el Monte Carlo del
+                # flujo actual, que es otra pregunta (¿te alcanza tu dinero?).
+                "titulo": "¿Te podrías atrasar en un pago?",
+                "valor": vc.PROBABILIDAD_BANDA.get(banda, "Sin dato"),
+                "banda": banda if banda in vc.PROBABILIDAD_BANDA else None,
+                "extra_html": html_riesgo,
             },
         ]
     )
@@ -275,7 +277,6 @@ if comun.gold_disponible():
     # --- Siguiente paso ---------------------------------------------------
     cuentas = creditos(version, cliente_id)
     e = escalera(version, cliente_id) if cuentas is not None else None
-    riesgo_flujo = riesgo_flujo_actual(version, cliente_id)
     exp = explicacion(version, cliente_id)
     n_factores = ex.cargar_config()["factores_mostrados"]
     # Sin cifra en los factores cuya cifra ya esta en otra tarjeta (deficit,
@@ -297,8 +298,9 @@ if comun.gold_disponible():
         ventana,
         esc.NOMBRES[e.paso_actual] if e else None,
         meta["accion"] if meta else None,
-        riesgo_flujo[0] if riesgo_flujo else None,
-        riesgo_flujo[1] if riesgo_flujo else 0,
+        # El riesgo de quedarse sin dinero va en la tarjeta de arriba.
+        None,
+        0,
     )
     with ui.contenedor("siguiente-paso"):
         st.caption(":material/flag: Tu siguiente paso")
@@ -480,53 +482,61 @@ if comun.gold_disponible():
                 width="stretch",
             )
 
-    # --- Tu credito ------------------------------------------------------------
+    # --- Tus metas -------------------------------------------------------------
+    # La escalera financiera como la meta de ahora: la accion, una barra de
+    # donde esta el cliente contra la meta y lo que falta. Los 6 pasos quedan
+    # plegados. La accion concreta con su monto esta en "Tu siguiente paso".
     with ui.contenedor("credito", derecha):
-        st.subheader("Tu crédito")
+        st.subheader("Tus metas")
         if e is None:
-            pendiente("Tu crédito")
+            st.caption(
+                "Tus metas estarán disponibles después de la próxima corrida del "
+                "pipeline."
+            )
         else:
-            # Escalera visual: los 6 pasos, el actual resaltado y lo que falta
-            # para el siguiente. La meta del paso (la accion) esta en "Tu
-            # siguiente paso"; aqui, donde va y cuanto le falta.
-            st.markdown(f"Paso {e.numero_paso} de {len(e.pasos)}")
-            ui.escalera_visual([(p.paso, p.nombre) for p in e.pasos], e.numero_paso - 1)
-            if meta:
-                st.markdown(
-                    md(f"Para el siguiente paso: {meta['falta'] or meta['hoy']}.")
-                )
             m = e.metricas
-            if not (m["tiene_tarjeta"] or m["tiene_prestamo"]):
-                # Sin productos de credito, "$0.00 MXN" y "Sin tarjeta" dicen lo
-                # mismo con dos cifras vacias.
-                st.markdown("No tienes deudas ni tarjeta de crédito.")
-            else:
-                cifras(
-                    [
-                        (
-                            ui.nombre_kpi("pago_comprometido", "cliente"),
-                            ui.formatear_mxn(m["pago_comprometido"]),
-                        ),
-                        (
-                            ui.nombre_kpi("uso_linea_credito", "cliente"),
-                            (
-                                ui.formatear_porcentaje(m["uso_tarjeta"])
-                                if m["tiene_tarjeta"]
-                                else "Sin tarjeta"
-                            ),
-                        ),
-                    ]
+            reglas = esc.cargar_config()
+            st.markdown(
+                f"<div class='gd-titulo'>Paso {e.numero_paso} de {len(e.pasos)}</div>"
+                + ui.html_puntos(len(e.pasos), e.numero_paso - 1)
+                + "<div class='gd-meta-titulo'>"
+                + vc.ACCION_PASO.get(e.paso_actual, esc.NOMBRES[e.paso_actual])
+                + "</div>",
+                unsafe_allow_html=True,
+            )
+            avance = vc.avance_meta(e.paso_actual, m, reglas)
+            if avance:
+                st.markdown(
+                    ui.html_avance(
+                        avance["valor"],
+                        avance["meta"],
+                        avance["hoy"],
+                        avance["objetivo"],
+                    ),
+                    unsafe_allow_html=True,
                 )
-                st.caption(
-                    "Pago mínimo de tus tarjetas y cuota de tus préstamos, con IVA."
+            elif e.paso_actual == "invertir":
+                st.markdown("Cumpliste las metas anteriores.")
+            if meta and meta["falta"]:
+                st.markdown(md(f"{meta['falta']}."))
+            st.markdown(md(vc.frase_pagos(m)))
+            # Solo los supuestos que cambian como se lee el caso del cliente
+            # (ingreso variable, ingreso reciente mas bajo); el de las tasas
+            # es metodologia y queda en la vista Cliente del admin.
+            notas = [
+                s for s in e.supuestos if not s.startswith("Pago de deuda estimado")
+            ]
+            if notas:
+                st.caption(vc.lenguaje_cliente(" ".join(notas)))
+            with st.expander("Ver los 6 pasos"):
+                ui.escalera_visual(
+                    [(p.paso, p.nombre) for p in e.pasos], e.numero_paso - 1
                 )
-            if e.supuestos:
-                st.caption(vc.lenguaje_cliente(" ".join(e.supuestos)))
 
-    # --- Tu riesgo, explicado --------------------------------------------------
+    # --- Por que esa probabilidad --------------------------------------------------
     with ui.contenedor("riesgo"):
-        st.subheader("Tu riesgo, explicado")
-        # El nivel (alto, medio, bajo) esta en la tarjeta de arriba.
+        st.subheader("Por qué esa probabilidad")
+        # La probabilidad y su palabra estan en la tarjeta de arriba.
         if isinstance(exp, str):
             st.caption(f"Por qué: {exp}")
         else:
@@ -540,7 +550,7 @@ if comun.gold_disponible():
                 for texto in riesgo["bajan"] or ["Nada en especial."]:
                     st.markdown(md(f"- {texto}"))
             st.caption(
-                "La probabilidad de la tarjeta de riesgo es una estimación de "
+                "La probabilidad de arriba es una estimación de "
                 f"atrasarte en algún pago en los próximos {horizonte_modelo()} meses, "
                 "no una certeza. Estos son los datos que más pesan en tu caso "
                 "comparado con un cliente típico."

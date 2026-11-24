@@ -281,6 +281,10 @@ def _metricas(meses, mov, saldo, creditos, cfg) -> tuple[dict, dict]:
             if ingreso_ahorro > 0
             else None
         ),
+        # Saldo y limite de las tarjetas: para decir en pesos cuanto falta
+        # pagar para llegar a la meta de uso (Mi resumen).
+        "saldo_tarjeta": float(tarjetas["saldo_actual"].fillna(0).sum()),
+        "limite_tarjeta": limite,
         "tiene_tarjeta": len(tarjetas) > 0,
         "tiene_prestamo": bool((creditos["tipo_cuenta"] == "prestamo_personal").any()),
     }

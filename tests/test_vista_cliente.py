@@ -41,8 +41,8 @@ TARJETAS = [
     "Este mes",
     "Tus ingresos por quincena",
     "A dónde se va tu dinero",
-    "Tu crédito",
-    "Tu riesgo, explicado",
+    "Tus metas",
+    "Por qué esa probabilidad",
 ]
 
 
@@ -256,7 +256,7 @@ def test_ingreso_de_20_mil(vista):
     at = correr(Usuario("CLI-20K", "cliente"))
     texto = todo(at)
     assert "Te llegan unos $10,000 cada quincena" in texto
-    assert "Pagas de deudas al mes" in texto
+    assert "Hoy pagas" in texto and "al mes" in texto
 
     at.number_input[0].set_value(15000)
     at.button[0].click().run()
@@ -312,7 +312,7 @@ def test_sin_tablas_nuevas_ni_modelo(vista):
     at = correr(Usuario("CLI-20K", "cliente"))
     texto = todo(at)
     assert "El detalle por quincena estará disponible" in texto
-    assert "Tu crédito estará disponible" in texto
+    assert "Tus metas estarán disponibles" in texto
     assert "Por qué: Todavía no hay un modelo entrenado." in texto
     assert [s.value for s in at.subheader] == TARJETAS
 

@@ -165,16 +165,20 @@ voy?":
   promedio de los 12 meses anteriores; lo que más creció, suscripciones
   ($10,567 más al mes que en los 3 meses anteriores, de $7,107 a $17,674;
   ver [technical-debt.md](technical-debt.md), la cifra no es creíble como
-  suscripciones); nivel de riesgo Alto, con un medidor: barra en 59.7 %,
-  marcas en los cortes de banda (10 % y 30 %) y "59.7 % de probabilidad en
-  6 meses" escrito debajo.
+  suscripciones); y "¿Te podrías atrasar en un pago?": "Muy probable", con
+  un medidor (barra en 59.7 %, marcas en los cortes de banda de 10 % y 30 %)
+  y "60 de cada 100 clientes como tú se atrasan en algún pago en los
+  próximos 6 meses" escrito debajo. En la misma tarjeta, "¿Te alcanza tu
+  dinero?": "Si sigues gastando igual, es prácticamente seguro que te quedes
+  sin dinero algún mes de los próximos 3 años" (el Monte Carlo da 100 de
+  cada 100; el conteo exacto queda en el Simulador del admin). Son dos
+  preguntas distintas: la primera es el modelo de riesgo y la segunda, la
+  simulación de su flujo.
 - Tu siguiente paso, en tres piezas: un titular ("Lo urgente: cada mes sale
   más dinero del que te entra."), una acción ("Baja tus pagos de deuda a
-  $10,999 al mes o menos.", la meta del paso actual de la escalera) y dos
-  chips: "Gastas $27,030 más de lo que te entra al mes (promedio de 12
-  meses)" y "Quedarte sin dinero en 36 meses: prácticamente seguro" (el
-  Monte Carlo da 100 de cada 100; el conteo exacto queda en el Simulador
-  del admin). El titular es urgente si el riesgo es alto o el saldo alcanza
+  $10,999 al mes o menos.", la meta del paso actual de la escalera) y un
+  chip: "Gastas $27,030 más de lo que te entra al mes (promedio de 12
+  meses)". El titular es urgente si el riesgo es alto o el saldo alcanza
   para menos de 3 meses; si no, es la meta de la escalera. Reglas fijas, sin
   modelo de lenguaje.
 
@@ -205,13 +209,16 @@ lugar (tabla en [ux/mi-resumen/fuente-unica.md](ux/mi-resumen/fuente-unica.md)):
 - A dónde se va su dinero (12 meses, la misma ventana que la vista Cliente
   del admin): pago de deuda 26 %, suscripciones 15 %, servicios 13 %; el
   monto de cada categoría va en su barra.
-- Su crédito: la escalera como lista de 6 pasos, con el actual resaltado
-  ("Pagos de deuda bajo control · estás aquí") y los demás "pendiente". Debajo,
-  "Para el siguiente paso: Te faltan $14,514 por bajar." Paga $25,512.94 MXN
-  al mes de deudas y usa 38 % del límite de su tarjeta; la meta ($10,999 o
-  menos) está en "Tu siguiente paso".
-- Su riesgo explicado con sus propios valores SHAP; la probabilidad está en
-  el medidor de la tarjeta de riesgo. Lo sube: gasta
+- Tus metas: "Paso 1 de 6" con una marca por paso y la meta como acción,
+  "Baja tus pagos de deuda". Una barra de 0 a 100 % de su ingreso: "Pagas el
+  70 % de tu ingreso en deudas" contra "Meta: 30 % o menos". Debajo, "Te
+  faltan $14,514 por bajar." y "Hoy pagas $25,513 al mes entre tu tarjeta y
+  tu préstamo." La meta ($10,999 o menos) está en "Tu siguiente paso". Los 6
+  pasos están plegados en "Ver los 6 pasos". De dónde salen las metas: son
+  las mismas seis para todos (`config/escalera_financiera.yaml`); las de
+  pagos de deuda y fondo de emergencia son de CONDUSEF, las de tarjeta y
+  ahorro son reglas del proyecto.
+- Por qué esa probabilidad, con sus propios valores SHAP. Lo sube: gasta
   más de lo que le entra cada mes (la cifra está en el chip) y debe 4.6
   veces su ingreso de un mes. Lo baja: lleva 1.9 años como cliente.
 La explicación reproduce el score publicado: usa el modelo que lo produjo
@@ -243,7 +250,7 @@ en [ux/perfiles/despues/](ux/perfiles/despues/).
   a fin de mes", con la grafica pareja. Siguiente paso: "Junta $11,954 más
   para cubrir 3 meses de gastos"; le quedan $6,745 al mes y se queda sin
   dinero en 3 de cada 100 escenarios a 36 meses. Sin tarjeta ni prestamos,
-  "Tu crédito" dice "No tienes deudas ni tarjeta de crédito." y su riesgo lo
+  "Tus metas" dice "No tienes deudas ni tarjeta de crédito." y su riesgo lo
   baja que le queda dinero cada mes, que no tiene deudas y que no usa
   tarjeta.
 - **Ingreso irregular, CLI-000249.** "Tus ingresos cambian de una quincena a
@@ -253,11 +260,12 @@ en [ux/perfiles/despues/](ux/perfiles/despues/).
 - **Ingreso variable con déficit, CLI-000303.** Gasta $2,052 más de lo que
   le entra al mes, pero su saldo alcanza para 14 meses, así que el titular
   no es urgente: "Tu meta ahora: tarjeta bajo control." con la acción "Baja
-  el uso de tu tarjeta al 30 % de su límite" (usa 33 %; le faltan 3 puntos).
+  el uso de tu tarjeta al 30 % de su límite"; en "Tus metas", usa 33 % y
+  "Paga $571 de tu tarjeta y llegas a la meta".
   Se queda sin dinero en 53 de cada 100 escenarios. En los últimos 3 meses
   promedia $3,426 por quincena, 46 % menos que al inicio. Como su ingreso
   varía, sus deudas se comparan con su mes de menor ingreso (lo dice la nota
-  de "Tu crédito").
+  de "Tus metas").
 - **Urgente, CLI-000283.** El recorrido de arriba: titular "Lo urgente",
   saldo para menos de 1 mes.
 

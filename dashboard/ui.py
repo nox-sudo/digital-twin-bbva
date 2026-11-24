@@ -329,6 +329,21 @@ CSS = f"""
 .gd-escalon.hecho {{ background: #ccfbf1; color: #134e4a; }}
 .gd-escalon.actual {{ background: {MARINO}; color: #ffffff; font-weight: 600; }}
 .gd-escalon.actual .gd-num {{ color: {MARINO}; }}
+.gd-puntos {{ display: flex; gap: 6px; margin: 2px 0 12px; }}
+.gd-puntos span {{ width: 24px; height: 6px; border-radius: 999px;
+  background: #cbd5e1; }}
+.gd-puntos span.hecho {{ background: {TURQUESA}; }}
+.gd-puntos span.actual {{ background: {MARINO}; }}
+.gd-meta-titulo {{ font-size: 1.15rem; font-weight: 600; color: {TEXTO};
+  margin: 0 0 10px; }}
+.gd-avance-barra {{ position: relative; height: 10px; border-radius: 999px;
+  background: #e2e8f0; }}
+.gd-avance-relleno {{ position: absolute; left: 0; top: 0; bottom: 0;
+  border-radius: 999px; background: {SEMAFORO["medio"]["punto"]}; }}
+.gd-avance-meta {{ position: absolute; top: -4px; bottom: -4px; width: 2px;
+  background: {TEXTO}; }}
+.gd-avance-etiquetas {{ display: flex; justify-content: space-between; gap: 12px;
+  font-size: 0.9rem; color: {TEXTO_2}; margin: 6px 0 12px; }}
 .gd-medidor {{ margin: 8px 0 2px; }}
 .gd-medidor-barra {{ position: relative; height: 10px; border-radius: 999px;
   background: {FONDO_2}; overflow: hidden; }}
@@ -381,6 +396,33 @@ def html_medidor(
         f"<div class='gd-medidor-barra'><span class='gd-medidor-relleno' "
         f"style='width:{p * 100:.1f}%;background:{color}'></span>{marcas}</div>"
         f"<div class='gd-medidor-leyenda'>{_texto(leyenda)}</div></div>"
+    )
+
+
+def html_puntos(total: int, actual: int) -> str:
+    """Una marca por paso: los anteriores al actual como hechos y el actual
+    resaltado. El paso en texto va junto ("Paso 2 de 6")."""
+    marcas = "".join(
+        f"<span class='{'hecho' if i < actual else 'actual' if i == actual else ''}'>"
+        "</span>"
+        for i in range(total)
+    )
+    return f"<div class='gd-puntos' aria-hidden='true'>{marcas}</div>"
+
+
+def html_avance(valor: float, meta: float, hoy: str, objetivo: str) -> str:
+    """Barra de avance hacia una meta: valor y meta en fracciones de la escala
+    (0 a 1), una marca en la meta y las dos cifras escritas debajo."""
+    v = max(0.0, min(1.0, float(valor)))
+    t = max(0.0, min(1.0, float(meta)))
+    return (
+        f"<div class='gd-avance' role='img' aria-label='{_texto(hoy)}. "
+        f"{_texto(objetivo)}'>"
+        f"<div class='gd-avance-barra'><span class='gd-avance-relleno' "
+        f"style='width:{v * 100:.1f}%'></span><span class='gd-avance-meta' "
+        f"style='left:calc({t * 100:.1f}% - 1px)'></span></div>"
+        f"<div class='gd-avance-etiquetas'><span>{_texto(hoy)}</span>"
+        f"<span>{_texto(objetivo)}</span></div></div>"
     )
 
 
